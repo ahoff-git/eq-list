@@ -504,10 +504,14 @@ as insurance.
   sieved out before parsing, because the base file of a big zone is most of a megabyte of `L` geometry
   a travel graph never looks at.
 
-  **The app builds its graph from your folders and never reads the shipped one.** `createTravelRouter`
-  builds on first ask and caches per folder, exactly as `createZoneNamer` does and for the same reason:
-  a graph belongs to whichever pack you picked, so a *shipped* file would be an artifact to keep in step
-  with a choice you can change from the titlebar. The hand-authored pass is applied every time, so the
+  **By default the app routes over the graph it ships with** (`travel-graph.generated.ts`, from
+  `npm run travel:bundle`): Brewall's pack, built with every era open, the live era closed at load
+  (`withoutZones`), answering under the id `brewall` so its markers land on Brewall's drawings only
+  ([ADR 0341](../decisions/0341-a-travel-graph-ships-with-the-app.md)). No folder of yours is read.
+
+  **Settings → "build routes from my own map files"** (`travel.fromMaps`) switches to building from your
+  folders instead. Then `createTravelRouter`
+  builds on first ask and caches per folder, exactly as `createZoneNamer` does. The hand-authored pass is applied every time, so the
   travel in `manual-links.ts` is part of what the app routes over rather than something only the scripts
   see. It's **async** because of the era list: which zones the server has open is a fact about the server,
   and the wiki is the only thing that knows it. Concurrent asks share one build.
@@ -519,6 +523,15 @@ as insurance.
   568-file pack, and the first ask arrives *at launch* (the 🧭 panel's open state is persisted, and the map
   window is restored), where it used to hold the main process for over two seconds — see
   [ADR 0169](../decisions/0169-the-travel-graph-is-built-once-and-remembered.md).
+
+  The key can't see the **zone names** the graph is built from, because they come from the gazetteer,
+  which is keyed only on the folder. So the setup check's travel row compares the routed graph with a
+  build from nothing stored, and offers **Rebuild travel map** (forget both, build again) only when they
+  differ. The commoner "every route walks" is a pack that labels no `Druid Ring` or `Spires`. The game's
+  own `maps/` folder is one: 90 borders and no hub. So, building from your own maps, **a route is asked
+  over a pack that can teleport**: the drawn one if it can, else the installed pack that reaches most,
+  else the shipped graph. Answers carry that `pack`, and the map places markers only on a drawing from it
+  ([ADR 0340](../decisions/0340-a-setup-check-may-offer-a-fix-it-can-prove.md)).
 
   The scripts derive the same list through the same client and the same disk cache, so a graph built by
   hand and one built by the app exclude the same zones; `travel:build --offline` skips the wiki and says
@@ -725,6 +738,8 @@ as insurance.
 [ADR 0069](../decisions/0069-a-succor-is-a-port-inside-one-zone.md) ·
 [ADR 0109](../decisions/0109-a-route-can-be-denied-one-place.md) ·
 [ADR 0169](../decisions/0169-the-travel-graph-is-built-once-and-remembered.md) ·
+[ADR 0340](../decisions/0340-a-setup-check-may-offer-a-fix-it-can-prove.md) ·
+[ADR 0341](../decisions/0341-a-travel-graph-ships-with-the-app.md) ·
 [ADR 0255](../decisions/0255-the-spell-list-can-call-a-ring-dead-too.md) ·
 [ADR 0311](../decisions/0311-a-crossing-can-go-one-way.md) ·
 [testing](../testing/README.md)

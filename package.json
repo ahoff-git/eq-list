@@ -44,6 +44,7 @@
     "tradeskills:fetch": "node scripts/fetch-tradeskills.mjs",
     "travel:build": "npm run build:electron && node scripts/build-travel-graph.mjs",
     "travel:manual": "node scripts/apply-travel-manual.mjs",
+    "travel:bundle": "npm run build:electron && node scripts/bundle-travel-graph.mjs",
     "web:snapshot": "npm run build:electron && npm run rebuild:electron && node scripts/run-under-electron.mjs scripts/build-web-snapshot.mjs",
     "web:snapshot:publish": "npm run build:electron && npm run rebuild:electron && node scripts/run-under-electron.mjs scripts/build-web-snapshot.mjs --no-maps",
     "pretest": "npm run rebuild:node",

@@ -315,6 +315,8 @@ export async function folderSignature(dir: string): Promise<string> {
 export function createZoneNamer(cacheDir?: string): {
   names: (source: { dir: string; files: string[] }) => Promise<Record<string, string>>;
   clear: () => void;
+  /** Drop one folder's names, kept and stored, so the next ask solves them afresh. */
+  forget: (dir: string) => void;
 } {
   /** One gazetteer per folder, keyed by it — a pack is named once per run, whichever you view, and
    *  two windows asking for the same folder at once share one scan instead of racing two. */
@@ -378,5 +380,15 @@ export function createZoneNamer(cacheDir?: string): {
       });
     },
     clear: () => cache.clear(),
+    forget(dir) {
+      // The in-memory cache has no per-key drop, and clearing it all costs only a re-read of the
+      // other folders' stored answers.
+      cache.clear();
+      if (!file) return;
+      const all = stored();
+      if (!(dir in all.folders)) return;
+      delete all.folders[dir];
+      writeJson(file, all, { what: "zone names", concern: "zone-names" });
+    },
   };
 }

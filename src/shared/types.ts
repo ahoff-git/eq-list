@@ -849,6 +849,24 @@ export interface CombatantStat {
    * frequent first.
    */
   specials: SpecialHitStat[];
+  /**
+   * Spell hits this combatant was never seen casting — its procs, weapon or buff (see
+   * `proc-spotter.ts`). They're already in `bySpell`; this says which of those were procs. Most
+   * frequent first. Absent on fights stored before procs were counted.
+   */
+  procs?: ProcHitStat[];
+  /**
+   * Melee swings, landed and missed — what a proc rate is read against. Absent on fights stored
+   * before procs were counted.
+   */
+  swings?: number;
+}
+
+/** One spell's procs for one combatant. */
+export interface ProcHitStat {
+  spell: string;
+  hits: number;
+  damage: number;
 }
 
 /** Your melee under a single stance. */
@@ -3213,6 +3231,12 @@ export interface TravelSettings {
    * a stale entry is visible rather than a silent hole in your routes.
    */
   avoid: TravelAvoided[];
+  /**
+   * Build routes from the map folders on this machine instead of the graph shipped with the app
+   * ([ADR 0341](../../specs/decisions/0341-a-travel-graph-ships-with-the-app.md)). Off by default: the
+   * shipped one is what this machine would build from the same pack. For a different or newer pack.
+   */
+  fromMaps?: boolean;
 }
 
 // ─── Watcher status ─────────────────────────────────────────────────────────
@@ -4236,6 +4260,11 @@ export interface EqlApi {
      * to somebody who just changed a setting and pressed the button to see whether it helped.
      */
     selfCheck(): Promise<CheckResult[]>;
+    /**
+     * Make the repair a row offered (`CheckResult.action`, ADR 0340). Resolves once it's done;
+     * `false` for an id main doesn't know. The caller re-runs the check to show whether it worked.
+     */
+    selfCheckFix(id: string): Promise<boolean>;
   };
   search: {
     /** Fires when a screengrab lookup fills the Search box with OCR'd text. */

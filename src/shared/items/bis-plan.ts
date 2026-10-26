@@ -42,7 +42,10 @@ import {
   type BisLock,
   type BisPick,
   type BisSuggestion,
+  type HandScore,
 } from "./bis";
+import { damageModel, damageReport, withHasteWorth, withProcDex, type DamageReport, type ProcSpells } from "./damage-plan";
+import { MAX_PLAYER_LEVEL } from "./item-levels";
 import { openSockets, extractableAt, EXALTATION_SOCKETS, socketPlan, stoneFits, type SocketPlan, type Stone } from "./exaltations";
 import { eraCorpus } from "./item-era";
 import { matchesFacet, matchesItem, scorer, type ItemCriteria, type ItemRow, type StatWeights } from "./item-search";
@@ -161,6 +164,8 @@ export interface BisPlan {
   catalogueMatches: number;
   /** Things you hold that look wearable but have no item page here, so can't be weighed. */
   unweighed: string[];
+  /** The melee model's reading of the weapons: chances, both loadouts' hands, the best setups (ADR 0337). */
+  damage: DamageReport;
 }
 
 export interface BisInputs {
@@ -170,6 +175,8 @@ export interface BisInputs {
   weights: StatWeights;
   closedZones?: ReadonlySet<string>;
   options?: BisOptions;
+  /** What each proc's spell does, by name (`procSpellIndex`) — how hard a proc hits. */
+  procSpells?: ProcSpells;
 }
 
 /** Can one of the player's classes (and races) wear this? Empty pickers mean "anyone". */
@@ -178,8 +185,16 @@ export function wearable(row: ItemRow, criteria: ItemCriteria): boolean {
 }
 
 /** One thing the solver may wear, weighed at its grade. */
-export function candidateOf(id: string, row: ItemRow, grade: number, score: ReturnType<typeof scorer>, heldAt?: string, exp = 0): BisCandidate {
-  const { value, anyValue } = gradedValues(row.stats, grade, score, exp);
+export function candidateOf(
+  id: string,
+  row: ItemRow,
+  grade: number,
+  score: ReturnType<typeof scorer>,
+  heldAt?: string,
+  exp = 0,
+  swing?: HandScore,
+): BisCandidate {
+  const { value, anyValue, handValue } = gradedValues(row.stats, grade, score, exp, swing);
   return {
     id,
     title: row.item.title,
@@ -188,6 +203,7 @@ export function candidateOf(id: string, row: ItemRow, grade: number, score: Retu
     slots: row.stats.slots,
     value,
     anyValue,
+    ...(handValue && { handValue }),
     lore: row.stats.flags.includes("LORE"),
     twoHanded: isTwoHanded(row.stats),
     heldAt,
@@ -360,13 +376,29 @@ export function resolveLocks(candidates: readonly BisCandidate[], specs: LockSpe
   return { locks, stale };
 }
 
-export function bisPlan({ rows, inventory, criteria, weights, closedZones, options = NO_BIS_OPTIONS }: BisInputs): BisPlan {
-  const score = scorer(weights);
+export function bisPlan({ rows, inventory, criteria, weights, closedZones, options = NO_BIS_OPTIONS, procSpells }: BisInputs): BisPlan {
   const byTitle = new Map(rows.map((r) => [normalizeItemName(r.item.title), r]));
   const rowOf = (name: string) => byTitle.get(normalizeItemName(name));
   const excludedKeys = new Set(options.excluded.map(normalizeItemName));
   const isOut = (title: string) => excludedKeys.has(normalizeItemName(title));
   const yourClasses = criteria.facets.class;
+
+  // ── Who is swinging ──
+  // The melee model needs your DEX and haste now, and the weapons you swing (what haste is measured
+  // against), so what you wear is read before anything is weighed.
+  const worn = inventory.flatMap((it) => {
+    const row = it.area === "worn" && !isExaltation(it.name) ? rowOf(it.baseName) : undefined;
+    return row ? [{ slot: it.slot.toUpperCase(), stats: gradedItemStats(row.stats, it.grade) }] : [];
+  });
+  const wornStats = loadoutStats(worn.map((w) => w.stats));
+  const wielded = { primary: worn.find((w) => w.slot === "PRIMARY")?.stats, secondary: worn.find((w) => w.slot === "SECONDARY")?.stats };
+  // A bow or a throwing stack has DMG and delay too, but isn't swung.
+  const swung = (r: ItemRow) => r.stats.slots.includes("PRIMARY") && !/archery|throw/i.test(r.stats.skill ?? "");
+  const armoury = wielded.primary || wielded.secondary ? [] : eraCorpus(rows, closedZones, criteria.hideOutOfEra).filter((r) => swung(r) && wearable(r, criteria)).map((r) => r.stats);
+  const race = criteria.facets.race.length === 1 ? criteria.facets.race[0] : undefined;
+  const melee = damageModel({ classes: yourClasses, race, level: criteria.levelMax ?? MAX_PLAYER_LEVEL, worn: wornStats, melee: options.melee, wielded, armoury, procSpells });
+  const score = withHasteWorth(scorer(withProcDex(weights, melee)), melee);
+  const candidate = (id: string, row: ItemRow, grade: number, heldAt?: string, exp = 0) => candidateOf(id, row, grade, score, heldAt, exp, melee.swing);
 
   // ── Yours ──
   const held: Held[] = [];
@@ -379,7 +411,7 @@ export function bisPlan({ rows, inventory, criteria, weights, closedZones, optio
       return;
     }
     if (!wearable(row, criteria)) return;
-    held.push({ item, row, candidate: candidateOf(`held:${i}`, row, item.grade, score, inventoryPlaceText(item)) });
+    held.push({ item, row, candidate: candidate(`held:${i}`, row, item.grade, inventoryPlaceText(item)) });
   });
   const usable = held.filter((h) => !isOut(h.row.item.title));
   const heldById = new Map(held.map((h) => [h.candidate.id, h]));
@@ -395,7 +427,7 @@ export function bisPlan({ rows, inventory, criteria, weights, closedZones, optio
   );
   const huntCopiesOf = (row: ItemRow, wanted: number) =>
     Array.from({ length: Math.max(0, wanted - (heldCopies.get(row.item.title) ?? 0)) }, (_, i) =>
-      candidateOf(`hunt:${row.item.title}:${i}`, row, options.huntGrade, score),
+      candidate(`hunt:${row.item.title}:${i}`, row, options.huntGrade),
     );
   const hunted = options.includeHunt ? catalogue.flatMap((row) => huntCopiesOf(row, copiesWorn(row))) : [];
 
@@ -585,8 +617,9 @@ export function bisPlan({ rows, inventory, criteria, weights, closedZones, optio
   const inLoadout = new Set(loadout.picks.map((p) => p.item.id));
 
   // ── What you're wearing now ──
+  const wornHere = (h: Held) => (h.item.slot === "Any Slot" ? "ANY" : h.item.slot.toUpperCase());
   const wearing = round2(
-    held.filter((h) => h.item.area === "worn").reduce((t, h) => t + (h.item.slot === "Any Slot" ? h.candidate.anyValue : h.candidate.value), 0),
+    held.filter((h) => h.item.area === "worn").reduce((t, h) => t + (valueIn(h.candidate, wornHere(h)) ?? h.candidate.value), 0),
   );
 
   // Each piece at its own grade — the same reading its value above was weighed at.
@@ -624,7 +657,7 @@ export function bisPlan({ rows, inventory, criteria, weights, closedZones, optio
     const gone = new Set([into, ...consumed].map((h) => h.candidate.id));
     const after = solveWith(
       usableCandidates().filter((c) => !gone.has(c.id)),
-      [candidateOf(`merged:${title}`, into.row, merged.grade, score, into.candidate.heldAt, merged.exp)],
+      [candidate(`merged:${title}`, into.row, merged.grade, into.candidate.heldAt, merged.exp)],
     ).loadout;
     const gain = round2(after.total - loadout.total);
     if (gain > 0) merges.push({ title, grades, from: into.candidate.grade, to: merged.grade, toExp: merged.exp, gain });
@@ -662,10 +695,10 @@ export function bisPlan({ rows, inventory, criteria, weights, closedZones, optio
     const targets = new Map(from.map((r) => [`target:${r.item.title}`, r]));
     return huntSuggestions(
       loadout,
-      from.map((r) => candidateOf(`target:${r.item.title}`, r, 0, score)),
+      from.map((r) => candidate(`target:${r.item.title}`, r, 0)),
       WORN_LAYOUT,
       keepLosses,
-    ).map((s) => withGrades(s, targets.get(s.item.id)!, score));
+    ).map((s) => withGrades(s, targets.get(s.item.id)!, (grade) => candidate(s.item.id, targets.get(s.item.id)!, grade)));
   };
   const hunt = huntOver(huntRows);
 
@@ -720,17 +753,29 @@ export function bisPlan({ rows, inventory, criteria, weights, closedZones, optio
     toHunt: loadout.picks.filter((p) => !p.item.heldAt).length,
     catalogueMatches: catalogue.length,
     unweighed: [...unweighed].sort(),
+    damage: damageReport(
+      melee,
+      usableCandidates(),
+      loadout.picks,
+      inventory.length ? held.filter((h) => h.item.area === "worn").map((h) => ({ slot: wornHere(h), item: h.candidate })) : undefined,
+      (c) => {
+        const row = rowOf(c.title);
+        return row && gradedItemStats(row.stats, c.grade, c.exp);
+      },
+      // Any proc you could wear is a stone for a weapon's proc socket, so the whole wearable catalogue is in reach.
+      effectIndex(unexcluded).filter((e) => e.kind === "proc"),
+    ),
   };
 }
 
 /** A hunt suggestion with what more copies of it would buy. What it pushes out is the same at every grade. */
-function withGrades(s: BisSuggestion, row: ItemRow, score: ReturnType<typeof scorer>): BisHunt {
-  const valueThere = (c: BisCandidate) => (s.slot === "ANY" ? c.anyValue : c.value);
+function withGrades(s: BisSuggestion, row: ItemRow, atGrade: (grade: number) => BisCandidate): BisHunt {
+  const valueThere = (c: BisCandidate) => valueIn(c, s.slot) ?? c.value;
   const displaced = valueThere(s.item) - s.gain;
   const atGrades = HUNT_GRADES.map((grade) => ({
     grade,
     copies: copiesFor(grade),
-    gain: round2(valueThere(candidateOf(s.item.id, row, grade, score)) - displaced),
+    gain: round2(valueThere(atGrade(grade)) - displaced),
   }));
   return { ...s, row, atGrades };
 }

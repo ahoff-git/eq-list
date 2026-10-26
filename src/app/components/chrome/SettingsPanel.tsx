@@ -148,6 +148,13 @@ export default function SettingsPanel() {
         checked={settings.overlay.showKillConfidence}
         onChange={(v) => patch({ overlay: { showKillConfidence: v } })}
       />
+      {capabilities.log && (
+        <Toggle
+          label="Map travel: build routes from my own map files instead of the ones shipped with the app (for a different or newer map pack)"
+          checked={!!settings.travel.fromMaps}
+          onChange={(v) => patch({ travel: { fromMaps: v } })}
+        />
+      )}
 
       <div className="setting">
         <span className="hint">

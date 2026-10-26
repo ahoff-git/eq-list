@@ -427,6 +427,7 @@ function createWebApi(): EqlApi {
       dataHealth: async () => [],
       onDataChanged: () => noop,
       selfCheck: async () => [],
+      selfCheckFix: async () => false,
     },
 
     search: {

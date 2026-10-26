@@ -326,7 +326,9 @@ export default function MapWindow() {
   const survey = useTravelSurvey(travelOpen, sourceId, mapZone, settings?.travel);
   // Its positions are only true on the drawing they were read from — a borrowed or folded-away drawing
   // of the same zone is another frame (ADR 0111), so the map gets nothing to place there.
-  const placedSurvey = survey && surveyFitsMap(survey, zone, sourceId) ? survey : null;
+  // Checked against the pack the survey came from, which isn't the one on screen when routes borrow
+  // another pack's ring and spire labels (ADR 0340).
+  const placedSurvey = survey && surveyFitsMap(survey, zone, survey.pack?.id ?? sourceId) ? survey : null;
   /**
    * Whether the survey strip is up. **Off by default**: the markers on the map are the useful half and
    * cost nothing to read, while the strip answers “should I believe this?” — a question worth asking

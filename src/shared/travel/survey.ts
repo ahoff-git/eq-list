@@ -90,6 +90,8 @@ export interface SurveyLeg {
 /** What one zone's corner of the graph looks like. */
 export interface TravelSurvey {
   zone: TravelZone;
+  /** The pack the graph was built from — see `TravelAnswer.pack`. Placement checks against it. */
+  pack?: { id: string; label: string };
   nodes: SurveyNode[];
   networks: SurveyNetwork[];
   /** Nodes the graph puts here with **no position in this zone** — the holes, counted for a headline. */
@@ -128,7 +130,7 @@ const NETWORK_LABELS: Record<TravelToggle, string> = {
 export function surveyFitsMap(
   survey: Pick<TravelSurvey, "zone">,
   drawn: Pick<Zone, "file" | "source"> | undefined,
-  /** The source the graph was built from — the pack chosen in the window. */
+  /** The source the graph was built from — the pack chosen in the window, or the one routes borrowed. */
   graphSource: string,
 ): boolean {
   return !!drawn?.file && drawn.source === graphSource && drawn.file === survey.zone.zone;

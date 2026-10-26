@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { STOCK_ONLY_ZONES, prettyZoneName, stockOnly, zonesFromFiles, zonesFromSources } from "../../src/shared/map/map-sources";
+import { STOCK_ONLY_ZONES, pickSource, prettyZoneName, stockOnly, zonesFromFiles, zonesFromSources } from "../../src/shared/map/map-sources";
 import { CURATED_ZONES, findZone, mapZoneName, sortZones } from "../../src/shared/map/zones";
 import type { Zone } from "../../src/shared/map/types";
 
@@ -314,4 +314,12 @@ test("the stock-only list is matched on the file name, loosely", () => {
   assert.ok(!stockOnly("lavastorm2"), "and not by prefix — a different zone is a different file");
   assert.ok(!stockOnly(undefined), "an image zone has no file");
   assert.ok(STOCK_ONLY_ZONES.every((f) => f === f.trim().toLowerCase()), "entries are stored ready to match");
+});
+
+test("the pack in use is the chosen one, or the first found when that's gone or was never chosen", () => {
+  const sources = [{ id: "stock" }, { id: "brewall" }];
+  assert.equal(pickSource(sources, "brewall")?.id, "brewall");
+  assert.equal(pickSource(sources, "uninstalled")?.id, "stock");
+  assert.equal(pickSource(sources, undefined)?.id, "stock");
+  assert.equal(pickSource([], "brewall"), undefined);
 });

@@ -14,6 +14,7 @@
  */
 import { WORN_LAYOUT } from "./bis";
 import { normalizeItemName } from "./grouping";
+import { NO_MELEE_WEIGHTS, normalizeMeleeWeights, type MeleeWeights } from "./melee";
 
 /** A slot held to one item (worn there whatever it's worth) or held empty. */
 export type BisSlotLock = { title: string } | { empty: true };
@@ -32,12 +33,14 @@ export interface BisOptions {
   includeHunt: boolean;
   /** The grade a catalogue item is weighed at: as it drops, or a farm's worth of merging. */
   huntGrade: number;
+  /** What a weapon's damage and procs are worth, by eqlwiki's melee model (`melee.ts`), and the AAs it needs told. */
+  melee: MeleeWeights;
 }
 
 /** The grades a catalogue item can be weighed at — the Hunt table's columns, and `+0`. */
 export const HUNT_GRADE_CHOICES = [0, 2, 5, 10] as const;
 
-export const NO_BIS_OPTIONS: BisOptions = { locks: {}, wantEffects: [], excluded: [], includeHunt: true, huntGrade: 0 };
+export const NO_BIS_OPTIONS: BisOptions = { locks: {}, wantEffects: [], excluded: [], includeHunt: true, huntGrade: 0, melee: NO_MELEE_WEIGHTS };
 
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !!x.trim()) : []);
 
@@ -59,6 +62,7 @@ export function normalizeBisOptions(stored: unknown): BisOptions {
     excluded,
     includeHunt: typeof o.includeHunt === "boolean" ? o.includeHunt : NO_BIS_OPTIONS.includeHunt,
     huntGrade: HUNT_GRADE_CHOICES.find((g) => g === o.huntGrade) ?? 0,
+    melee: normalizeMeleeWeights(o.melee),
   };
 }
 
@@ -76,7 +80,7 @@ function normalizeLocks(stored: unknown): Record<number, BisSlotLock> {
   return locks;
 }
 
-/** How many things the options change — what a "Reset (N)" button counts. The hunt switch and grade are settings, not changes. */
+/** How many things the options change — what a "Reset (N)" button counts. The hunt switch, grade and melee weights are settings, not changes. */
 export function bisOptionCount(o: BisOptions): number {
   return Object.keys(o.locks).length + o.wantEffects.length + o.excluded.length;
 }

@@ -7,12 +7,13 @@ import assert from "node:assert/strict";
 import { NO_BIS_OPTIONS, bisOptionCount, lockAll, normalizeBisOptions, toggleTitle, withLock } from "../../src/shared/items/bis-options";
 import { activePreset, normalizePreset, removePreset, savePreset, type ItemPreset } from "../../src/shared/items/item-presets";
 import { NO_CRITERIA } from "../../src/shared/items/item-search";
+import { NO_MELEE_WEIGHTS } from "../../src/shared/items/melee";
 
 test("stored options are made whole, and a lock on a slot the layout doesn't have is dropped", () => {
   assert.deepEqual(normalizeBisOptions(undefined), NO_BIS_OPTIONS);
   assert.deepEqual(
     normalizeBisOptions({ locks: { 3: { title: "Cap" }, 4: { empty: true }, 99: { title: "Nowhere" }, x: { title: "Bad" } }, excluded: ["A", 7, ""] }),
-    { locks: { 3: { title: "Cap" }, 4: { empty: true } }, wantEffects: [], excluded: ["A"], includeHunt: true, huntGrade: 0 },
+    { locks: { 3: { title: "Cap" }, 4: { empty: true } }, wantEffects: [], excluded: ["A"], includeHunt: true, huntGrade: 0, melee: NO_MELEE_WEIGHTS },
   );
   // An older build's two lists of things ruled out are one list now; a name in both is kept once.
   assert.deepEqual(normalizeBisOptions({ benched: ["Iron Ring"], skipHunt: ["Cap", "iron ring"] }).excluded, ["Iron Ring", "Cap"]);

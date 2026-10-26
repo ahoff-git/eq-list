@@ -594,7 +594,15 @@ list, hunt, search, damage, session, peers, settings.
       rows add straight to the shopping list (or "the best per slot" at once), say when they're already
       listed, filter by slot, and ✕ skips one for good. The summary says what your choices cost. "Copy
       loadout" puts it on the clipboard as text. Split by job: `BisWearTable`, `BisEffects`,
-      `BisHuntTable`.
+      `BisHuntTable`, `BisDamage`.
+      **Damage** ([ADR 0337](../decisions/0337-a-weapon-is-weighed-by-what-it-hits-for-in-its-hand.md),
+      `melee.ts`, `damage-plan.ts`) weighs weapons by eqlwiki's melee model, per hand. It has Swing and
+      Procs weights, plus Ambidexterity and Burst of Power, which the dump can't show. It lists the weapons
+      worn now, in the loadout, and the most damage the pool allows (one-handed pair and two-hander),
+      with DEX to the 255 proc cap and haste.
+      [ADR 0338](../decisions/0338-haste-and-proc-damage-are-part-of-a-swing.md) adds three things.
+      Swings are scored at your haste (best item + Buff haste %, to the level cap). An optional "Count
+      proc damage" adds each proc's spell damage. A list of the meanest procs in reach has "+ want".
     - **Presets** (`ItemPresets`, `item-presets.ts`) save the whole tab under a name: criteria,
       weights and best-in-slot choices. Picking one puts all of it back. The picker shows which one is
       live, and shows none once anything has changed.
@@ -761,7 +769,10 @@ list, hunt, search, damage, session, peers, settings.
       the log wrote (Critical, Riposte, Flurry…, not a fixed list) sit at the bottom as an
       explicit **"of these hits"** line, because they overlap the sources instead of
       partitioning them — a critical slash is already counted under Melee → Slash, and adding
-      them as a fourth group is what used to make the numbers not add up. A fight stored before
+      them as a fourth group is what used to make the numbers not add up. Under Dealers, a
+      **"procs N/min"** line follows it on the same terms: the spell hits that were procs, each
+      with its count and share of swings, per minute of fighting — the unit the loadout planner's
+      procs a minute use, and the row itself carries the average beside its DPS, with "one every Ns" on hover ([ADR 0339](../decisions/0339-a-spell-nobody-cast-is-a-proc.md)). A fight stored before
       the cells existed keeps only its dealer-side kind/source split; its Dealers view falls back
       to that, and its Targets view says so rather than inventing attribution.
     - **Healers** ranks the same rows by healing done instead — a healer with no damage of their
@@ -987,7 +998,8 @@ list, hunt, search, damage, session, peers, settings.
     the **scoreboard comparison**, which merges nothing. The tab label says `Peers (off)` when the
     connection is switched off, for the same reason `Alerts (off)` does.
   - `SettingsPanel` — log folder, match mode, window opacity / interface + map scale, keep-completed,
-    follow-your-zone,
+    follow-your-zone, **map travel from your own map files** (off by default: routes use the graph
+    shipped with the app, [ADR 0341](../decisions/0341-a-travel-graph-ships-with-the-app.md)),
     **"Check my setup"** (`SelfCheck` — one button that walks everything the app needs and names the
     first thing that isn't right. It sits **first in the tab**, because Settings is where you land
     when nothing is happening and the check's answer is nearly always about the controls immediately
@@ -999,7 +1011,10 @@ list, hunt, search, damage, session, peers, settings.
     "it's watching a character I'm not playing" case on its own. **Copy report** hands the whole
     thing over as plain text, advice included, for a bug report. On demand only, since it reads the
     disk and pings the wiki and a cached verdict is worth nothing to somebody who just changed a
-    setting),
+    setting. A row may carry a **fix button**, but only where the probe has proved the fix would change
+    something ([ADR 0340](../decisions/0340-a-setup-check-may-offer-a-fix-it-can-prove.md)). Today
+    that is **Rebuild travel map**, on the travel row, when the stored graph differs from a fresh
+    build; pressing it re-runs the whole check),
     **"Eat a log file"** (a **catch-up**: digest a past log into every bucket it can fill — learned
     mob data, the **Combat tab's history** one play session per login with the fights whole, and the
     **loot feed** with the prices it teaches; see `electron/log-import.ts`,

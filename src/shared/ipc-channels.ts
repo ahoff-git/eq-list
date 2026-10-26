@@ -187,6 +187,7 @@ export const CH = {
   appOpenLog: "app:openLog",
   dataHealth: "data:health", // which stored data the rules have moved on from
   selfCheck: "app:selfCheck", // run the setup chain and report which step broke
+  selfCheckFix: "app:selfCheckFix", // make the repair a setup-check row offered (ADR 0340)
   // Hidden admin panel (ADR 0227) — inspect and directly correct a store's records.
   adminStores: "admin:stores", // every registered store, with its size and how much of it is flagged
   adminRecords: "admin:records", // one store's records

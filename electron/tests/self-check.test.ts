@@ -26,7 +26,8 @@ import {
   type CheckResult,
   type CheckStep,
 } from "../../src/shared/chrome/self-check";
-import { selfCheck, type SelfCheckDeps } from "../self-check";
+import { FIX, selfCheck, selfCheckFix, type SelfCheckDeps } from "../self-check";
+import type { TravelCheck } from "../travel-graph";
 import type { Settings, ShoppingList, WatcherStatus } from "../../src/shared/types";
 
 // ── the chain rule ────────────────────────────────────────────────────────────
@@ -136,8 +137,15 @@ function deps(over: Partial<SelfCheckDeps> = {}): SelfCheckDeps {
     alertOverlayUp: () => true,
     pingWiki: async () => ({ ok: true, detail: "answered" }),
     pingLucy: async () => ({ ok: true, detail: "answered" }),
+    travel: async () => travelCheck(),
     ...over,
   };
+}
+
+/** A pack that teleports, stored exactly as the maps build it — the healthy case. */
+function travelCheck(over: Partial<TravelCheck> = {}): TravelCheck {
+  const reach = { borders: 465, druid: 14, wizard: 10 };
+  return { pack: { id: "brewall", label: "Brewall" }, reach, fresh: reach, current: true, ...over };
 }
 
 /** One step's row out of a whole run, by id. */
@@ -347,4 +355,79 @@ test("an empty shopping list warns without implying the app is broken", async ()
   assert.equal(listed.status, "pass");
   // A mob is a thing you hunt, not a thing that drops (ADR 0098) — so it's counted apart.
   assert.match(listed.detail, /1 item.*1 mob/);
+});
+
+test("travel: a pack that teleports, stored as the maps build it, passes and offers nothing", async () => {
+  const travel = row(await selfCheck(deps()), "travel");
+  assert.equal(travel.status, "pass");
+  assert.match(travel.detail, /14 druid rings, 10 wizard spires/);
+  assert.equal(travel.action, undefined);
+});
+
+test("travel: a stale stored graph fails and offers the rebuild — the one fault a button can mend", async () => {
+  const stale = row(
+    await selfCheck(
+      deps({ travel: async () => travelCheck({ reach: { borders: 465, druid: 0, wizard: 0 }, current: false }) }),
+    ),
+    "travel",
+  );
+  assert.equal(stale.status, "fail");
+  assert.match(stale.detail, /has 0 druid rings.*build 14 druid rings/);
+  assert.equal(stale.action?.id, FIX.rebuildTravel);
+
+  // Counts can agree while the joins don't, and then quoting them would read as "nothing differs".
+  const same = row(await selfCheck(deps({ travel: async () => travelCheck({ current: false }) })), "travel");
+  assert.match(same.detail, /no longer matches/);
+});
+
+test("travel: borrowing another pack's labels passes, and says why the markers aren't on this map", async () => {
+  const travel = row(
+    await selfCheck(deps({ travel: async () => travelCheck({ drawn: { id: "stock", label: "Game maps (maps folder)" } }) })),
+    "travel",
+  );
+  assert.equal(travel.status, "pass");
+  assert.match(travel.detail, /Routes use its labels because “Game maps \(maps folder\)”/);
+});
+
+test("travel: no installed pack with rings or spires warns to install one, with no button that can't help", async () => {
+  const none = { borders: 89, druid: 0, wizard: 0 };
+  const travel = row(
+    await selfCheck(
+      deps({ travel: async () => travelCheck({ pack: { id: "stock", label: "Game maps" }, reach: none, fresh: none }) }),
+    ),
+    "travel",
+  );
+  assert.equal(travel.status, "warn");
+  assert.match(travel.detail, /every route walks/);
+  assert.match(travel.fix ?? "", /Install a map pack/);
+  assert.equal(travel.action, undefined, "a rebuild would build the same empty network");
+});
+
+test("a fix runs by its id, and an unknown id is refused rather than guessed at", async () => {
+  let rebuilt = 0;
+  const fixes = { rebuildTravel: async () => void (rebuilt += 1) };
+  assert.equal(await selfCheckFix(FIX.rebuildTravel, fixes), true);
+  assert.equal(rebuilt, 1);
+  assert.equal(await selfCheckFix("format-the-disk", fixes), false);
+  assert.equal(rebuilt, 1);
+});
+
+test("travel: the shipped graph passes, and says when its markers can't be drawn on the map on screen", async () => {
+  const shipped = { pack: { id: "brewall", label: "Brewall (shipped with the app)" }, shipped: "default" as const };
+  const own = row(await selfCheck(deps({ travel: async () => travelCheck(shipped) })), "travel");
+  assert.equal(own.status, "pass");
+  assert.match(own.detail, /^Routes use “Brewall \(shipped with the app\)”/);
+  assert.doesNotMatch(own.detail, /text only/);
+
+  const onStock = row(
+    await selfCheck(deps({ travel: async () => travelCheck({ ...shipped, drawn: { id: "stock", label: "Game maps" } }) })),
+    "travel",
+  );
+  assert.match(onStock.detail, /on “Game maps” a route is text only/);
+
+  const fallback = row(
+    await selfCheck(deps({ travel: async () => travelCheck({ ...shipped, shipped: "fallback" }) })),
+    "travel",
+  );
+  assert.match(fallback.detail, /You chose to build routes from your own maps, but none of them/);
 });

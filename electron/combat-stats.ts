@@ -24,6 +24,7 @@ import { isYours, SELF } from "../src/shared/combat/combat-parser";
 import { createDamageCells, rollUpDamage } from "../src/shared/combat/damage-tree";
 import { createHealCells } from "../src/shared/combat/heal-tree";
 import { createDotAttribution } from "../src/shared/combat/dot-attribution";
+import { createProcSpotter } from "../src/shared/combat/proc-spotter";
 import { createFightScope } from "../src/shared/combat/fight-scope";
 import { hasArticle } from "../src/shared/log-parser";
 import { createLogger } from "../src/shared/logging";
@@ -271,6 +272,10 @@ interface Tally {
    * break the one guarantee the cells make.
    */
   bySpecial: Map<string, { hits: number; damage: number }>;
+  /** Spell hits this combatant never cast, keyed by spell — see `proc-spotter.ts`. */
+  byProc: Map<string, { hits: number; damage: number }>;
+  /** Melee swings, landed and missed. */
+  swings: number;
 }
 
 /** Parse a naive-local (or ISO) timestamp to ms; NaN-safe. */
@@ -282,8 +287,8 @@ function ms(at: string): number {
 function emptyTally(): Tally {
   return {
     dealt: 0, taken: 0, healed: 0, healReceived: 0, hits: 0, misses: 0, crits: 0, maxHit: 0,
-    firstAt: 0, lastAt: 0, activeMs: 0,
-    byStance: new Map(), bySpecial: new Map(),
+    firstAt: 0, lastAt: 0, activeMs: 0, swings: 0,
+    byStance: new Map(), bySpecial: new Map(), byProc: new Map(),
   };
 }
 
@@ -743,6 +748,7 @@ export function createCombatStats(
    * is cleared goes on being attributed instead of dropping into a phantom row.
    */
   const dots = createDotAttribution();
+  const procs = createProcSpotter();
   let currentZone: string | null = null;
 
   /**
@@ -920,6 +926,10 @@ export function createCombatStats(
       specials: [...t.bySpecial.entries()]
         .map(([kind, s]) => ({ kind, hits: s.hits, damage: s.damage }))
         .sort((a, b) => b.hits - a.hits || b.damage - a.damage),
+      procs: [...t.byProc.entries()]
+        .map(([spell, s]) => ({ spell, hits: s.hits, damage: s.damage }))
+        .sort((a, b) => b.hits - a.hits || b.damage - a.damage),
+      swings: t.swings,
     };
   };
 
@@ -1154,6 +1164,16 @@ export function createCombatStats(
           s.damage += event.amount;
           a.bySpecial.set(event.qualifier, s);
         }
+        // A proc overlaps the by-spell split the same way a qualifier overlaps the by-skill one, so
+        // it's kept beside the cells rather than as one. Anybody's, like a qualifier: a group-mate's
+        // weapon procs are as worth reading as yours.
+        if (procs.isProc(event)) {
+          const p = a.byProc.get(event.spell!) ?? { hits: 0, damage: 0 };
+          p.hits += 1;
+          p.damage += event.amount;
+          a.byProc.set(event.spell!, p);
+        }
+        if (event.melee) a.swings += 1;
         a.maxHit = Math.max(a.maxHit, event.amount);
         if (!a.firstAt) a.firstAt = at;
         addActive(a, at);
@@ -1234,6 +1254,7 @@ export function createCombatStats(
         const target = canon(event.target);
         const t = w.tally(attacker);
         t.misses += 1;
+        t.swings += 1;
         w.damage.record(event); // a miss is a hit-rate fact about a skill against a target
         // Same reasoning as a landed hit's: either side of a whiff can be the unplaceable one —
         // a bare-named pet's swing missing before it's proven, or a mob missing a group-mate we
@@ -1603,6 +1624,9 @@ export function createCombatStats(
     // attacker, all of which would otherwise file your own DoT under the spell's name
     // (ADR 0071). Noting comes first so a cast and its own first tick in the same second work.
     dots.note(raw);
+    // Before the scope too, for the same reason: who casts what is knowledge, and a cast outside
+    // our fight still proves that caster's later landings of it aren't procs.
+    procs.note(raw);
     const event = dots.resolve(raw);
     const at = ms(event.at);
     // An unparseable timestamp would read as 1970 and wreck every span it touched, so

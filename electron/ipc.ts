@@ -13,10 +13,11 @@ import { WIKI_BASE, pingWiki } from "./wiki/api";
 import { pingLucy } from "./lucy/api";
 import { digestLog } from "./log-import";
 import { createMapReader, createZoneNamer, listSources } from "./eq-maps";
+import { MAP_SOURCE_KEY, type MapSource } from "../src/shared/map/map-sources";
 import { createTravelRouter } from "./travel-graph";
 import { sampleAlert, sampleRecord } from "./alert-router";
 import { dataReport } from "./data-health";
-import { selfCheck } from "./self-check";
+import { selfCheck, selfCheckFix } from "./self-check";
 import { createAdminWindow, createMapWindow, getAlertWindow, getMainWindow, getMapWindow, openPageInSearch, roleOf, setAlertInteractive, showInSearch } from "./windows";
 import { createAdminRegistry } from "./admin";
 import { resetPositions, setWindowToggles, windowToggles } from "./window-state";
@@ -159,20 +160,25 @@ export function registerIpc(context: IpcContext): PeerIpc {
     outOfEraZones: () => wiki.outOfEraZones(),
     namer: zoneNamer,
     cacheDir: userData,
+    // Loaded on first need rather than at launch: most installs have a pack that labels its ports.
+    bundled: () => import("../src/shared/travel/travel-graph.generated").then((m) => m.BUNDLED_TRAVEL),
   });
 
-  const shared: SharedIpc = { mapReader, zoneNamer, travel };
+  // Panel settings, made here rather than in the settings registrar because the setup check reads
+  // one of them too: which map pack the map window routes over.
+  const ui = createUiState(userData);
+  const shared: SharedIpc = { mapReader, zoneNamer, travel, ui };
 
   // One registrar per subject, and the order was reading-only — until `registerStatsIpc` needed
   // `registerPeerIpc`'s `mergedFight` (ADR 0276), which is why that one now runs first and the rest
   // still don't depend on one another.
   const peerIpc = registerPeerIpc(context);
   registerListIpc(context);
-  registerSettingsIpc(context);
+  registerSettingsIpc(context, shared);
   registerWikiIpc(context);
   registerLucyIpc(context);
   registerStatsIpc(context, peerIpc.mergedFight);
-  registerAppIpc(context);
+  registerAppIpc(context, shared);
   registerWindowIpc(context, shared);
   registerAdminIpc(context);
   return peerIpc;
@@ -188,6 +194,7 @@ interface SharedIpc {
   mapReader: ReturnType<typeof createMapReader>;
   zoneNamer: ReturnType<typeof createZoneNamer>;
   travel: ReturnType<typeof createTravelRouter>;
+  ui: ReturnType<typeof createUiState>;
 }
 
 /**
@@ -210,13 +217,11 @@ function registerListIpc(context: IpcContext): void {
 /**
  * Settings, the cast-alert test, and digesting a past log — the Settings tab's own surface.
  */
-function registerSettingsIpc(context: IpcContext): void {
+function registerSettingsIpc(context: IpcContext, shared: SharedIpc): void {
   const { store, watcher, combat, history, killLog, lootLog, factionLog, npcSightings, spawns, broadcast } = context;
 
   // ── panel settings ──
-  // Built here rather than by main: nothing outside this bridge reads it, and it needs only the
-  // userData path that every registrar already has.
-  const ui = createUiState(context.userData);
+  const { ui } = shared;
   ipcMain.handle(CH.uiStateAll, () => ui.all());
   ipcMain.handle(CH.uiStateSet, (_e, key: string, value: unknown) => ui.set(key, value));
 
@@ -860,8 +865,13 @@ function registerStatsIpc(context: IpcContext, mergedFight: PeerIpc["mergedFight
  * The app itself: the screengrab lookup, diagnostics for the Help section, the monitor list,
  * and the update check.
  */
-function registerAppIpc(context: IpcContext): void {
+function registerAppIpc(context: IpcContext, shared: SharedIpc): void {
   const { updates, lookup, logFile, getAppInfo } = context;
+  /** The map sources, and the one the map window routes over — its own persisted choice. */
+  const mapPacks = () => {
+    const { sources } = listSources(context.store.getSettings().logDir);
+    return { sources, chosen: shared.ui.get(MAP_SOURCE_KEY) as string | undefined };
+  };
 
   // ── screengrab lookup + app info ──
   ipcMain.handle(CH.lookupCapture, (e, rect: Rect, view: { width: number; height: number }) =>
@@ -892,6 +902,19 @@ function registerAppIpc(context: IpcContext): void {
       },
       pingWiki: () => pingWiki(),
       pingLucy: () => pingLucy(),
+      travel: () => {
+        const { sources, chosen } = mapPacks();
+        return shared.travel.inspect(sources, chosen, context.store.getSettings().travel);
+      },
+    }),
+  );
+  ipcMain.handle(CH.selfCheckFix, (_e, id: string) =>
+    selfCheckFix(id, {
+      rebuildTravel: async () => {
+        const { sources, chosen } = mapPacks();
+        const source = await shared.travel.travelSource(sources, chosen, context.store.getSettings().travel);
+        if (source) await shared.travel.rebuild(source);
+      },
     }),
   );
   ipcMain.handle(CH.appOpenLog, () => shell.openPath(logFile));
@@ -973,6 +996,19 @@ function registerWindowIpc(context: IpcContext, shared: SharedIpc): void {
     return source ? zoneNamer.names(source) : {};
   });
   /**
+   * The pack a route over `sourceId`'s window is asked of — that pack, unless it labels no ring or
+   * spire and another installed one does (ADR 0340). An id that isn't installed is no pack at all,
+   * rather than a quiet fallback: the window asked about a folder that isn't there.
+   */
+  const travelPackFor = async (sourceId: string) => {
+    const { sources } = listSources(store.getSettings().logDir);
+    return sources.some((s) => s.id === sourceId)
+      ? travel.travelSource(sources, sourceId, store.getSettings().travel)
+      : undefined;
+  };
+  const packRef = (source: MapSource) => ({ id: source.id, label: source.label });
+
+  /**
    * How to get from one zone to another. Built from the same folder the map is drawn from, on first ask
    * and then kept — in memory for the run, and on disk between runs against a fingerprint of that folder,
    * so it can't fall out of step with the pack you picked (see specs/travel).
@@ -983,10 +1019,10 @@ function registerWindowIpc(context: IpcContext, shared: SharedIpc): void {
    */
   ipcMain.handle(
     CH.travelRoute,
-    (_e, sourceId: string, from: TravelEnd | string, to: TravelEnd | string, options?: TravelOptions) => {
-      const source = listSources(store.getSettings().logDir).sources.find((s) => s.id === sourceId);
+    async (_e, sourceId: string, from: TravelEnd | string, to: TravelEnd | string, options?: TravelOptions) => {
+      const source = await travelPackFor(sourceId);
       if (!source) return { refused: "no-graph", knows: { zones: 0, borders: 0 } } satisfies TravelAnswer;
-      return travel.answer(source, from, to, options);
+      return { ...(await travel.answer(source, from, to, options)), pack: packRef(source) };
     },
   );
 
@@ -998,9 +1034,10 @@ function registerWindowIpc(context: IpcContext, shared: SharedIpc): void {
    * This is the other half: it's what the map draws while the 🧭 panel is open, and what an audit of a
    * pack's labels is done against (see specs/travel).
    */
-  ipcMain.handle(CH.travelSurvey, (_e, sourceId: string, zone: string, options?: TravelOptions) => {
-    const source = listSources(store.getSettings().logDir).sources.find((s) => s.id === sourceId);
-    return source ? travel.survey(source, zone, options) : undefined;
+  ipcMain.handle(CH.travelSurvey, async (_e, sourceId: string, zone: string, options?: TravelOptions) => {
+    const source = await travelPackFor(sourceId);
+    const survey = source ? await travel.survey(source, zone, options) : undefined;
+    return survey && source ? { ...survey, pack: packRef(source) } : undefined;
   });
 
   ipcMain.handle(CH.mapLoad, (_e, sourceId: string, zoneFile: string) => {

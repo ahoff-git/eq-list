@@ -7,6 +7,7 @@ import {
   reportText,
   summarize,
   worstStatus,
+  type CheckAction,
   type CheckResult,
   type CheckStatus,
 } from "@/shared/chrome/self-check";
@@ -33,6 +34,8 @@ export default function SelfCheck() {
   const [results, setResults] = useState<CheckResult[] | null>(null);
   const [running, setRunning] = useState(false);
   const [copied, setCopied] = useState(false);
+  /** The repair under way, so its button can say so and no second one starts beside it. */
+  const [fixing, setFixing] = useState<string | null>(null);
 
   async function run(): Promise<void> {
     const a = api();
@@ -44,6 +47,19 @@ export default function SelfCheck() {
     } finally {
       setRunning(false);
     }
+  }
+
+  /** Make a row's repair, then check everything again — a green row is the only proof it worked. */
+  async function fix(action: CheckAction): Promise<void> {
+    const a = api();
+    if (!a) return;
+    setFixing(action.id);
+    try {
+      await a.app.selfCheckFix(action.id);
+    } finally {
+      setFixing(null);
+    }
+    await run();
   }
 
   function copy(): void {
@@ -62,11 +78,11 @@ export default function SelfCheck() {
       <span className="hint">
         Walks everything the app needs — your log folder, the file it follows, whether the game is
         still writing to it, and the rest — in the order they depend on each other, and names the
-        first thing that isn&apos;t right. Nothing is changed; it only looks.
+        first thing that isn&apos;t right. Nothing is changed unless you press a row&apos;s fix.
       </span>
 
       <div className="row wrap" style={{ marginTop: 6 }}>
-        <button className="btn" disabled={running} onClick={() => void run()}>
+        <button className="btn" disabled={running || !!fixing} onClick={() => void run()}>
           {running ? "Checking…" : results ? "Check again" : `Check ${SETUP_CHECKS.length} things`}
         </button>
         {results && (
@@ -87,7 +103,7 @@ export default function SelfCheck() {
       {results && (
         <div className="chk-rows">
           {results.map((r) => (
-            <Row key={r.step.id} result={r} />
+            <Row key={r.step.id} result={r} fixing={fixing} busy={running || !!fixing} onFix={(act) => void fix(act)} />
           ))}
         </div>
       )}
@@ -102,8 +118,20 @@ export default function SelfCheck() {
 }
 
 /** One step: how it came out, what was found, and — when there is one — the thing to do. */
-function Row({ result }: { result: CheckResult }) {
-  const { step, status, detail, fix } = result;
+function Row({
+  result,
+  fixing,
+  busy,
+  onFix,
+}: {
+  result: CheckResult;
+  /** Which repair is under way, if any. */
+  fixing: string | null;
+  /** A check or a repair is running, so no button starts another. */
+  busy: boolean;
+  onFix: (action: CheckAction) => void;
+}) {
+  const { step, status, detail, fix, action } = result;
   // A green row has already said everything worth saying in one line; `matters` explains the
   // *stakes*, which are only interesting once a step isn't right.
   const explain = status !== "pass";
@@ -119,6 +147,13 @@ function Row({ result }: { result: CheckResult }) {
       <span className="chk-detail">{detail}</span>
       {explain && <span className="chk-matters">{step.matters}</span>}
       {fix && <span className="chk-fix">{fix}</span>}
+      {action && (
+        <div className="row" style={{ marginTop: 4 }}>
+          <button className="btn sm" disabled={busy} onClick={() => onFix(action)}>
+            {fixing === action.id ? "Fixing…" : action.label}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

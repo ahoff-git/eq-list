@@ -350,6 +350,12 @@ export default function TravelPanel({
   // than a mechanism: the route's ✕ adds, a chip removes, "Allow all" empties.
   const avoid = (step: TravelStep) => onTravel({ avoid: [...avoided, avoidedFrom(step, zoneNames)] });
   const allow = (id: string) => onTravel({ avoid: avoided.filter((a) => a.id !== id) });
+  /**
+   * The pack whose labels the route was worked out over, when it isn't the one on screen — this pack
+   * marks no ring or spire, so main borrowed another's (ADR 0340). Said, because it's also why the
+   * route's markers don't appear on this map.
+   */
+  const borrowed = answer?.pack && answer.pack.id !== sourceId ? answer.pack.label : null;
   /** The route as instructions — computed before the return, so the JSX below only lays them out. */
   const rows = useMemo(() => (route ? routeInstructions(route) : []), [route]);
   /**
@@ -443,6 +449,13 @@ export default function TravelPanel({
         )}
 
         {!working && answer?.refused && <p className="muted small">{refusalText(answer, to, avoided.length)}</p>}
+
+        {!working && borrowed && (
+          <p className="muted small">
+            Worked out over the map labels of {borrowed} — the maps on screen don’t mark druid rings or
+            wizard spires, so they can’t say where a port goes.
+          </p>
+        )}
 
         {route && (
           <>

@@ -1,9 +1,10 @@
 "use client";
 import { figure } from "@/shared/format";
 import type { ItemCriteria } from "@/shared/items/item-search";
+import { MAX_PLAYER_LEVEL } from "@/shared/items/item-levels";
 
-/** The level cap in this era. At the slider's far right it means "no cap", which is also the truth. */
-export const MAX_PLAYER_LEVEL = 60;
+// At the slider's far right the cap means "no cap". Re-exported: the panel reads it from here.
+export { MAX_PLAYER_LEVEL };
 
 /**
  * "What can I use?", as a floor you type and a cap you drag.

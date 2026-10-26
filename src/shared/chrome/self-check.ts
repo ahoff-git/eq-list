@@ -49,6 +49,18 @@ export interface CheckOutcome {
   detail: string;
   /** The one thing worth doing about it. Omitted on a pass. */
   fix?: string;
+  /**
+   * A repair the app can make itself, offered as a button beside the row (ADR 0340). Only where
+   * the probe has **shown** it would change something — a button that does nothing teaches people
+   * to stop pressing buttons.
+   */
+  action?: CheckAction;
+}
+
+/** A one-click repair: which one (`selfCheckFix` knows how), and what its button says. */
+export interface CheckAction {
+  id: string;
+  label: string;
 }
 
 /** How one step is looked at. Async because two of them touch the disk and the network. */
@@ -60,6 +72,7 @@ export interface CheckResult {
   status: CheckStatus;
   detail: string;
   fix?: string;
+  action?: CheckAction;
 }
 
 /**
@@ -143,6 +156,14 @@ export const SETUP_CHECKS: CheckStep[] = [
     id: "maps",
     label: "The game's own map files",
     matters: "The map window and travel routes are drawn from the maps folder beside your Logs folder.",
+  },
+  {
+    id: "travel",
+    label: "Travel routes can use teleports",
+    // No `needs: "maps"`: routes come from the graph shipped with the app unless you've chosen your own
+    // map files, so a missing maps folder doesn't stop them.
+    matters:
+      "Routes come from the travel map shipped with the app, or from your own map files if you chose that in Settings — with no druid ring or wizard spire wired, every route walks, whatever you switch on.",
   },
   {
     id: "alerts",

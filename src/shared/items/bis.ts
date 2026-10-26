@@ -19,6 +19,14 @@
 import { gradedItemStats, MAX_GRADE } from "./item-upgrade";
 import type { ItemStats, StatKey } from "./item-stats";
 
+/** The two hands, as the layout spells them. */
+export type Hand = "PRIMARY" | "SECONDARY";
+const HANDS: readonly Hand[] = ["PRIMARY", "SECONDARY"];
+const isHand = (slot: string): slot is Hand => slot === "PRIMARY" || slot === "SECONDARY";
+
+/** What a card swung from a hand adds to its worn stats, at its grade — `undefined` when it isn't a weapon. */
+export type HandScore = (graded: ItemStats, hand: Hand) => number | undefined;
+
 /**
  * The worn slots a character has, as EQL lays them out — read off a real `/outputfile inventory`
  * (2026-10-20): Live's Charm and Power Source rows are two `Any Slot` rows here, and the paired
@@ -48,6 +56,12 @@ export interface BisCandidate {
   value: number;
   /** The same in an `Any Slot`, where a weapon isn't swung (`SWING_STATS` don't count). */
   anyValue: number;
+  /**
+   * Its value swung from each hand, when the melee model is weighing weapons (`melee.ts`): its worn
+   * stats plus what it hits for there. Replaces `value` in that hand — a weapon's damage depends on the
+   * hand it's in, which no stat on the card says.
+   */
+  handValue?: Record<Hand, number>;
   /** One of these at a time. */
   lore: boolean;
   /** Takes the off-hand with it. */
@@ -96,25 +110,36 @@ export function isTwoHanded(stats: Pick<ItemStats, "skill">): boolean {
 
 /**
  * A card's value at a grade, both ways: in a slot of its own, and in an `Any Slot` (not swung).
- * `score` is the weight sheet's scorer (`item-search.ts`).
+ * `score` is the weight sheet's scorer (`item-search.ts`). With `swing`, a weapon is also valued per
+ * hand: its unswung value plus what the melee model says it hits for there.
  */
 export function gradedValues(
   stats: ItemStats,
   grade: number,
   score: (stats: ItemStats) => number,
   exp = 0,
-): { value: number; anyValue: number } {
+  swing?: HandScore,
+): { value: number; anyValue: number; handValue?: Record<Hand, number> } {
   const graded = gradedItemStats(stats, grade, exp);
   const worn = { ...graded.stats };
   for (const key of SWING_STATS) delete worn[key];
-  return { value: score(graded), anyValue: score({ ...graded, stats: worn }) };
+  const value = score(graded);
+  const anyValue = score({ ...graded, stats: worn });
+  const hits = swing && HANDS.map((hand) => swing(graded, hand));
+  if (!hits || hits.every((h) => h === undefined)) return { value, anyValue };
+  const [primary, secondary] = hits.map((h) => round2(anyValue + (h ?? 0)));
+  return { value, anyValue, handValue: { PRIMARY: primary, SECONDARY: secondary } };
 }
 
 /** What this item is worth in this slot, or null when it can't go there. `ANY` takes anything wearable. */
 export function valueIn(item: BisCandidate, slot: string): number | null {
   if (slot === "ANY") return item.slots.length > 0 ? item.anyValue : null;
-  return item.slots.includes(slot) ? item.value : null;
+  if (!item.slots.includes(slot)) return null;
+  return item.handValue && isHand(slot) ? item.handValue[slot] : item.value;
 }
+
+/** The most it is worth anywhere — whether it's worth considering at all. */
+const bestValue = (c: BisCandidate) => Math.max(c.value, c.anyValue, ...(c.handValue ? HANDS.map((h) => c.handValue![h]) : []));
 
 /**
  * As `valueIn`, with two-handers kept out of the hands — beside an off-hand one can't be swung. It is
@@ -203,7 +228,7 @@ function oneOfEachLore(candidates: readonly BisCandidate[]): BisCandidate[] {
 }
 
 function loadoutOver(candidates: readonly BisCandidate[], slots: readonly OpenSlot[], worth: typeof valueIn = valueIn): BisPick[] {
-  const items = candidates.filter((c) => c.value > 0 || c.anyValue > 0);
+  const items = candidates.filter((c) => bestValue(c) > 0);
   const owner = assign(items, slots.map((s) => s.slot), worth);
   const picks: BisPick[] = [];
   owner.forEach((o, i) => {
@@ -330,7 +355,7 @@ export function huntSuggestions(
     });
     if (c.twoHanded && main !== -1 && c.slots.includes("PRIMARY") && !locked.has(main) && !locked.has(off)) {
       const displaced = (inSlot.get(main)?.value ?? 0) + (off === -1 ? 0 : inSlot.get(off)?.value ?? 0);
-      consider({ item: c, gain: c.value - displaced, replaces: inSlot.get(main), slot: "PRIMARY" });
+      consider({ item: c, gain: (valueIn(c, "PRIMARY") ?? c.value) - displaced, replaces: inSlot.get(main), slot: "PRIMARY" });
     }
     if (best && (best.gain > 0 || keepLosses)) out.push({ ...best, gain: round2(best.gain) });
   }

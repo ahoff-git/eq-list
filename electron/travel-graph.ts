@@ -14,7 +14,7 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
-import { zonesFromFiles } from "../src/shared/map/map-sources";
+import { pickSource, zonesFromFiles } from "../src/shared/map/map-sources";
 import type { MapSource } from "../src/shared/map/map-sources";
 import { buildTravelGraph, type TravelBuildReport } from "../src/shared/travel/build";
 import { harvestZone, type ZoneHarvest } from "../src/shared/travel/harvest";
@@ -23,8 +23,10 @@ import { MANUAL_TRAVEL, NOT_IN_GAME, STALE_DRAWINGS } from "../src/shared/travel
 import { statedAdjacencies } from "../src/shared/zones/adjacency";
 import { outOfEraSet, zoneAvailable } from "../src/shared/zones/expansions";
 import { answerRoute, travelZone, type TravelAnswer, type TravelEnd } from "../src/shared/travel/route";
+import { canTeleport, travelPack, travelReach, type TravelReach } from "../src/shared/travel/reach";
 import { surveyZone, type TravelSurvey } from "../src/shared/travel/survey";
-import type { TravelGraph, TravelOptions } from "../src/shared/travel/types";
+import type { BundledTravel, TravelGraph, TravelOptions } from "../src/shared/travel/types";
+import { withoutZones } from "../src/shared/travel/prune";
 import { createZoneNamer, folderSignature, readFolderPois } from "./eq-maps";
 import { currentAppVersion, readJson, writeJson } from "./json-store";
 import { createAsyncCache } from "./async-cache";
@@ -169,7 +171,7 @@ interface StoredGraphs {
  */
 let curatedFingerprint: string | undefined;
 
-function curatedKey(): string {
+export function curatedKey(): string {
   curatedFingerprint ??= createHash("sha1")
     .update(JSON.stringify([MANUAL_TRAVEL, NOT_IN_GAME, STALE_DRAWINGS, statedAdjacencies()]))
     .digest("hex")
@@ -199,12 +201,11 @@ async function cacheKey(source: MapSource, outOfEra: readonly string[]): Promise
 }
 
 /**
- * The graph the app routes over, built on demand and cached per map folder.
+ * The graph the app routes over: the one it ships with by default (`bundled`, ADR 0341), or — when
+ * Settings says to build from your own map files — built on demand and cached per map folder.
  *
- * **Built from your folders, never shipped.** The scripts write `data/travel-graph.*.json` for you to
- * read and argue with, and the app still doesn't load them: a graph belongs to whichever pack you
- * picked, so a *shipped* one would be an artifact to keep in step with a choice the user can change
- * from the titlebar. What the app keeps is its own build of your own folder, and it keeps it under a
+ * **Building from your folders**, the scripts write `data/travel-graph.*.json` for you to read and argue
+ * with, and the app doesn't load them. What the app keeps is its own build of your own folder, and it keeps it under a
  * key that says so (`cacheKey`) — which is a cache, not an artifact. Building costs one pass over the
  * folder's labels, through the shared `readFolderPois`, which reads a few files at a time off the main
  * thread rather than blocking on the whole folder.
@@ -231,6 +232,13 @@ export function createTravelRouter(deps: {
    * the *build* wants.
    */
   cacheDir?: string;
+  /**
+   * The graph shipped with the app (`travel-graph.generated.ts`), loaded on first need — what routes are
+   * asked over unless you choose to build from your own maps, and the fallback when you do and none of
+   * them labels a ring or spire (ADR 0341). Left off (the tests, the scripts) and every route is built
+   * from the folder, which is what a caller checking the *build* wants.
+   */
+  bundled?: () => Promise<BundledTravel>;
 }): {
   graph: (source: MapSource) => Promise<TravelGraph>;
   answer: (
@@ -241,6 +249,9 @@ export function createTravelRouter(deps: {
   ) => Promise<TravelAnswer>;
   survey: (source: MapSource, zone: string, options?: TravelOptions) => Promise<TravelSurvey | undefined>;
   clear: () => void;
+  travelSource: (sources: MapSource[], chosen: string | undefined, how?: TravelFrom) => Promise<MapSource | undefined>;
+  inspect: (sources: MapSource[], chosen: string | undefined, how?: TravelFrom) => Promise<TravelCheck | undefined>;
+  rebuild: (source: MapSource) => Promise<TravelGraph>;
 } {
   /** One graph per folder, keyed by it — like the gazetteer, and for the same reason: two routes
    *  asked for at once share one build rather than each reading the folder. */
@@ -260,7 +271,7 @@ export function createTravelRouter(deps: {
     writeJson(file, all, { what: "travel graph" });
   };
 
-  const build = async (source: MapSource): Promise<TravelGraph> => {
+  const eraList = async (): Promise<string[]> => {
     // A failed era lookup must not quietly produce a graph that routes through Kunark, so it's said
     // out loud. The list is disk-cached, so this only bites on a first run with no network.
     let outOfEra: string[] = [];
@@ -270,6 +281,18 @@ export function createTravelRouter(deps: {
       log.warn("out-of-era zones unavailable, so only the hand-listed exclusions apply:", (e as Error).message);
     }
     if (!outOfEra.length) log.warn("no out-of-era zone list — a route may go through a zone the server hasn't opened");
+    return outOfEra;
+  };
+
+  /** The maps' graph plus the hand-authored pass — what a route is asked over. */
+  const buildRouted = async (source: MapSource, outOfEra: readonly string[], namer?: ZoneNamer) => {
+    const { graph: read, report } = await buildFromSource(source, outOfEra, namer);
+    const { graph: routed, report: manual } = applyManual(read, MANUAL_TRAVEL);
+    return { routed, report, manual };
+  };
+
+  const build = async (source: MapSource): Promise<TravelGraph> => {
+    const outOfEra = await eraList();
 
     // Asked before the folder is read, because the whole point is not to read it. A graph kept under an
     // older shape is refused the same way a read one is (`readGraph`) — it's no use and mustn't crash a
@@ -285,8 +308,7 @@ export function createTravelRouter(deps: {
       return kept.graph;
     }
 
-    const { graph: read, report } = await buildFromSource(source, outOfEra, deps.namer);
-    const { graph: routed, report: manual } = applyManual(read, MANUAL_TRAVEL);
+    const { routed, report, manual } = await buildRouted(source, outOfEra, deps.namer);
     log.debug("travel graph ready", {
       source: source.id,
       zones: report.zones,
@@ -299,7 +321,68 @@ export function createTravelRouter(deps: {
     return routed;
   };
 
-  const graph = (source: MapSource): Promise<TravelGraph> => cache.get(source.dir, () => build(source));
+  /**
+   * The shipped graph as a source a route can be asked over. Never a folder: `graph` answers it from the
+   * bundle, and since only this router hands it out, it's told apart by identity.
+   */
+  let bundledSource: MapSource | undefined;
+  let bundledGraph: Promise<TravelGraph> | undefined;
+  const loadBundled = async (): Promise<MapSource | undefined> => {
+    if (!deps.bundled) return undefined;
+    if (bundledSource) return bundledSource;
+    const { label, graph: all } = await deps.bundled();
+    // Built with every era open, so the server's live one is applied here — the same exclusion the build
+    // makes from a folder (`absentZonesFor`), by name and then back to the bundle's own files.
+    bundledGraph = eraList().then((era) => {
+      const closed = new Set(absentZonesFor(all.zoneNames, era));
+      return withoutZones(all, Object.keys(all.zoneNames).filter((file) => closed.has(all.zoneNames[file])));
+    });
+    // Under the id of the pack it was built from, so its markers land on that pack's drawings — the frame
+    // its positions were read in (ADR 0111) — and nowhere else.
+    bundledSource = { id: all.source.id, label: `${label} (shipped with the app)`, dir: "", files: [] };
+    return bundledSource;
+  };
+  const isBundled = (source: MapSource): boolean => !!bundledSource && source === bundledSource;
+
+  const graph = (source: MapSource): Promise<TravelGraph> =>
+    isBundled(source) && bundledGraph ? bundledGraph : cache.get(source.dir, () => build(source));
+
+  /**
+   * The pack a route is asked over (`travelPack`): the one being drawn, unless it can't teleport and
+   * another installed pack can. The other packs are only built when the drawn one comes up empty, and
+   * like any graph they're kept, so that costs one build per pack, once.
+   */
+  const travelSource = async (
+    sources: MapSource[],
+    chosen: string | undefined,
+    how: TravelFrom = {},
+  ): Promise<MapSource | undefined> => {
+    // **The shipped graph by default** — the same build anyone's machine would make of the same pack,
+    // made once (ADR 0341). It needs no folder of yours at all; they're read only when you've asked for
+    // that in Settings.
+    if (!how.fromMaps) {
+      const shipped = await loadBundled();
+      if (shipped) return shipped;
+    }
+    const drawn = pickSource(sources, chosen);
+    if (!drawn) return undefined;
+    const reach = travelReach(await graph(drawn));
+    if (canTeleport(reach)) return drawn;
+    const others = await Promise.all(
+      sources.filter((s) => s.id !== drawn.id).map(async (s) => ({ source: s, reach: travelReach(await graph(s)) })),
+    );
+    const picked = travelPack({ source: drawn, reach }, others);
+    if (picked !== drawn) log.debug("routing over another pack's labels", { drawn: drawn.id, travel: picked.id });
+    // An installed pack that can teleport always wins: it's the user's own survey. Only when none can
+    // does the shipped graph stand in, and only if it can do better.
+    if (picked !== drawn) return picked;
+    const shipped = await loadBundled();
+    if (shipped && canTeleport(travelReach(await graph(shipped)))) {
+      log.debug("no installed pack can teleport — routing over the shipped graph", { drawn: drawn.id });
+      return shipped;
+    }
+    return drawn;
+  };
 
   return {
     graph,
@@ -313,5 +396,69 @@ export function createTravelRouter(deps: {
       return file ? surveyZone(built, file, options) : undefined;
     },
     clear: () => cache.clear(),
+    travelSource,
+
+    /**
+     * What the pack in use can reach, and whether a rebuild would change it.
+     *
+     * The comparison is against a build made **from nothing stored** — a throwaway namer, no kept
+     * graph — so it covers every input `cacheKey` can't see, the gazetteer's names among them. Equal
+     * means a rebuild would hand back exactly what's routed over now, so none is offered.
+     */
+    async inspect(sources, chosen, how = {}) {
+      const source = await travelSource(sources, chosen, how);
+      if (!source) return undefined;
+      const drawn = pickSource(sources, chosen);
+      const routed = await graph(source);
+      // The bundle has no folder to build afresh from, and nothing kept to go stale: it is what shipped.
+      const fresh = isBundled(source) ? routed : (await buildRouted(source, await eraList(), createZoneNamer())).routed;
+      return {
+        pack: { id: source.id, label: source.label },
+        ...(drawn && drawn.id !== source.id ? { drawn: { id: drawn.id, label: drawn.label } } : {}),
+        ...(isBundled(source) ? { shipped: how.fromMaps ? "fallback" : "default" } : {}),
+        reach: travelReach(routed),
+        fresh: travelReach(fresh),
+        current: routed === fresh || JSON.stringify(routed) === JSON.stringify(fresh),
+      };
+    },
+
+    /** Forget everything kept for this folder — its names and its graph — and build it again. */
+    async rebuild(source) {
+      if (isBundled(source)) return graph(source);
+      deps.namer?.forget(source.dir);
+      cache.clear();
+      if (file) {
+        const all = stored();
+        delete all.folders[source.dir];
+        writeJson(file, all, { what: "travel graph" });
+      }
+      log.debug("rebuilding travel graph", { source: source.id });
+      return graph(source);
+    },
   };
+}
+
+/** What the setup check is told about travel (`inspect`). */
+export interface TravelCheck {
+  /** The pack routes are asked over (`travelSource`). */
+  pack: { id: string; label: string };
+  /** The pack the map window draws, when routes borrow another's labels because it has no ports. */
+  drawn?: { id: string; label: string };
+  /** What the graph routed over now can reach. */
+  reach: TravelReach;
+  /** What a build from nothing stored reaches. */
+  fresh: TravelReach;
+  /** The routed graph is exactly a fresh build — a rebuild would change nothing. */
+  current: boolean;
+  /**
+   * Routes use the graph shipped with the app: `default` because that's the setting, `fallback` because
+   * you asked for your own maps and none of them can teleport.
+   */
+  shipped?: "default" | "fallback";
+}
+
+/** Where routes come from — the Settings choice (`TravelSettings.fromMaps`). */
+export interface TravelFrom {
+  /** Build from the map folders on this machine rather than use the shipped graph. */
+  fromMaps?: boolean;
 }

@@ -3,6 +3,8 @@
  * set and can't silently collide or drift between the components that read/write them.
  * Values persist per window (see `usePersistentState`).
  */
+import { MAP_SOURCE_KEY } from "@/shared/map/map-sources";
+
 export const STORAGE_KEYS = {
   /**
    * Main window: where you are and how you got there — the whole trail (ADR 0173), not just the
@@ -117,8 +119,8 @@ export const STORAGE_KEYS = {
    * remembered narrowing has to pass.
    */
   mapKillFilters: "eqlist.map.killFilters",
-  /** Map window: which set of maps to draw — bundled images, or a game maps folder. */
-  mapSource: "eqlist.map.source",
+  /** Map window: which set of maps to draw — the game's own folder, or a pack in it. */
+  mapSource: MAP_SOURCE_KEY,
   /** Map window: the viewed-zone override (blank = follow current zone). */
   mapZone: "eqlist.map.zone",
   /** Map window: which kinds of map label are hidden (see `poiKind`). */

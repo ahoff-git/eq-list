@@ -533,6 +533,15 @@ unit-tested.
     declared itself stale for ever. Includes a **data-integrity pass over the shipped concern table**
     (unique ids, no `unstamped` above its revision, a `changed` sentence wherever a concern is stale by
     default, a command on every `script` remedy) — the category this file notes we otherwise lack.
+  - The shipped travel graph → `electron/tests/travel-bundle.test.ts`
+    ([ADR 0341](../decisions/0341-a-travel-graph-ships-with-the-app.md)): it was regenerated
+    since the curated inputs last changed, closing an era at load equals building with it closed, routes
+    use it by default without building anything locally, and with `fromMaps` it stands in only when no
+    installed pack can teleport.
+  - `electron/travel-graph.ts`'s `inspect`/`rebuild` → `electron/tests/travel-inspect.test.ts`
+    ([ADR 0340](../decisions/0340-a-setup-check-may-offer-a-fix-it-can-prove.md)): a poisoned stored
+    graph under a still-valid key reads as stale and a rebuild mends it, and a pack with no rings
+    names the installed pack that has them.
   - `src/shared/self-check.ts` + `electron/self-check.ts` → `electron/tests/self-check.test.ts`
     ([ADR 0100](../decisions/0100-a-setup-check-is-a-chain.md)). The **chain rule** is pinned against
     a made-up three-step table rather than the shipped catalogue, so checks can be added without

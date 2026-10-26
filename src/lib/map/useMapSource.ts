@@ -5,7 +5,7 @@ import { useRead } from "@/lib/hooks";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { sortZones } from "@/shared/map/zones";
-import { STOCK_SOURCE_ID, zonesFromSources, type MapSource, type MapSourceReport } from "@/shared/map/map-sources";
+import { STOCK_SOURCE_ID, pickSource, zonesFromSources, type MapSource, type MapSourceReport } from "@/shared/map/map-sources";
 import type { LoadedMap } from "@/shared/types";
 import type { Zone } from "@/shared/map/types";
 
@@ -44,8 +44,8 @@ export function useMapSource(): {
 
   // A remembered source that isn't there any more (a pack uninstalled) falls back to whichever
   // folder we did find, rather than an empty window.
-  const sourceId = sources.some((s) => s.id === chosen) ? chosen : (sources[0]?.id ?? "");
-  const source = sources.find((s) => s.id === sourceId);
+  const source = pickSource(sources, chosen);
+  const sourceId = source?.id ?? "";
 
   /** The game's own maps, the folder every install has — what a zone the pack lacks is borrowed from. */
   const backstop = sources.find((s) => s.id === STOCK_SOURCE_ID);

@@ -30,6 +30,9 @@
 import { zoneLevels, zoneLevelText } from "../zones/levels";
 import type { ItemSource } from "../types";
 
+/** The level cap in this era. Past it, a level range means "no cap", which is also the truth. */
+export const MAX_PLAYER_LEVEL = 60;
+
 /** A level, and how much to believe it. */
 export interface ItemLevel {
   /** The lowest level that can get it, as the best evidence sees it. */

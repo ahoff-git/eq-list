@@ -362,6 +362,22 @@ export interface TravelGraph {
 }
 
 /**
+ * A graph built at release and shipped with the app (`travel-graph.generated.ts`, ADR 0341) — what
+ * routes fall back to when no installed pack labels a ring or spire.
+ */
+export interface BundledTravel {
+  /** The pack it was built from, as a person reads it. */
+  label: string;
+  /**
+   * The fingerprint of `manual-links.ts` and the adjacency table it was built with (`curatedKey`), so a
+   * test can say when those changed and the bundle wasn't regenerated.
+   */
+  curated: string;
+  /** Built with **every era open** — the live era list is applied at load (`withoutZones`). */
+  graph: TravelGraph;
+}
+
+/**
  * What walking to or from a node whose position in this zone we don't have costs, in EQ world units.
  *
  * A stand-in, not a measurement: we know the node is in the zone and nothing else. Roughly the width

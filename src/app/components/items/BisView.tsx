@@ -5,13 +5,17 @@ import BisWearTable from "@/app/components/items/BisWearTable";
 import BisEffects from "@/app/components/items/BisEffects";
 import BisHuntTable from "@/app/components/items/BisHuntTable";
 import BisStats from "@/app/components/items/BisStats";
+import BisDamage from "@/app/components/items/BisDamage";
 import { Empty, segCls } from "@/app/components/ui";
 import { DumpSection } from "@/app/components/exports/DumpParts";
 import { useInventory } from "@/lib/exports/useGameExports";
+import { useSpellCatalog } from "@/lib/hooks";
 import { copyText } from "@/lib/clipboard";
 import { bisPlan, loadoutText, type BisPlan } from "@/shared/items/bis-plan";
 import { HUNT_GRADE_CHOICES, NO_BIS_OPTIONS, bisOptionCount, lockAll, toggleTitle, withExcluded, type BisOptions } from "@/shared/items/bis-options";
 import { WORN_LAYOUT } from "@/shared/items/bis";
+import { meleeWeighted } from "@/shared/items/melee";
+import { procSpellIndex } from "@/shared/items/damage-plan";
 import { gradedTitle } from "@/shared/items/item-upgrade";
 import { wikiName } from "@/shared/shown-name";
 import { exportAgeText } from "@/shared/game-exports";
@@ -63,17 +67,33 @@ export default function BisView({
   rates?: readonly DerivedRate[];
 }) {
   const { items, at } = useInventory();
+  // What each proc's spell hits for — the Damage section's proc damage reads it.
+  const { rows: spells } = useSpellCatalog();
+  const procSpells = useMemo(() => procSpellIndex(spells), [spells]);
+  // Melee weights rank weapons on their own, so they're a yardstick even with the sheet empty.
+  const ranked = scored || meleeWeighted(options.melee);
   const plan = useMemo(() => {
-    if (!scored) return null;
+    if (!ranked) return null;
     const started = performance.now();
     // No dump is still a plan: everything is to hunt, and nothing is worn now.
-    const p = bisPlan({ rows, inventory: items ?? [], criteria, weights, closedZones, options });
+    const p = bisPlan({ rows, inventory: items ?? [], criteria, weights, closedZones, options, procSpells });
     log.debug("plan", { ms: Math.round(performance.now() - started), picks: p.loadout.picks.length, toHunt: p.toHunt, effects: p.effects.length });
     return p;
-  }, [items, scored, rows, criteria, weights, closedZones, options]);
+  }, [items, ranked, rows, criteria, weights, closedZones, options, procSpells]);
 
-  if (!scored || !plan) {
-    return <Empty title="Set some value weights first." hint="Open Value weights above and say what a point of each stat is worth to you — the loadout is ranked by your yardstick, not ours." />;
+  if (!ranked || !plan) {
+    return (
+      <>
+        <Empty title="Set some value weights first." hint="Open Value weights above and say what a point of each stat is worth to you — the loadout is ranked by your yardstick, not ours." />
+        <button
+          className="btn sm"
+          onClick={() => onOptions({ ...options, melee: { ...options.melee, damage: 1 } })}
+          title="Rank weapons by eqlwiki's melee damage model — tune it, and procs, under Damage"
+        >
+          Or weigh weapons by damage
+        </button>
+      </>
+    );;
   }
 
   const classes = criteria.facets.class;
@@ -184,6 +204,21 @@ export default function BisView({
         </DumpSection>
       )}
 
+      <DumpSection
+        title="Damage"
+        aside={meleeWeighted(options.melee) ? `swing ${plan.damage.loadout.perSecond} · procs ${plan.damage.loadout.ppm}/min` : "not weighted"}
+        defaultOpen={false}
+      >
+        <BisDamage
+          report={plan.damage}
+          melee={options.melee}
+          classes={classes}
+          onMelee={(melee) => onOptions({ ...options, melee })}
+          wanted={options.wantEffects}
+          onWant={(effect) => onOptions({ ...options, wantEffects: toggleTitle(options.wantEffects, effect) })}
+        />
+      </DumpSection>
+
       <DumpSection title="Stats" aside={items ? "wearing now → loadout" : "the loadout"} defaultOpen={false}>
         <BisStats wearing={plan.stats.wearing} loadout={plan.stats.loadout} rates={rates} />
       </DumpSection>
@@ -263,7 +298,7 @@ function BisChoices({ plan, options, onOptions }: { plan: BisPlan; options: BisO
         Copy loadout
       </button>
       {changed > 0 && (
-        <button className="btn sm" onClick={() => onOptions({ ...NO_BIS_OPTIONS, includeHunt: options.includeHunt, huntGrade: options.huntGrade })} title="Drop every lock, wanted effect and exclusion">
+        <button className="btn sm" onClick={() => onOptions({ ...NO_BIS_OPTIONS, includeHunt: options.includeHunt, huntGrade: options.huntGrade, melee: options.melee })} title="Drop every lock, wanted effect and exclusion">
           Reset ({changed})
         </button>
       )}

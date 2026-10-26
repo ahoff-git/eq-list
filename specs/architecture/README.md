@@ -94,7 +94,9 @@ in the main process and all UI in the renderer.
     faults. The judging (the step table, the skip rule, the verdict) is pure and shared in
     `src/shared/chrome/self-check.ts`; this is the looking, with the network and the alert window injected
     by `ipc.ts` so the whole thing tests without Electron. See
-    [ADR 0100](../decisions/0100-a-setup-check-is-a-chain.md).
+    [ADR 0100](../decisions/0100-a-setup-check-is-a-chain.md). `selfCheckFix` makes the one repair a
+    row can offer: rebuilding the travel map
+    ([ADR 0340](../decisions/0340-a-setup-check-may-offer-a-fix-it-can-prove.md)).
   - `log-cursor.ts` — how far each log has been read, kept across restarts, so the app's state
     doesn't depend on when it was launched
     ([ADR 0044](../decisions/0044-the-log-position-outlives-the-app.md)).

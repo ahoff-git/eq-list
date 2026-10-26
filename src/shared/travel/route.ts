@@ -576,6 +576,11 @@ export interface TravelAnswer {
   /** With `refused: "absent"`, the zone that isn't in the game — named as a person reads it. */
   absent?: string;
   knows: { zones: number; borders: number };
+  /**
+   * The pack the graph was built from, when the answer crossed IPC. Can differ from the pack on
+   * screen: one with no ring or spire borrows another's labels for the route (ADR 0340).
+   */
+  pack?: { id: string; label: string };
 }
 
 /** What the graph covers — the denominator behind any answer it gives. */

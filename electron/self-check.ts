@@ -28,6 +28,8 @@ import { runChecks, type CheckOutcome, type CheckProbe, type CheckResult } from 
 import { createLogger } from "../src/shared/logging";
 import { findMapsDir } from "./eq-maps";
 import { readLogTail } from "./log-tail";
+import type { TravelCheck } from "./travel-graph";
+import { canTeleport, type TravelReach } from "../src/shared/travel/reach";
 import type { Settings, ShoppingList, WatcherStatus } from "../src/shared/types";
 
 const log = createLogger("self-check");
@@ -59,6 +61,8 @@ export interface SelfCheckDeps {
   pingWiki: () => Promise<{ ok: boolean; detail: string }>;
   /** Can we reach Lucy, and how quickly? Injected so a test never touches the network. */
   pingLucy: () => Promise<{ ok: boolean; detail: string }>;
+  /** What the travel graph for the pack in use can reach (`TravelRouter.inspect`); undefined with no pack. */
+  travel: () => Promise<TravelCheck | undefined>;
   /** Now, in ms. Injectable so a test can age a file deterministically. */
   now?: () => number;
 }
@@ -74,6 +78,30 @@ export async function selfCheck(deps: SelfCheckDeps): Promise<CheckResult[]> {
 const pass = (detail: string): CheckOutcome => ({ status: "pass", detail });
 const warn = (detail: string, fix?: string): CheckOutcome => ({ status: "warn", detail, fix });
 const fail = (detail: string, fix?: string): CheckOutcome => ({ status: "fail", detail, fix });
+
+/** The repairs a row can offer, by `CheckAction.id`. */
+export const FIX = { rebuildTravel: "rebuild-travel" } as const;
+
+/** What a repair needs — injected for the same reason the probes' deps are. */
+export interface SelfCheckFixDeps {
+  /** Forget the pack in use's stored names and graph, and build them again. */
+  rebuildTravel: () => Promise<void>;
+}
+
+/**
+ * Make the repair a row offered (ADR 0340). Returns whether it knew the id: the panel re-runs the
+ * whole check either way, because the honest proof a fix worked is the row turning green.
+ */
+export async function selfCheckFix(id: string, deps: SelfCheckFixDeps): Promise<boolean> {
+  log.debug("setup check fix", { id });
+  switch (id) {
+    case FIX.rebuildTravel:
+      await deps.rebuildTravel();
+      return true;
+    default:
+      return false;
+  }
+}
 
 /** One probe per step id. Split out so the table of what's checked reads in one screen. */
 function probes(deps: SelfCheckDeps): Record<string, CheckProbe> {
@@ -247,6 +275,50 @@ function probes(deps: SelfCheckDeps): Record<string, CheckProbe> {
       return pass(dir);
     },
 
+    travel: async () => {
+      const check = await deps.travel();
+      if (!check) return warn("No map pack to route over.");
+      const { pack, drawn, reach, fresh, current, shipped } = check;
+      // First, because it's the one fault a button can mend: what's routed over isn't what these maps
+      // build any more. Anything said about the network after this would be about the stale copy.
+      if (!current) {
+        // The counts can agree while the joins don't (a border moved, a name re-solved), so the
+        // detail only quotes them when they're what differs.
+        const same = reachText(reach) === reachText(fresh);
+        return {
+          ...fail(
+            same
+              ? `The stored travel map for “${pack.label}” no longer matches what your maps build today.`
+              : `The stored travel map for “${pack.label}” is out of date — it has ${reachText(reach)}, and your maps build ${reachText(fresh)} today.`,
+            "Rebuild it from your maps. Nothing you chose is lost — only the copy the app keeps.",
+          ),
+          action: { id: FIX.rebuildTravel, label: "Rebuild travel map" },
+        };
+      }
+      if (!canTeleport(reach)) {
+        // Not something a rebuild can mend — the build above already matches — so no button. Routes
+        // already borrow any installed pack's labels (`travelPack`), so reaching here means none has any.
+        return warn(
+          `No installed map pack labels a druid ring or wizard spire — “${pack.label}” has ${count(reach.borders, "border")} and nothing to cast into, so every route walks.`,
+          "Install a map pack that labels the rings and spires (Brewall's is the usual one) into your EverQuest maps folder. Routes use it straight away, whichever pack the map draws.",
+        );
+      }
+      if (shipped) {
+        // Working, and nothing to do — but the drawing sentence is worth saying: it's why a route's
+        // markers can be missing from the map on screen.
+        const why =
+          shipped === "fallback"
+            ? "You chose to build routes from your own maps, but none of them marks a ring or spire, so routes use"
+            : "Routes use";
+        const markers = drawn ? ` Its markers appear on that pack's maps; on “${drawn.label}” a route is text only.` : "";
+        return pass(`${why} “${pack.label}”: ${reachText(reach)}.${markers}`);
+      }
+      // Borrowing is working as designed, but it's the sentence that explains why the route's markers
+      // aren't on the map you're looking at — so it's said, on a pass.
+      const borrowed = drawn ? ` Routes use its labels because “${drawn.label}”, which the map draws, marks no ring or spire.` : "";
+      return pass(`“${pack.label}”: ${reachText(reach)} — the same as a fresh build of your maps.${borrowed}`);
+    },
+
     alerts: () => {
       const alerts = deps.getSettings().castAlerts;
       // A deliberate "off" still shows amber rather than green, because this panel is read when
@@ -276,6 +348,11 @@ function probes(deps: SelfCheckDeps): Record<string, CheckProbe> {
       return pass(`${count(entries.length - mobs, "item")} to look for${mobs ? `, and ${count(mobs, "mob")} to hunt` : ""}.`);
     },
   };
+}
+
+/** "14 druid rings, 10 wizard spires and 465 borders". */
+function reachText(reach: TravelReach): string {
+  return `${count(reach.druid, "druid ring")}, ${count(reach.wizard, "wizard spire")} and ${count(reach.borders, "border")}`;
 }
 
 // ── the small filesystem questions ────────────────────────────────────────────

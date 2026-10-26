@@ -29,6 +29,8 @@ const DECIDERS = ["gradedTitle", "rankedSpellTitle", "heldAsNamed", "wikiName", 
 const TRACES: Record<string, string> = {
   "chrome/StatusBar.tsx|heldAsNamed(last.item)": "Loot tab: a graded drop is stored and read back as looted, so its row links at its grade",
   "chrome/StatusBar.tsx|notAnItem(last.source)": "not-an-item links: a page that isn't an item, recipe or spell never levels, whatever name opens it",
+  "items/BisDamage.tsx|gradedTitle(best.title, best.grade)": "best in slot: a held graded item is picked and shown at its grade",
+  "items/BisDamage.tsx|gradedTitle(line.title, line.grade)": "best in slot: a held graded item is picked and shown at its grade",
   "items/BisHuntTable.tsx|gradedTitle(p.row.item.title, grade)": "best in slot: a held graded item is picked and shown at its grade",
   "items/BisHuntTable.tsx|gradedTitle(p.row.replaces.item.title, p.row.replaces.item.grade)": "best in slot: a held graded item is picked and shown at its grade",
   "items/BisHuntTable.tsx|wikiName(p.row.item.title)": "best in slot: hunt targets are catalogue items you don't hold, named at +0",

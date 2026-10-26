@@ -21,9 +21,8 @@
  * Needs `npm run build:electron` first — it uses the compiled shared modules rather than a second
  * copy of the map format in JavaScript.
  */
-import fs from "node:fs";
 import path from "node:path";
-import { ROOT, appDataDirs, dirOpt, few, flag, helpIfAsked, load, opt } from "./lib/cli.mjs";
+import { ROOT, appDataDirs, dirOpt, few, flag, helpIfAsked, load, logDir, opt } from "./lib/cli.mjs";
 
 helpIfAsked(import.meta.url);
 
@@ -57,24 +56,6 @@ async function outOfEraZones() {
     }
   }
   return { zones: [], why: "no app data folder — run the app once, or pass --offline" };
-}
-
-/**
- * Where to look for maps. The app already knows — it watches `<EQ>/Logs` — so the saved setting is
- * the default and `--logs` is for pointing this at someone else's install.
- */
-function logDir() {
-  const given = opt("logs");
-  if (typeof given === "string") return given;
-  for (const dir of appDataDirs()) {
-    try {
-      const settings = JSON.parse(fs.readFileSync(path.join(dir, "settings.json"), "utf8"));
-      if (settings.logDir) return settings.logDir;
-    } catch {
-      /* not this one */
-    }
-  }
-  return "C:\\Users\\Public\\Daybreak Game Company\\Installed Games\\EverQuest Legends\\Logs";
 }
 
 const dir = logDir();

@@ -55,6 +55,12 @@ export function stockOnly(file: string | undefined): boolean {
   return !!file && STOCK_ONLY_ZONES.includes(file.trim().toLowerCase());
 }
 
+/**
+ * Where the map window keeps its choice of pack (`STORAGE_KEYS.mapSource`). Here rather than only
+ * there because main reads it too — the setup check asks about the pack routes are actually asked over.
+ */
+export const MAP_SOURCE_KEY = "eqlist.map.source";
+
 /** A place maps can be loaded from. */
 export interface MapSource {
   /** Stable id, persisted as the user's choice: `stock`, or a pack's folder name. */
@@ -71,6 +77,15 @@ export interface MapSourceReport {
   /** `<EverQuest>/maps`, when we could find it — shown in the UI so a miss is diagnosable. */
   mapsDir?: string;
   sources: MapSource[];
+}
+
+/**
+ * The pack actually in use: the one chosen, or — when that's gone (a pack uninstalled) or was never
+ * chosen — the first we found. Shared so the map window and the setup check can't name different
+ * packs for the same choice.
+ */
+export function pickSource<S extends Pick<MapSource, "id">>(sources: S[], chosen: string | undefined): S | undefined {
+  return sources.find((s) => s.id === chosen) ?? sources[0];
 }
 
 /** A short name as a display name, for zones we can't name properly (`gukbottom`). */

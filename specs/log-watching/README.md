@@ -331,6 +331,13 @@ Two invocations do more than scale numbers, and both are now accounted for
   castless by nature and counting them claimed 21 procs where the truth was closer to zero.
   Rate is procs ÷ swings while the invocation is up. Still unvalidated against a real proc —
   in the log to hand, spellblade was up for only 35 swings and nothing fired.
+- **Procs** are the other half of that clause: a spell hit from somebody **never seen casting
+  that spell** — `Astah hit Master Brewer for 48 points of magic damage by Reaving Strike.`, with
+  no `begins casting` anywhere for Astah. `proc-spotter.ts` keeps who casts what (anyone's casts,
+  read before the fight scope) and the tracker counts those hits per combatant beside their swings,
+  so the meter can say procs a minute
+  ([ADR 0339](../decisions/0339-a-spell-nobody-cast-is-a-proc.md)). A mob's castless special — a
+  dragon's breath, a rat's disease — reads the same way and is counted the same.
 
 ## Log format reference
 - Location (default): `C:\Users\Public\Daybreak Game Company\Installed Games\EverQuest Legends\Logs`

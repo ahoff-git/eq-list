@@ -2010,3 +2010,20 @@ test("fightShareOf shares nothing before your own name is known, rather than nam
   const share = fightShareOf(t.snapshot().fight, "Blackburrow", t.snapshot().recentHits, t.snapshot().recentHeals, "");
   assert.equal(share, undefined);
 });
+
+test("a spell hit nobody saw you cast is counted as a proc, over your swings and time fighting", () => {
+  const t = tracker();
+  feed(t, [
+    [0, "You slash a gnoll elite for 20 points of damage."],
+    [1, "You try to slash a gnoll elite, but miss!"],
+    [2, "You hit a gnoll elite for 74 points of magic damage by Smiting Strike."],
+    [3, "You begin casting Blast of Cold."],
+    [5, "You hit a gnoll elite for 12 points of cold damage by Blast of Cold."],
+    [6, "You slash a gnoll elite for 20 points of damage."],
+  ]);
+  const you = t.snapshot().fight.byCombatant.find((r) => r.name === "You")!;
+  assert.deepEqual(you.procs, [{ spell: "Smiting Strike", hits: 1, damage: 74 }]);
+  assert.equal(you.swings, 3);
+  // Still a spell in the by-spell split — the proc list says which of those were procs, not instead.
+  assert.ok(you.bySpell.some((s) => s.spell === "Smiting Strike"));
+});

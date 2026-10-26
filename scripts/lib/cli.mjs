@@ -84,6 +84,24 @@ export function appDataDirs() {
 }
 
 /**
+ * Where to look for maps. The app already knows — it watches `<EQ>/Logs` — so the saved setting is
+ * the default and `--logs` is for pointing this at someone else's install.
+ */
+export function logDir() {
+  const given = opt("logs");
+  if (typeof given === "string") return given;
+  for (const dir of appDataDirs()) {
+    try {
+      const settings = JSON.parse(fs.readFileSync(path.join(dir, "settings.json"), "utf8"));
+      if (settings.logDir) return settings.logDir;
+    } catch {
+      /* not this one */
+    }
+  }
+  return "C:\\Users\\Public\\Daybreak Game Company\\Installed Games\\EverQuest Legends\\Logs";
+}
+
+/**
  * A few of a list, then how many were left out.
  *
  * Every report in here truncates: a hundred unresolved destinations is a wall of text nobody reads,

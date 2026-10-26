@@ -10,6 +10,7 @@ import type {
   HealAxis,
   HealCell,
   HealNode,
+  ProcHitStat,
   SpecialHitStat,
 } from "@/shared/types";
 import { count, percent } from "@/shared/format";
@@ -74,7 +75,7 @@ export default function DamageMeter({
         const canExpand =
           view === "healed"
             ? !!healCells?.some((c) => c.healer === row.name)
-            : hasBreakdown(row, view, cells) || row.specials?.length > 0;
+            : hasBreakdown(row, view, cells) || row.specials?.length > 0 || (view === "dealt" && (row.procs?.length ?? 0) > 0);
         // Tied to `canExpand`, not just the remembered name — otherwise a row left open while
         // switching to a view it can't expand under would keep rendering stale breakdown content
         // with no caret to say it was there.
@@ -99,6 +100,7 @@ export default function DamageMeter({
               <span className="meter-nums">
                 {v.toLocaleString()} <span className="muted">({percent(ratio(v, total))})</span>
                 {view === "dealt" && <span className="meter-dps"> {row.dps}/s</span>}
+                {view === "dealt" && <ProcRate row={row} />}
               </span>
             </div>
             {isOpen && view === "healed" && (
@@ -122,6 +124,7 @@ export default function DamageMeter({
                   </p>
                 )}
                 <Qualifiers specials={row.specials ?? []} hits={row.hits} />
+                {view === "dealt" && <Procs procs={row.procs ?? []} swings={row.swings ?? 0} activeSec={row.activeSec} />}
               </div>
             )}
           </div>
@@ -351,6 +354,57 @@ function Qualifiers({ specials, hits }: { specials: SpecialHitStat[]; hits: numb
         </span>
       ))}
     </div>
+  );
+}
+
+/**
+ * The spell hits that were procs. Like the qualifiers, they overlap the tree — a proc is already
+ * under Spell → its name — so they're a caption of their own, never a level. The rate is per
+ * minute of fighting, the same unit the loadout planner's procs a minute are in.
+ */
+function Procs({ procs, swings, activeSec }: { procs: ProcHitStat[]; swings: number; activeSec: number }) {
+  if (!procs.length) return null;
+  const perMin = (hits: number) => procsPerMinute(hits, activeSec);
+  const total = procCount(procs);
+  return (
+    <div className="dmg-qualifiers">
+      <span
+        className="dmg-caption"
+        title={`Spell hits with no cast line from this combatant: weapon and buff procs. ${count(total, "proc")} over ${activeSec}s of fighting${swings ? ` and ${count(swings, "swing")}` : ""} — ${perMin(total)} a minute.`}
+      >
+        procs {perMin(total)}/min
+      </span>
+      {procs.map((p) => (
+        <span key={p.spell} title={`${p.spell}: ${count(p.hits, "proc")} for ${p.damage.toLocaleString()} damage, ${perMin(p.hits)} a minute`}>
+          {p.spell} <span className="muted">{p.hits}×</span>
+          {swings > 0 && <span className="muted small"> ({percent(ratio(p.hits, swings), { places: 1 })} of swings)</span>}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+const procCount = (procs: ProcHitStat[]): number => procs.reduce((n, p) => n + p.hits, 0);
+
+/** The average over the combatant's time fighting, not the wall clock — downtime procs nothing. */
+const procsPerMinute = (hits: number, activeSec: number): number => ratio(hits * 60, activeSec, 1);
+
+/**
+ * The row's average proc rate, beside its DPS — the figure to hold against the loadout planner's
+ * procs a minute. The tooltip turns it round into "one every N seconds", which is how a proc feels.
+ */
+function ProcRate({ row }: { row: CombatantStat }) {
+  const hits = procCount(row.procs ?? []);
+  if (!hits) return null;
+  const perMin = procsPerMinute(hits, row.activeSec);
+  return (
+    <span
+      className="meter-dps"
+      title={`${count(hits, "proc")} over ${row.activeSec}s of fighting — on average one every ${Math.round(ratio(row.activeSec, hits))}s`}
+    >
+      {" "}
+      · {perMin} procs/min
+    </span>
   );
 }
 

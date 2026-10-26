@@ -53,7 +53,7 @@ const DEFAULT_SETTINGS: Settings = {
   // Off for the ports you may not be able to get, on for the gnome anyone can walk up to. Nothing
   // ruled out to begin with: `avoid` is the finer answer to "not *that* ring", and it's filled in from
   // the route panel's own buttons rather than guessed at.
-  travel: { druid: false, wizard: false, gnome: true, succor: false, avoid: [] },
+  travel: { druid: false, wizard: false, gnome: true, succor: false, avoid: [], fromMaps: false },
   castAlerts: {
     enabled: true,
     sound: true,
