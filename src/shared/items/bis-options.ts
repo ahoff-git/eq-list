@@ -85,6 +85,11 @@ export function bisOptionCount(o: BisOptions): number {
   return Object.keys(o.locks).length + o.wantEffects.length + o.excluded.length;
 }
 
+/** The same settings with every change dropped — what Reset leaves, and where a peer's plan starts from yours. */
+export function withoutChanges(o: BisOptions): BisOptions {
+  return { ...NO_BIS_OPTIONS, includeHunt: o.includeHunt, huntGrade: o.huntGrade, melee: o.melee };
+}
+
 /** Add or remove a name from one of the title lists, matching the way item names are matched. */
 export function toggleTitle(list: readonly string[], title: string): string[] {
   const key = normalizeItemName(title);

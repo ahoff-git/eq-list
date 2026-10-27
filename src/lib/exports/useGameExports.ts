@@ -5,9 +5,10 @@ import { useWatcherStatus } from "@/lib/hooks";
 import { exportCommandFor, lastExportedAt, type GameExportTimes } from "@/shared/game-exports";
 import { heldGrades, inventoryTotals, ownedItems, parseInventoryDump, type InventoryItem, type OwnedPlace } from "@/shared/game-export-dumps";
 import { holdingsOf, type Holdings } from "@/shared/tradeskills/held-materials";
-import { rowsOf, usePeerShare } from "@/lib/peers/usePeerShare";
+import { offeredCount, rowsOf, shortId, usePeerShare, type PeerShareView } from "@/lib/peers/usePeerShare";
 import type { InventoryShareRow } from "@/shared/peers/peer-share";
 import { inventoryAsksDue } from "@/shared/peers/inventory-asks";
+import { peerInventoryItems } from "@/shared/peers/peer-inventory";
 import { normalizeItemName } from "@/shared/items/grouping";
 import type { GameExportDump } from "@/shared/types";
 
@@ -94,25 +95,70 @@ export function useOwnedItems(): { owned: Map<string, OwnedPlace[]> | null; at?:
 }
 
 /**
- * What you and the peers who've shared their inventories hold, by item — for crossing a recipe or a
- * guide's materials with what's already to hand. Null when there's neither a dump nor a shared row.
- *
- * **Asks for them, too.** Inventory is a `live` kind, which nothing fetches unprompted (ADR 0309) — so
- * a view that uses holdings asks each peer offering one, once per revision of theirs — and again if
- * the tray drops the answer or none comes (`inventoryAsksDue`): opening the guide *is* the person
- * asking. Only peers who switched sharing on are offering anything to ask for.
+ * The peer share, having asked each peer offering an inventory for it. Inventory is a `live` kind,
+ * which nothing fetches unprompted (ADR 0309) — so a view that uses one asks each peer offering it,
+ * once per revision of theirs — and again if the tray drops the answer or none comes
+ * (`inventoryAsksDue`): opening the view *is* the person asking. Only peers who switched sharing on
+ * are offering anything to ask for.
  */
-export function useHoldings(): Holdings | null {
-  const { items } = useInventory();
-  const { peers, received, ask } = usePeerShare();
+function useAskedInventories(): PeerShareView {
+  const share = usePeerShare();
+  const { peers, received, ask } = share;
   // When each (peer, revision) was last asked for — the rules are `inventoryAsksDue`'s.
   const asked = useRef(new Map<string, number>());
   useEffect(() => {
     for (const peerId of inventoryAsksDue(peers, received, asked.current, Date.now())) ask(peerId, "inventory");
   }, [peers, received, ask]);
+  return share;
+}
+
+/**
+ * What you and the peers who've shared their inventories hold, by item — for crossing a recipe or a
+ * guide's materials with what's already to hand. Null when there's neither a dump nor a shared row.
+ * Asks for them, too (`useAskedInventories`).
+ */
+export function useHoldings(): Holdings | null {
+  const { items } = useInventory();
+  const { received } = useAskedInventories();
   return useMemo(() => {
     const peers = rowsOf<InventoryShareRow>(received, "inventory").map((r) => ({ by: r.by, item: r.row.item, count: r.row.count }));
     if (!items && !peers.length) return null;
     return holdingsOf(items ? inventoryTotals(items) : [], peers);
   }, [items, received]);
+}
+
+/** One person sharing their inventory with you: who, and what it reads as — null until it arrives. */
+export interface PeerInventory {
+  name: string;
+  items: InventoryItem[] | null;
+  /** When the game wrote the dump it comes from, ms. */
+  at?: number;
+}
+
+/**
+ * Everyone sharing their inventory with you, by name, each read back into the items their own dump
+ * holds (`peerInventoryItems`) — what the loadout builder plans someone else's gear from. A peer
+ * offering one is listed before it arrives, with `items` null. Asks for them (`useAskedInventories`).
+ */
+export function usePeerInventories(): PeerInventory[] {
+  const { peers, received } = useAskedInventories();
+  // Read back only when an answer lands — peers re-announce every minute, and each new array of
+  // items would re-run the loadout solve for nothing.
+  const arrived = useMemo(() => {
+    const byPeer = new Map<string, PeerInventory>();
+    for (const r of received) {
+      if (r.kind !== "inventory") continue;
+      const rows = rowsOf<InventoryShareRow>([r], "inventory").map((x) => x.row);
+      const at = Math.max(0, ...rows.map((x) => Date.parse(x.asOf)).filter(Number.isFinite));
+      byPeer.set(r.peerId, { name: r.from || shortId(r.peerId), items: peerInventoryItems(rows), ...(at ? { at } : {}) });
+    }
+    return byPeer;
+  }, [received]);
+  return useMemo(() => {
+    const byPeer = new Map(arrived);
+    for (const p of peers) {
+      if (!byPeer.has(p.peerId) && offeredCount(p, "inventory") > 0) byPeer.set(p.peerId, { name: p.name || shortId(p.peerId), items: null });
+    }
+    return [...byPeer.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [peers, arrived]);
 }

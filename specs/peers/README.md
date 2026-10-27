@@ -234,7 +234,9 @@ travels peer-to-peer, on request, over that peer's own connection.
   their newest `/outputfile inventory` dump and dated by it. It is searched on the Peers tab
   (`PeerInventories`, "Who has it") rather than listed in the tray. **What can't be traded is
   flagged by the receiver**, from its own catalogue's `NO DROP` / `NO TRADE`; rows carry no trade
-  flag at all, so a sender can't claim otherwise.
+  flag at all, so a sender can't claim otherwise. Each row also tells apart the copies a loadout
+  needs (`gear`: worn and where, graded, socketed), so the loadout builder can plan for anyone
+  sharing ([ADR 0342](../decisions/0342-a-loadout-can-be-planned-for-a-peer.md)).
 - **The Peers tab** (`src/app/components/PeersPanel.tsx`, with `PeerTray`, `PeerScores` and `PeerInventories`) — **the
   one home for the whole feature** ([ADR 0146](../decisions/0146-one-home-for-the-peer-network.md) ·
 [ADR 0176](../decisions/0176-a-room-fills-itself.md) ·

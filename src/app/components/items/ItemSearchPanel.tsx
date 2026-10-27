@@ -11,7 +11,7 @@ import ItemFacetRow from "@/app/components/items/ItemFacetRow";
 import ItemLevelBand, { MAX_PLAYER_LEVEL } from "@/app/components/items/ItemLevelBand";
 import ItemTable from "@/app/components/items/ItemTable";
 import ItemWeights from "@/app/components/items/ItemWeights";
-import BisView from "@/app/components/items/BisView";
+import BisFor from "@/app/components/items/BisFor";
 import ItemPresets from "@/app/components/items/ItemPresets";
 import StatFloors from "@/app/components/items/StatFloors";
 import { CheckField, Empty, TextField, caretGlyph, segCls } from "@/app/components/ui";
@@ -85,7 +85,7 @@ export default function ItemSearchPanel() {
   const [pace, setPace] = usePersistentState<string>(STORAGE_KEYS.itemHarvestPace, "1000");
   const [weightsOpen, setWeightsOpen] = usePersistentState(STORAGE_KEYS.itemWeightsOpen, false);
   // The same criteria and weights answer two questions: "which items are like this" (Search) and
-  // "what should I be wearing, and what next" (the loadout builder, `BisView`).
+  // "what should I be wearing, and what next" (the loadout builder, `BisView` — yours or a peer's, `BisFor`).
   const [mode, setMode] = usePersistentState<"search" | "bis">(STORAGE_KEYS.itemMode, "search");
   // What you've told the loadout builder. Held here rather than in `BisView` so a preset can carry it.
   const [storedBis, setBisOptions] = usePersistentState<BisOptions>(STORAGE_KEYS.itemBisOptions, normalizeBisOptions(undefined));
@@ -283,7 +283,7 @@ export default function ItemSearchPanel() {
       )}
 
       {mode === "bis" && (
-        <BisView
+        <BisFor
           rows={rows}
           criteria={active}
           weights={scoring}

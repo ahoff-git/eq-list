@@ -8,11 +8,11 @@ import BisStats from "@/app/components/items/BisStats";
 import BisDamage from "@/app/components/items/BisDamage";
 import { Empty, segCls } from "@/app/components/ui";
 import { DumpSection } from "@/app/components/exports/DumpParts";
-import { useInventory } from "@/lib/exports/useGameExports";
+import { useInventory, type PeerInventory } from "@/lib/exports/useGameExports";
 import { useSpellCatalog } from "@/lib/hooks";
 import { copyText } from "@/lib/clipboard";
 import { bisPlan, loadoutText, type BisPlan } from "@/shared/items/bis-plan";
-import { HUNT_GRADE_CHOICES, NO_BIS_OPTIONS, bisOptionCount, lockAll, toggleTitle, withExcluded, type BisOptions } from "@/shared/items/bis-options";
+import { HUNT_GRADE_CHOICES, bisOptionCount, lockAll, toggleTitle, withExcluded, withoutChanges, type BisOptions } from "@/shared/items/bis-options";
 import { WORN_LAYOUT } from "@/shared/items/bis";
 import { meleeWeighted } from "@/shared/items/melee";
 import { procSpellIndex } from "@/shared/items/damage-plan";
@@ -41,6 +41,9 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
  *
  * Laid out as one thing: the loadout up top with what steers it, and everything that explains or
  * refines it folded underneath.
+ *
+ * **Someone else's, too** (ADR 0342): given a `holder` — a peer sharing their inventory — it plans
+ * from what they hold instead, by your weights and criteria, so you can work out their gear with them.
  */
 export default function BisView({
   rows,
@@ -52,6 +55,7 @@ export default function BisView({
   onOptions,
   onClearName,
   rates,
+  holder,
 }: {
   rows: readonly ItemRow[];
   criteria: ItemCriteria;
@@ -65,8 +69,11 @@ export default function BisView({
   onClearName?: () => void;
   /** What attributes add to HP, mana and AC for your classes and level — the totals include them. */
   rates?: readonly DerivedRate[];
+  /** A peer to plan for, in place of you — their shared inventory, null until it arrives. */
+  holder?: PeerInventory;
 }) {
-  const { items, at } = useInventory();
+  const own = useInventory();
+  const { items, at } = holder ?? own;
   // What each proc's spell hits for — the Damage section's proc damage reads it.
   const { rows: spells } = useSpellCatalog();
   const procSpells = useMemo(() => procSpellIndex(spells), [spells]);
@@ -110,7 +117,7 @@ export default function BisView({
       <p className="muted small">
         By your value weights, for {classes.length ? classes.join(" / ") : <b>any class</b>}
         {classes.length ? "" : " — tick your three classes in Class above so only what you can wear counts"}.{" "}
-        {items ? `From your inventory dump${at ? `, written ${exportAgeText(Date.now() - at)}` : ""}.` : "No inventory dump yet — /outputfile inventory in game, and what you hold joins the plan."}
+        {sourceText(holder, items, at)}
       </p>
 
       <div className="row wrap bis-steer">
@@ -181,7 +188,7 @@ export default function BisView({
       </DumpSection>
 
       {items && (
-        <DumpSection title="Improve what you own" aside={improve ? `${plan.merges.length} merges · ${sockets.length} sockets` : "nothing to do"} defaultOpen={false}>
+        <DumpSection title={holder ? "Improve what they own" : "Improve what you own"} aside={improve ? `${plan.merges.length} merges · ${sockets.length} sockets` : "nothing to do"} defaultOpen={false}>
           {plan.merges.length > 0 && (
             <ul className="bis-list">
               {plan.merges.map((m) => (
@@ -252,6 +259,17 @@ export default function BisView({
   );
 }
 
+/** Whose inventory the plan is drawn from, and how old it is. */
+function sourceText(holder: PeerInventory | undefined, items: readonly unknown[] | null, at: number | undefined): string {
+  const age = at ? `, written ${exportAgeText(Date.now() - at)}` : "";
+  if (holder) {
+    return items
+      ? `From ${holder.name}'s shared inventory${age} — tick their classes in Class above, since what's weighed is by your sheet.`
+      : `Waiting for ${holder.name}'s inventory…`;
+  }
+  return items ? `From your inventory dump${age}.` : "No inventory dump yet — /outputfile inventory in game, and what you hold joins the plan.";
+}
+
 /**
  * Says so when the Search box's name text is narrowing what can be hunted — and loudly when it narrows
  * it to nothing, which otherwise reads as a broken page (ADR 0329). The box is respected, not ignored:
@@ -298,7 +316,7 @@ function BisChoices({ plan, options, onOptions }: { plan: BisPlan; options: BisO
         Copy loadout
       </button>
       {changed > 0 && (
-        <button className="btn sm" onClick={() => onOptions({ ...NO_BIS_OPTIONS, includeHunt: options.includeHunt, huntGrade: options.huntGrade, melee: options.melee })} title="Drop every lock, wanted effect and exclusion">
+        <button className="btn sm" onClick={() => onOptions(withoutChanges(options))} title="Drop every lock, wanted effect and exclusion">
           Reset ({changed})
         </button>
       )}

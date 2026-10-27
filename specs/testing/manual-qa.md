@@ -1352,6 +1352,14 @@ features for later in [../ideas.md](../ideas.md).
   peers behind **symmetric NAT** — that's the whole reason Open Relay is in the list, and it's the
   one claim a single-machine run can't check. Open Relay is best-effort and rate-limited, so if it
   is down, expect symmetric-NAT peers to fail while LAN peers are fine.
+- **A peer's loadout** ([ADR 0342](../decisions/0342-a-loadout-can-be-planned-for-a-peer.md)). The
+  round trip from dump to rows to rebuilt items is unit-tested; the live part isn't. Have client B
+  share its Inventory, with a dump that has two rings worn, a graded item in the bank and a stone
+  in worn gear. On client A, Items → loadout builder: B is listed under **Loadout for**, reads "on its
+  way" until the answer lands, then plans from B's gear. Check that "Wearing now" counts B's worn gear
+  at its grades, that **Improve what they own** offers B's merges, and that locking or excluding on B
+  leaves **You** untouched (and B's choices are still there after switching back). An older build on
+  B should still list and plan, with grades guessed.
 
 ## Packaged build & distribution
 

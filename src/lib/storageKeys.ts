@@ -177,6 +177,8 @@ export const STORAGE_KEYS = {
   itemOwnedOnly: "eqlist.items.ownedOnly",
   /** Items tab: what you've told best in slot — locks, wanted effects, benched items, skipped hunts. */
   itemBisOptions: "eqlist.items.bisOptions",
+  /** Items tab: the same choices for each person sharing their inventory, by name (ADR 0342). */
+  itemBisPeerOptions: "eqlist.items.bisPeerOptions",
   /** Items tab: which loadout best in slot shows — from what you own, or the theoretical best. */
   itemBisWearFrom: "eqlist.items.bisWearFrom",
   /** Items tab: named setups — criteria, weights and best-in-slot choices together (`item-presets.ts`). */

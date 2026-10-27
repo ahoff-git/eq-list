@@ -729,6 +729,10 @@ reading like a measurement, and they are shared code
   personal rewards rather than facts about the fight. Pooling (unlike matching) stays party-gated: an
   unrelated peer's real, provable overlap on a shared public mob is still excluded from your total.
   ([0276](./0276-overlapping-fights-are-pooled-not-only-proven.md))
+- **A loadout can be planned for anyone sharing their inventory.** Their rows say each worn, graded or
+  socketed copy apart (`gear`), plain stock stays a total, and the receiver rebuilds the dump from
+  them. Their locks, wanted effects and exclusions are kept per person, apart from yours, and weighed
+  by your sheet. ([0342](./0342-a-loadout-can-be-planned-for-a-peer.md))
 
 ## Stored data
 

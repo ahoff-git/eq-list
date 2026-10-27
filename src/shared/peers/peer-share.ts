@@ -60,6 +60,7 @@ import type { SharedKill } from "../kills/kill-filters";
 import type { BuffInstance, BuffRiseSource } from "../buffs/buff-tracking";
 import type { RespawnLearning, SpawnTimer } from "../mob/spawn-timers";
 import type { SharedCraftRate } from "../tradeskills/craft-rates";
+import type { GearCopy } from "../game-export-dumps";
 import { ON_PET, ON_UNKNOWN, ON_YOU, instanceKey } from "../buffs/buff-tracking";
 import { decodeWatches } from "../alerts/watch-share";
 import { PIN_TYPES, type MapPin, type PinKind } from "../map/pins";
@@ -1761,6 +1762,12 @@ export interface InventoryShareRow {
   grade?: number;
   /** Where, by place: `Bank` with slots `["3", "14"]`, `Storage: Equipment` with none. */
   places: { label: string; slots: string[]; count: number }[];
+  /**
+   * The copies a loadout needs told apart (`inventoryGear`): worn and where, graded, or socketed — so
+   * a peer can plan this person's loadout (ADR 0342). Absent from a peer that predates it, and for
+   * plain +0 stock.
+   */
+  gear?: GearCopy[];
   /** When the game wrote the dump these totals come from. */
   asOf: string;
 }
@@ -1768,6 +1775,25 @@ export interface InventoryShareRow {
 /** How many places and slots a row may name — an item is in a handful, never hundreds. */
 const MAX_PLACES = 20;
 const MAX_SLOTS = 60;
+/** Copies of one item worth telling apart — a few worn, a stack of graded spares; never thousands. */
+const MAX_GEAR = 200;
+/** An item has a handful of sockets. */
+const MAX_SOCKETS = 8;
+
+/** One told-apart copy — dropped without a place; a bad grade reads as +0, bad sockets as none. */
+function readGearCopy(raw: unknown): GearCopy[] {
+  if (!isRecord(raw)) return [];
+  const at = str(raw.at);
+  if (!at) return [];
+  const slot = str(raw.slot);
+  const grade = int(raw.grade);
+  const sockets = (Array.isArray(raw.sockets) ? raw.sockets : []).slice(0, MAX_SOCKETS).flatMap((x: unknown) => {
+    if (!isRecord(x)) return [];
+    const name = str(x.name);
+    return name ? [{ name, socket: clamp(int(x.socket) ?? 0, 0, 99) }] : [];
+  });
+  return [{ at, ...(slot ? { slot } : {}), grade: clamp(grade ?? 0, 0, MAX_GRADE), ...(sockets.length ? { sockets } : {}) }];
+}
 
 /** A peer's inventory row — dropped without an item, a positive count or a date. */
 function readInventoryRow(raw: unknown): InventoryShareRow | null {
@@ -1785,11 +1811,13 @@ function readInventoryRow(raw: unknown): InventoryShareRow | null {
     return [{ label, slots, count: clamp(n, 1, 1_000_000) }];
   });
   const grade = int(raw.grade);
+  const gear = Array.isArray(raw.gear) ? raw.gear.slice(0, MAX_GEAR).flatMap(readGearCopy) : undefined;
   return {
     item,
     count: clamp(count, 1, 1_000_000),
     ...(grade !== undefined && grade > 0 ? { grade: clamp(grade, 1, MAX_GRADE) } : {}),
     places,
+    ...(gear?.length ? { gear } : {}),
     asOf,
   };
 }

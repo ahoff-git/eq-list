@@ -18,7 +18,7 @@ import {
   type GameExportTimes,
 } from "../src/shared/game-exports";
 import type { GameExportDump } from "../src/shared/types";
-import { carryForward, inventoryTotals, parseInventoryDump, type CarriedSections } from "../src/shared/game-export-dumps";
+import { carryForward, inventoryGear, inventoryTotals, parseInventoryDump, type CarriedSections } from "../src/shared/game-export-dumps";
 import { readJson, writeJson } from "./json-store";
 import type { InventoryShareRow } from "../src/shared/peers/peer-share";
 
@@ -119,20 +119,25 @@ export function watchExport(
 
 /**
  * The followed character's inventory as peers see it, when sharing is on: one row per item, totals
- * and places, dated by the dump. Empty when there's no dump.
+ * and places, and the copies a loadout needs told apart, dated by the dump. Empty when there's no dump.
  */
 export function inventoryShareRows(logFile: string | undefined, userDataDir?: string): InventoryShareRow[] {
   const dump = userDataDir ? readInventory(logFile, userDataDir) : readExport(logFile, "inventory");
   if (!dump) return [];
   const asOf = new Date(dump.writtenAt).toISOString();
   const items = [...parseInventoryDump(dump.text), ...(dump.carriedItems ?? [])];
-  return inventoryTotals(items).map((t) => ({
-    item: t.baseName,
-    count: t.count,
-    ...(t.bestGrade > 0 ? { grade: t.bestGrade } : {}),
-    places: t.places,
-    asOf,
-  }));
+  const gear = inventoryGear(items);
+  return inventoryTotals(items).map((t) => {
+    const copies = gear.get(t.baseName.toLowerCase());
+    return {
+      item: t.baseName,
+      count: t.count,
+      ...(t.bestGrade > 0 ? { grade: t.bestGrade } : {}),
+      places: t.places,
+      ...(copies ? { gear: copies } : {}),
+      asOf,
+    };
+  });
 }
 
 /**

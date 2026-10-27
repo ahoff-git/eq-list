@@ -382,6 +382,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0339: A spell nobody cast is a proc: a spell hit whose attacker was never seen casting it is counted as that combatant's proc, and the damage meter shows procs a minute beside the swings](./0339-a-spell-nobody-cast-is-a-proc.md)
 - [0340: Routes borrow a pack that labels the ports: a drawn pack with no ring or spire routes over the installed pack that has the most, and the setup check's travel row offers a rebuild only when the stored graph differs from a fresh build (narrows 0100's never-repairs)](./0340-a-setup-check-may-offer-a-fix-it-can-prove.md)
 - [0341: A travel graph ships with the app, and routes use it by default: Brewall's graph built with every era open and the live era closed at load; Settings can switch to building from your own map files (reverses 0169's rejected "ship a built graph")](./0341-a-travel-graph-ships-with-the-app.md)
+- [0342: The loadout builder plans for you or anyone sharing their inventory: rows gain an optional per-copy `gear` (worn slot, grade, sockets), the receiver rebuilds the dump, and each person's locks and exclusions are kept apart from yours](./0342-a-loadout-can-be-planned-for-a-peer.md)
 
 ## Open Questions
 

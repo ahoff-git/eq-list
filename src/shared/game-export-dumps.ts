@@ -202,6 +202,12 @@ export interface InventoryTotal {
 const AREA_LABELS = Object.fromEntries(INVENTORY_AREAS.map((a) => [a.area, a.label])) as Record<InventoryArea, string>;
 const AREA_ORDER = Object.fromEntries(INVENTORY_AREAS.map((a, n) => [a.area, n])) as Record<InventoryArea, number>;
 
+/** The area a place label (`inventoryPlaceLabel`) names — `Storage: Equipment` is `storage`. */
+export function inventoryAreaOfLabel(label: string): InventoryArea {
+  // No label is a prefix of another, so a Storage tab's `Storage: …` is the only one this widens.
+  return INVENTORY_AREAS.find((a) => label.startsWith(a.label))?.area ?? "elsewhere";
+}
+
 /** The place an item is in, as `InventoryPlace.label` names it. */
 export function inventoryPlaceLabel(item: Pick<InventoryItem, "area" | "slot">): string {
   return item.area === "storage" ? `${AREA_LABELS.storage}: ${item.slot}` : AREA_LABELS[item.area];
@@ -238,9 +244,44 @@ export function inventoryTotals(items: readonly InventoryItem[]): InventoryTotal
     if (slot && !place.slots.includes(slot)) place.slots.push(slot);
     totals.set(key, total);
   }
-  const order = (label: string) => AREA_ORDER[INVENTORY_AREAS.find((a) => label.startsWith(a.label))?.area ?? "elsewhere"];
+  const order = (label: string) => AREA_ORDER[inventoryAreaOfLabel(label)];
   for (const t of totals.values()) t.places.sort((a, b) => order(a.label) - order(b.label) || a.label.localeCompare(b.label));
   return [...totals.values()].sort((a, b) => a.baseName.localeCompare(b.baseName));
+}
+
+/**
+ * One copy a total can't describe: worn (in which slot), graded, or socketed. Everything else of an
+ * item is interchangeable +0 stock, which its total's places already say.
+ */
+export interface GearCopy {
+  /** Its place, as `InventoryPlace.label` names it. */
+  at: string;
+  /** Its slot there, as `InventoryPlace.slots` writes it — a worn slot's name, a bag's number. */
+  slot?: string;
+  grade: number;
+  sockets?: InventorySocket[];
+}
+
+/**
+ * The copies of each item a loadout needs told apart, keyed like `inventoryTotals` (lower-cased base
+ * name): what's worn and where, every graded copy, and what's in each copy's sockets.
+ */
+export function inventoryGear(items: readonly InventoryItem[]): Map<string, GearCopy[]> {
+  const gear = new Map<string, GearCopy[]>();
+  for (const item of items) {
+    if (item.area !== "worn" && !item.grade && !item.sockets.length) continue;
+    const key = item.baseName.toLowerCase();
+    const slot = slotText(item);
+    const copy: GearCopy = {
+      at: inventoryPlaceLabel(item),
+      ...(slot ? { slot } : {}),
+      grade: item.grade,
+      ...(item.sockets.length ? { sockets: item.sockets } : {}),
+    };
+    // A stack is one row of the dump; each copy in it is the same.
+    gear.set(key, [...(gear.get(key) ?? []), ...Array.from({ length: Math.max(1, item.count) }, () => copy)]);
+  }
+  return gear;
 }
 
 // ─── Faction ────────────────────────────────────────────────────────────────

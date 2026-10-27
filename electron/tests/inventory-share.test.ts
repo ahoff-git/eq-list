@@ -72,3 +72,53 @@ test("a row may carry the sender's best grade; a +0, a missing one or nonsense r
   assert.equal(plain.grade, undefined);
   assert.equal(silly.grade, 10, "clamped to the highest grade there is");
 });
+
+test("a row may tell copies apart for a loadout; a copy without a place is dropped, bad numbers trimmed", () => {
+  const [ring, none] = inventory.read(
+    [
+      {
+        item: "Moonstone Ring",
+        count: 2,
+        places: [{ label: "Worn", slots: ["Fingers"], count: 2 }],
+        gear: [
+          { at: "Worn", slot: "Fingers", grade: 4, sockets: [{ name: "Moonstone Ring (Exaltation)", socket: 7 }, "junk", { socket: 9 }] },
+          { at: "Worn", slot: "Fingers", grade: 99 },
+          { slot: "Fingers", grade: 1 },
+          "junk",
+        ],
+        asOf: AS_OF,
+      },
+      { item: "Jade", count: 1, places: [], gear: [], asOf: AS_OF },
+    ],
+    newId,
+  ) as { gear?: unknown[] }[];
+  assert.deepEqual(ring.gear, [
+    { at: "Worn", slot: "Fingers", grade: 4, sockets: [{ name: "Moonstone Ring (Exaltation)", socket: 7 }] },
+    { at: "Worn", slot: "Fingers", grade: 10 },
+  ]);
+  assert.equal(none.gear, undefined, "an empty list reads as none");
+});
+
+test("what we offer tells apart worn, graded and socketed copies — and only those", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "eql-inv-gear-"));
+  fs.mkdirSync(path.join(root, "Logs"));
+  const logFile = path.join(root, "Logs", "eqlog_Kainos_qeynos.txt");
+  fs.writeFileSync(logFile, "");
+  fs.writeFileSync(
+    path.join(root, "Kainos_qeynos-Inventory.txt"),
+    [
+      "Location\tName\tID\tCount\tSlots",
+      "Primary\tFine Steel Rapier\t7352\t1\t11",
+      "Primary-Slot10\tMinotaur Horn (Exaltation)\t13077\t1\t11",
+      "Bank4\tFine Steel Rapier +2\t7352\t1\t11",
+      "Bank5\tFine Steel Rapier\t7352\t1\t11",
+      "General 1\tBone Chips\t13073\t643\t11",
+    ].join("\r\n"),
+  );
+  const rows = inventoryShareRows(logFile);
+  assert.deepEqual(rows.find((r) => r.item === "Fine Steel Rapier")?.gear, [
+    { at: "Worn", slot: "Primary", grade: 0, sockets: [{ name: "Minotaur Horn (Exaltation)", socket: 10 }] },
+    { at: "Bank", slot: "4", grade: 2 },
+  ]);
+  assert.equal(rows.find((r) => r.item === "Bone Chips")?.gear, undefined, "plain stock needs no telling apart");
+});
