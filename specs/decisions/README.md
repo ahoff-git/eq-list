@@ -385,6 +385,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0342: The loadout builder plans for you or anyone sharing their inventory: rows gain an optional per-copy `gear` (worn slot, grade, sockets), the receiver rebuilds the dump, and each person's locks and exclusions are kept apart from yours](./0342-a-loadout-can-be-planned-for-a-peer.md)
 - [0343: Resists and avoidance (dodge/parry/block/riposte) are filed in the damage cells, so every drill-down shows a resist rate and a miss breakdown per spell or skill, per victim, per fight](./0343-resists-and-avoidance-live-in-the-damage-cells.md)
 - [0344: Fight search matches every combatant, and the matches get a trends panel (damage mix, resisted spells, avoidance, deaths) read off their damage cells](./0344-fight-search-finds-combatants-and-reads-trends.md)
+- [0345: A debuff's landing is read off its own sentence (paired with your cast) and filed in the cells, so debuffs get a resist rate per target; your own spells always show theirs, 0% included](./0345-a-debuff-lands-by-its-own-sentence.md)
 
 ## Open Questions
 

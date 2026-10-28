@@ -1349,6 +1349,11 @@ export function createCombatStats(
         } else sp.blocked += 1;
         break;
       }
+      case "spell-landed":
+        // Your debuff taking hold, which only its own sentence announces (`own-landings.ts`) — filed
+        // beside its resists so a slow or a tash has a resist rate per target too (ADR 0345).
+        w.damage.record(event);
+        break;
       case "death":
       case "charm":
       case "stance":

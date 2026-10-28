@@ -36,6 +36,7 @@ import { createLogger } from "../src/shared/logging";
 import { dataReport } from "./data-health";
 import { digestLog } from "./log-import";
 import type { CombatHistory } from "./combat-history";
+import type { LandingLookup } from "../src/shared/combat/own-landings";
 import type { FactionLog } from "./faction-log";
 import type { KillLog } from "./kill-log";
 import type { LootLog } from "./loot-log";
@@ -76,6 +77,8 @@ export interface ReReadDeps {
   logDir: string;
   /** The character being watched, so the kill log's identity is restored to it afterwards. */
   live: string;
+  /** The game's landing sentences — see `importLog`'s own parameter. */
+  landedOnOther?: LandingLookup;
 }
 
 /**
@@ -135,7 +138,17 @@ export async function reReadLogs(deps: ReReadDeps): Promise<ReReadReport | null>
   for (const file of sources) {
     await breathe(); // before the work, so the first file is off the caller's tick too
     try {
-      const res = digestLog(file, deps.live, deps.killLog, deps.history, deps.lootLog, deps.factionLog, deps.npcSightings);
+      const res = digestLog(
+        file,
+        deps.live,
+        deps.killLog,
+        deps.history,
+        deps.lootLog,
+        deps.factionLog,
+        deps.npcSightings,
+        undefined,
+        deps.landedOnOther,
+      );
       report.files.push(file);
       report.refreshed += res.refreshed;
       report.added += res.fights;

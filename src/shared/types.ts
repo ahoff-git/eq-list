@@ -702,6 +702,23 @@ export interface SpellOutcomeEvent extends LogEventBase {
   target?: string;
 }
 
+/**
+ * One of **your** detrimental spells taking hold on somebody — a slow, a tash, a snare. The log has no
+ * grammar for this: it writes the spell's own flavour sentence ("Lord Nagafen glances nervously
+ * about."), which only the game's string file can name. So this is never parsed from a line on its
+ * own; `own-landings.ts` makes it, pairing that sentence with the cast you had in flight.
+ *
+ * It is what gives a debuff a landing count per target, and with it a resist rate beside the
+ * resists `SpellOutcomeEvent` already records ([ADR 0345](../../specs/decisions/0345-a-debuff-lands-by-its-own-sentence.md)).
+ */
+export interface SpellLandedEvent extends LogEventBase {
+  kind: "spell-landed";
+  caster: string;
+  /** Canonical name, rank stripped — the same name the cast line and its resists carry. */
+  spell: string;
+  target: string;
+}
+
 /** Your own death. `killer` is absent for the bare "You died." line. */
 export interface DeathEvent extends LogEventBase {
   kind: "death";
@@ -789,6 +806,7 @@ export type CombatEvent =
   | HealEvent
   | CastEvent
   | SpellOutcomeEvent
+  | SpellLandedEvent
   | DeathEvent
   | BuffFadedEvent
   | StanceEvent
@@ -937,11 +955,17 @@ export interface DamageCell {
    */
   avoided?: AvoidanceCounts;
   /**
-   * Casts of this spell the victim resisted — a spell's own kind of miss. Absent when there were
-   * none, and on older fights. Only *your* spells and spells cast *at you* can show one: the log
-   * reports no-one else's resists.
+   * Casts of this spell the victim resisted — a spell's own kind of miss. Always present (0 or
+   * more) on a cell of *your* spell, so a missing figure means "not recorded" rather than "none";
+   * on a cell of a spell cast at you it appears only once one was resisted. Absent on older fights.
+   * Only those two can show one: the log reports no-one else's resists.
    */
   resists?: number;
+  /**
+   * Landings of your spell the log announced with the spell's own sentence rather than a damage
+   * line — how a debuff lands (`SpellLandedEvent`). Absent when there were none.
+   */
+  landed?: number;
   /**
    * The damage type the log gave this source's hits ("fire", "cold"…), when it gave one — what a
    * resist would have to be raised against. Absent for melee, and on older fights.
@@ -1033,14 +1057,31 @@ export interface DamageNode {
   /** Casts of this node's spells the victim resisted — see `DamageCell.resists`. */
   resists: number;
   /**
-   * Resists over every landing plus every resist — 0 when nothing was resisted. Only damaging
-   * landings are visible here, so a spell that never damages (a mez, a root) has no denominator
-   * and shows its resists as a count; `SpellStat.resistRate` is the per-spell figure that sees
-   * every cast.
+   * Times this node's spells took hold: per cell, the damaging landings or the announced ones
+   * (`DamageCell.landed`), whichever the log showed more of — a nuke that also announces itself must
+   * not count twice.
+   */
+  landings: number;
+  /**
+   * Whether every cell here could have recorded a resist — your own spells, filed by a build that
+   * counted them. What lets "0% resisted" be said rather than left blank.
+   */
+  resistsKnown: boolean;
+  /**
+   * `resists / (landings + resists)` — 0 when nothing was resisted. A spell that neither damages nor
+   * announces its landing (most mezzes) still has no denominator here, and shows its resists as a
+   * count; `SpellStat.resistRate` is the per-spell figure that sees every cast.
    */
   resistRate: number;
   /** True when this level names you or something of yours. Only set on combatant levels. */
   mine?: boolean;
+  /**
+   * True when this level names something your side was fighting (`enemiesIn`) — a mob, as near as
+   * the log lets anything say so. Only set on combatant levels. What a view links as a page.
+   */
+  enemy?: boolean;
+  /** How every hit here was delivered, when they all agree — what says a `source` is a spell. */
+  kind?: DamageKind;
   children: DamageNode[];
 }
 

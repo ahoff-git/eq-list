@@ -181,6 +181,7 @@ export function createFightScope({ ours, sidesKnown = () => true }: FightScopeOp
           return hasArticle(event.healer) && hasArticle(event.target) ? "drop" : "hold";
         case "cast":
         case "spell-outcome":
+        case "spell-landed":
           if (!sidesKnown() || inFight(event.caster)) return "admit";
           return hasArticle(event.caster) ? "drop" : "hold";
         case "pet-engage":

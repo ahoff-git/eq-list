@@ -1,6 +1,6 @@
 "use client";
-import { useState } from "react";
-import { drillDown } from "@/shared/combat/damage-tree";
+import { useMemo, useState } from "react";
+import { drillDown, enemiesIn } from "@/shared/combat/damage-tree";
 import { healDrillDown } from "@/shared/combat/heal-tree";
 import type {
   Avoidance,
@@ -17,7 +17,7 @@ import type {
 import { count, percent } from "@/shared/format";
 import { Caret, caretGlyph } from "@/app/components/ui";
 import { ratio } from "@/shared/numbers";
-import { heldAsNamed } from "@/shared/shown-name";
+import { heldAsNamed, notAnItem } from "@/shared/shown-name";
 import ItemLink from "@/app/components/items/ItemLink";
 
 /** Which number the bars are showing. */
@@ -68,6 +68,12 @@ export default function DamageMeter({
   // The tree needs to know whose rows are yours; the rows already say, so nothing here has to
   // re-derive who the player is.
   const mine = (name: string): boolean => rows.find((r) => r.name === name)?.mine ?? false;
+  // Which rows are mobs, so their names link to a page — the same sides the drill-down's own nodes
+  // carry (`DamageNode.enemy`). A fight stored before the cells has no sides to read, so no links.
+  const enemies = useMemo(
+    () => (cells?.length ? enemiesIn(cells, (n) => rows.some((r) => r.mine && r.name === n)) : new Set<string>()),
+    [cells, rows],
+  );
 
   return (
     <div className="meters">
@@ -99,7 +105,9 @@ export default function DamageMeter({
             >
               <div className="meter-bar" style={{ width: `${top > 0 ? Math.max(2, (v / top) * 100) : 0}%` }} />
               {canExpand && <Caret open={isOpen} className="meter-caret" />}
-              <span className="meter-name">{row.name}</span>
+              <span className="meter-name">
+                {enemies.has(row.name) ? <ItemLink title={notAnItem(row.name)} /> : row.name}
+              </span>
               <span className="meter-nums">
                 {v.toLocaleString()} <span className="muted">({percent(ratio(v, total))})</span>
                 {view === "dealt" && <span className="meter-dps"> {row.dps}/s</span>}
@@ -202,7 +210,9 @@ function Node({ node, startOpen }: { node: DamageNode; startOpen: boolean }) {
         {/* The span stays whether or not there's a glyph in it: it's the column the labels line up
             against, and a leaf node without it sits two characters left of its siblings. */}
         <span className="caret">{canExpand ? caretGlyph(open) : ""}</span>
-        <span className="dmg-label">{node.label}</span>
+        <span className="dmg-label">
+          <NodeLabel node={node} />
+        </span>
         <span className="spacer" />
         <span className="dmg-nums">
           {node.damage.toLocaleString()} <span className="muted">({percent(node.share)})</span>
@@ -214,11 +224,25 @@ function Node({ node, startOpen }: { node: DamageNode; startOpen: boolean }) {
   );
 }
 
+/**
+ * A level's name, linked when there's a page behind it: a mob (hover for what the wiki knows, click
+ * to open it) or a spell. You, your pet and your group-mates have no page, and neither does a melee
+ * skill ("Crush") or a shield's word ("flames"), so those stay plain. The link stops its own click,
+ * so opening a name never also folds the row it sits in.
+ */
+function NodeLabel({ node }: { node: DamageNode }) {
+  if (node.enemy) return <ItemLink title={notAnItem(node.label)} />;
+  // The log names a spell as it landed, which is the page's name — no rank to apply.
+  if (node.axis === "source" && node.kind === "Spell") return <ItemLink title={heldAsNamed(node.label)} />;
+  return <>{node.label}</>;
+}
+
 /** The metrics that fit on the line; `nodeDetail` has the rest. */
 function meta(node: DamageNode): string {
   const swings = node.hits - node.ticks + node.misses;
   return [
-    `${node.hits}×`,
+    // A debuff never hits; what it does is land, so that's what its count is of.
+    node.hits > 0 || node.misses > 0 ? `${node.hits}×` : node.landings > 0 ? `${node.landings} landed` : "",
     node.crits > 0 ? `${percent(node.critRate)} crit` : "",
     node.misses > 0 ? `${percent(node.hitRate)} of ${swings}` : "",
     resistSummary(node),
@@ -240,7 +264,7 @@ function nodeDetail(node: DamageNode): string {
     node.hits > 0 ? `${node.hits} hits · ${avg} average · ${node.maxHit.toLocaleString()} biggest` : "",
     node.ticks > 0 ? `${node.ticks} of them damage-over-time ticks` : "",
     node.misses > 0 ? `${percent(node.hitRate)} of ${swings} swings landed — ${missBreakdown(node)}` : "",
-    node.resists > 0 ? resistDetail(node) : "",
+    resistDetail(node),
     node.crits > 0 ? `${node.crits} critical (${percent(node.critRate)} of hits)` : "",
     "",
     ...shareLines(node),
@@ -268,19 +292,25 @@ function missBreakdown(node: DamageNode): string {
 }
 
 /**
+ * Whether there's a resist figure to give at all: something was resisted, or this is your own spell
+ * on a fight that counted resists — where none is a real "0%", worth saying, rather than unknown.
+ */
+const hasResistFigure = (node: DamageNode): boolean => node.resists > 0 || (node.resistsKnown && node.landings > 0);
+
+/**
  * The on-the-line resist figure. A rate only when there were landings to set it against — a mez
- * that never does damage has none here, and "100% resisted" would be a lie about it.
+ * that lands in silence has none, and "100% resisted" would be a lie about it.
  */
 function resistSummary(node: DamageNode): string {
-  if (!node.resists) return "";
-  return node.hits > node.ticks ? `${percent(node.resistRate)} resisted` : `${node.resists} resisted`;
+  if (!hasResistFigure(node)) return "";
+  return node.landings > 0 ? `${percent(node.resistRate)} resisted` : `${node.resists} resisted`;
 }
 
 function resistDetail(node: DamageNode): string {
-  const landings = node.hits - node.ticks;
-  return landings > 0
-    ? `${percent(node.resistRate)} resisted — ${node.resists} of ${landings + node.resists} times it reached its target`
-    : `${count(node.resists, "resist")} (it never landed damage here, so there's no rate to give)`;
+  if (!hasResistFigure(node)) return "";
+  return node.landings > 0
+    ? `${percent(node.resistRate)} resisted — ${node.resists} of ${node.landings + node.resists} times it reached its target`
+    : `${count(node.resists, "resist")} (no landing seen here, so there's no rate to give)`;
 }
 
 /**
@@ -333,7 +363,9 @@ function HealBranch({ node, startOpen }: { node: HealNode; startOpen: boolean })
       >
         <div className="dmg-share" style={{ width: `${Math.max(1, node.share * 100)}%` }} />
         <span className="caret">{canExpand ? caretGlyph(open) : ""}</span>
-        <span className="dmg-label">{node.label}</span>
+        <span className="dmg-label">
+          {node.axis === "spell" ? <ItemLink title={heldAsNamed(node.label)} /> : node.label}
+        </span>
         <span className="spacer" />
         <span className="dmg-nums">
           {node.amount.toLocaleString()} <span className="muted">({percent(node.share)})</span>
@@ -490,6 +522,8 @@ function bare(label: string, axis: DamageNode["axis"], damage: number, parent: n
     hitRate: 0,
     avoided: { dodge: 0, parry: 0, block: 0, riposte: 0 },
     resists: 0,
+    landings: 0,
+    resistsKnown: false,
     resistRate: 0,
     children: [],
   };

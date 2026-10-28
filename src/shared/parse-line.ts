@@ -41,6 +41,7 @@ const COMBAT_KINDS: Record<CombatEvent["kind"], true> = {
   heal: true,
   cast: true,
   "spell-outcome": true,
+  "spell-landed": true,
   death: true,
   "buff-faded": true,
   stance: true,

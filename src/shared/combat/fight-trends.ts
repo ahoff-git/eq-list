@@ -14,7 +14,7 @@
  * See [ADR 0344](../../specs/decisions/0344-fight-search-finds-combatants-and-reads-trends.md).
  */
 import { SELF } from "./combat-parser";
-import { enemiesIn } from "./damage-tree";
+import { cellLandings, enemiesIn } from "./damage-tree";
 import { searchWords } from "./fight-search";
 import { percent } from "../format";
 import { ratio } from "../numbers";
@@ -60,7 +60,7 @@ export interface TrendSource {
 /** One of your spells against the subject. */
 export interface TrendSpell {
   spell: string;
-  /** Damaging landings, ticks excluded. */
+  /** Times it took hold — damaging landings or announced ones, ticks excluded (`cellLandings`). */
   landings: number;
   resists: number;
   /** `resists / (landings + resists)`. */
@@ -181,7 +181,7 @@ function addIncoming(into: Map<string, TrendSource>, c: DamageCell): void {
 function addSpell(into: Map<string, TrendSpell>, c: DamageCell): void {
   let s = into.get(c.source);
   if (!s) into.set(c.source, (s = { spell: c.source, landings: 0, resists: 0, resistRate: 0 }));
-  s.landings += c.hits - c.ticks;
+  s.landings += cellLandings(c);
   s.resists += c.resists ?? 0;
 }
 

@@ -20,6 +20,7 @@ import { runMigrations } from "./migrations";
 import { createAlertQueue } from "./alert-queue";
 import { isSameSitting } from "../src/shared/log-catchup";
 import { createCombatStats } from "./combat-stats";
+import { createOwnLandings } from "../src/shared/combat/own-landings";
 import { createLogClock } from "../src/shared/log-clock";
 import { reReadLogs } from "./log-reread";
 import { createSpellCatalog } from "./spells";
@@ -263,6 +264,12 @@ if (!app.requestSingleInstanceLock()) {
   // entirely optional: no install, no file, no mana figures, and nothing else changes.
   const spells = createSpellCatalog();
   const combat = createCombatStats(undefined, (spell, rank) => spells.find(spell, rank)?.mana);
+  /**
+   * Your debuffs landing, which only the game's string file can read (ADR 0345). The lexicon is only
+   * asked while you have a cast in flight, so this never makes a launch load the string file.
+   */
+  const landedOnOther = (message: string) => spells.lexicon().landedOnOther(message);
+  const landings = createOwnLandings(landedOnOther);
   const history = createCombatHistory(db, userData);
   // A background recompute of zones()/bests()/sessions()'s shared cache landed a fresher answer
   // (ADR 0247) — the same shape as `killLog.onObservationsChanged`, just its own channel since
@@ -450,6 +457,7 @@ if (!app.requestSingleInstanceLock()) {
   const celebrations = createCelebrationFeed();
 
   const { mergedFight } = registerIpc({
+    landedOnOther,
     store,
     wiki,
     lucy,
@@ -767,6 +775,7 @@ if (!app.requestSingleInstanceLock()) {
     spawns.noteSitting();
   });
   watcher.onCombat((event) => {
+    landings.note(event);
     combat.record(event);
     hp.record(event);
     // The alert path runs *after* the meter and the HP estimate, always: only an alert may ever wait
@@ -794,6 +803,8 @@ if (!app.requestSingleInstanceLock()) {
   const logClock = createLogClock();
   watcher.onLine((line) => {
     logClock.note(line.at);
+    const landed = landings.line(line);
+    if (landed) combat.record(landed);
     alerts.line(line);
     achievements.line(line); // a raw-line achievement criterion, matched the same way an alert rule is
     // Landing sentences ("Bloop is surrounded by a brief lupine aura.") are the one thing that says
@@ -1050,6 +1061,7 @@ if (!app.requestSingleInstanceLock()) {
       npcSightings,
       logDir: store.getSettings().logDir,
       live: characterFromLogFile(watcher.status().file) ?? "",
+      landedOnOther,
     }).then((report) => {
       if (!report) return;
       // The figures behind the scoreboard just moved, so re-offer them — silently, by `absorb`'s own

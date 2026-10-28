@@ -71,6 +71,7 @@ import type { MapPin } from "../src/shared/map/pins";
 import { forTransfer, itemRows } from "../src/shared/items/item-search";
 import { normalizeItemName } from "../src/shared/items/grouping";
 import { RACE_UNLOCK_CHEAT_SHEET_URL } from "../src/shared/faction/race-unlocks";
+import type { LandingLookup } from "../src/shared/combat/own-landings";
 
 const log = createLogger("ipc");
 
@@ -81,6 +82,8 @@ export interface IpcContext {
   lucy: LucyClient;
   combat: CombatTracker;
   history: CombatHistory;
+  /** The game's landing sentences, for a digested log's debuffs (`importLog`, ADR 0345). */
+  landedOnOther: LandingLookup;
   /** Personal bests — the board, and wiping it. */
   scores: HighScoreKeeper;
   xp: XpTracker;
@@ -218,7 +221,7 @@ function registerListIpc(context: IpcContext): void {
  * Settings, the cast-alert test, and digesting a past log — the Settings tab's own surface.
  */
 function registerSettingsIpc(context: IpcContext, shared: SharedIpc): void {
-  const { store, watcher, combat, history, killLog, lootLog, factionLog, npcSightings, spawns, broadcast } = context;
+  const { store, watcher, combat, history, killLog, lootLog, factionLog, npcSightings, spawns, broadcast, landedOnOther } = context;
 
   // ── panel settings ──
   const { ui } = shared;
@@ -364,7 +367,7 @@ function registerSettingsIpc(context: IpcContext, shared: SharedIpc): void {
     const file = res.filePaths[0];
     const live = characterFromLogFile(watcher.status().file) ?? "";
     try {
-      const result = digestLog(file, live, killLog, history, lootLog, factionLog, npcSightings, spawns.noteRare);
+      const result = digestLog(file, live, killLog, history, lootLog, factionLog, npcSightings, spawns.noteRare, landedOnOther);
       npcSightings.flush();
       killLog.flush();
       history.flush();

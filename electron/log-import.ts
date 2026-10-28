@@ -36,6 +36,7 @@ import { CORRELATION_WINDOW_SEC, createFactionCauseTracker } from "../src/shared
 import { classifyZoneLine } from "../src/shared/zones/place";
 import { createLogger } from "../src/shared/logging";
 import { createCombatStats } from "./combat-stats";
+import { createOwnLandings, type LandingLookup } from "../src/shared/combat/own-landings";
 import { loginSession } from "./combat-history";
 import type { DerivedFight, FactionEvent, LogImportResult as SharedImportResult } from "../src/shared/types";
 import type { CombatHistory } from "./combat-history";
@@ -89,10 +90,11 @@ export function digestLog(
   factionLog?: FactionLog,
   npcSightings?: NpcSightings,
   noteRare?: (mob: string) => void,
+  landedOnOther?: LandingLookup,
 ): LogImportResult {
   try {
     killLog.setPlayer(characterFromLogFile(file) ?? "");
-    return importLog(file, killLog, history, lootLog, factionLog, npcSightings, noteRare);
+    return importLog(file, killLog, history, lootLog, factionLog, npcSightings, noteRare, landedOnOther);
   } finally {
     killLog.setPlayer(live);
   }
@@ -108,6 +110,9 @@ export function importLog(
   /** Told of every mob a consider tags `- a rare creature -`, so an eaten log teaches the spawn tracker
    *  the rares a watched one would have (ADR 0324). */
   noteRare?: (mob: string) => void,
+  /** The game's landing sentences, so a debuff's landings are read the way the live path reads them
+   *  (ADR 0345). Absent with no game install, and then debuffs simply have no landing count. */
+  landedOnOther?: LandingLookup,
 ): LogImportResult {
   // This can legitimately re-encounter a line already recorded — eating the same log twice, or one
   // already watched live — so kills and drops must compare against everything on permanent record
@@ -132,6 +137,7 @@ export function importLog(
   // `main.ts` feeds the live one, which is what makes an eaten fight indistinguishable from a
   // watched one — including its spells, its deaths and its per-mob rates.
   const combat = history ? createCombatStats() : null;
+  const landings = combat && landedOnOther ? createOwnLandings(landedOnOther) : null;
   /**
    * The same kill-proximity guess `main.ts` makes live (`faction-cause.ts`), replayed here so a
    * digested log's faction hits carry the same attribution a watched one would have gotten —
@@ -192,8 +198,12 @@ export function importLog(
     // Someone speaking at /say range is standing near you — like dialogue, a line no event claims.
     const speaker = sightings && speakerOf(line.message);
     if (speaker) sightings.note(speaker, "speech", line.at, zone);
+    // Before the parse, and on every line: a landing sentence is a line no parser claims.
+    const landed = landings?.line(line);
+    if (landed) combat?.record(landed);
     const event = parseSplitLine(line);
     if (!event) continue;
+    if (landings && isCombatEvent(event)) landings.note(event);
     const at = Date.parse(event.at);
     if (at) {
       if (!firstAt) firstAt = at;
