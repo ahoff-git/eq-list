@@ -34,9 +34,14 @@ export interface GameExportCommand {
   staleAfterMs: number;
   /** Column names for a dump the game writes without a header line (the spellbook). */
   columns?: readonly string[];
+  /** The column whose cells each name a wiki page (a spell), shown as a link to it. */
+  linkColumn?: string;
   /** What an empty dump means, where "nothing" is an answer rather than a failure. */
   emptyText?: string;
 }
+
+/** Both spell dumps are written headerless as `<level>\t<spell>`. */
+const SPELL_COLUMNS = ["Level", "Spell"] as const;
 
 export const GAME_EXPORT_COMMANDS: readonly GameExportCommand[] = [
   {
@@ -67,7 +72,8 @@ export const GAME_EXPORT_COMMANDS: readonly GameExportCommand[] = [
     what: "Every spell and combat ability you have scribed",
     fileType: "spellbook",
     staleAfterMs: 7 * DAY,
-    columns: ["Level", "Spell"],
+    columns: SPELL_COLUMNS,
+    linkColumn: "Spell",
   },
   {
     command: "/outputfile missingspells",
@@ -75,6 +81,8 @@ export const GAME_EXPORT_COMMANDS: readonly GameExportCommand[] = [
     what: "Spells and abilities your class could have at your level but you haven't scribed",
     fileType: "missingspells",
     staleAfterMs: 7 * DAY,
+    columns: SPELL_COLUMNS,
+    linkColumn: "Spell",
     emptyText: "Nothing missing: you have every spell your class can scribe at your level.",
   },
   {

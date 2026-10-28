@@ -115,5 +115,5 @@ function DumpBody({ cmd, text, carriedItems }: { cmd: GameExportCommand; text: s
   if (cmd === exportCommandFor("inventory")) return <InventoryDumpView text={text} carriedItems={carriedItems} />;
   if (cmd === exportCommandFor("faction")) return <FactionDumpView text={text} />;
   if (cmd === exportCommandFor("achievements")) return <AchievementsDumpView text={text} />;
-  return <DumpTableView text={text} columns={cmd.columns} emptyText={cmd.emptyText ?? "This dump is empty."} />;
+  return <DumpTableView text={text} columns={cmd.columns} linkColumn={cmd.linkColumn} emptyText={cmd.emptyText ?? "This dump is empty."} />;
 }
