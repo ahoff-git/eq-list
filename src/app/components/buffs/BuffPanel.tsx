@@ -17,6 +17,7 @@ import { distinctSorted } from "@/shared/sorting";
 import type { BuffInstance, KnownBuff } from "@/shared/types";
 import ItemLink from "@/app/components/items/ItemLink";
 import { rankedSpellTitle } from "@/shared/combat/combat-parser";
+import { heldAsNamed } from "@/shared/shown-name";
 
 /** The class picker's options, alphabetical rather than `SPELL_CLASSES`'s file-column order (that
  *  order matters for parsing the spell file and must stay put there) — the same order every other
@@ -368,7 +369,13 @@ function KnownRow({ known }: { known: KnownBuff }) {
         title="Watch this spell at all. Off means it is never mentioned again — and the row stays, so you can change your mind"
         checked={known.tracked}
         onChange={(checked) => void api()?.buffs.track(known.key, checked)}
-        label={<b className="buff-name">{known.spell}</b>}
+        label={
+          // Inside the checkbox's <label>, so a click on the name would also toggle watching it —
+          // cancelled on the way down, leaving the click to mean one thing: open the spell.
+          <b className="buff-name" onClickCapture={(e) => e.preventDefault()}>
+            <ItemLink title={heldAsNamed(known.spell)} />
+          </b>
+        }
       />
       <span className="buff-known-facts muted small">
         {known.detrimental && (

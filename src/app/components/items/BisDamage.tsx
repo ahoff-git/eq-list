@@ -8,6 +8,7 @@ import { gradedTitle } from "@/shared/items/item-upgrade";
 import { PROC_DEX_CAP, SPELLBLADE_CLASSES, type MeleeWeights } from "@/shared/items/melee";
 import type { DamageReport, ProcChoice, WeaponLine, WeaponSetup } from "@/shared/items/damage-plan";
 import { normalizeItemName } from "@/shared/items/grouping";
+import { wikiName } from "@/shared/shown-name";
 
 const pct = (n: number) => `${Math.round(n * 1000) / 10}%`;
 
@@ -22,7 +23,7 @@ function Weapon({ line }: { line?: WeaponLine }) {
       {line.proc && (
         <span className="muted small" title={line.proc.perSecond ? `${line.proc.name}: ${line.ppm} procs a minute here` : `${line.proc.name}: its damage isn't counted — none on its page, over time, or only some mobs`}>
           {" "}
-          · {line.proc.name}
+          · <ItemLink title={wikiName(line.proc.name)} />
         </span>
       )}
       {!line.heldAt && <span className="muted small"> · hunt</span>}
@@ -72,7 +73,9 @@ function MeanestProcs({ report, wanted, onWant }: { report: DamageReport; wanted
       <ul className="bis-list">
         {report.meanestProcs.map((p) => (
           <li key={p.name}>
-            <b>{p.name}</b> — {p.damage} a hit, {p.perSecond} damage/s
+            <b>
+              <ItemLink title={wikiName(p.name)} />
+            </b> — {p.damage} a hit, {p.perSecond} damage/s
             <span className="muted"> · on {p.carriers} card{p.carriers === 1 ? "" : "s"}</span>{" "}
             <button
               className="btn ghost sm"

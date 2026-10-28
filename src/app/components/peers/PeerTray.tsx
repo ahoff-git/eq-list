@@ -6,6 +6,7 @@ import { rowsOf } from "@/lib/peers/usePeerShare";
 import { SHARE_KINDS, mergeBuffs, mergeTimers, shareKind, type ShareKind } from "@/shared/peers/peer-share";
 import { count, duration } from "@/shared/format";
 import { targetLabel } from "@/shared/buffs/buff-tracking";
+import { rankedSpellTitle } from "@/shared/combat/combat-parser";
 import { Caret } from "@/app/components/ui";
 import ItemLink from "@/app/components/items/ItemLink";
 import { ZoneName } from "@/app/components/map/ZoneName";
@@ -399,7 +400,7 @@ function Timers({ received }: { received: ReceivedShare[] }) {
       {merged.map((entry) => (
         <div className="tray-row" key={`${entry.timer.key}-${entry.timer.dueAt}`}>
           <span className="tray-what">
-            {entry.timer.mob}
+            <ItemLink title={notAnItem(entry.timer.mob)} />
             <span className="muted small">
               {" "}
               · <ZoneName zone={entry.timer.place} />
@@ -443,7 +444,9 @@ function Buffs({ received }: { received: ReceivedShare[] }) {
     <>
       {merged.map((entry, i) => (
         <div className="tray-row" key={i}>
-          <span className="tray-what">{entry.buff.spell}</span>
+          <span className="tray-what">
+            <ItemLink title={rankedSpellTitle(entry.buff.spell, entry.buff.rank)} />
+          </span>
           <span className="muted small">{targetLabel(entry.buff.target)}</span>
           <span className="muted small">{entry.by ? `via ${entry.by}` : "yours"}</span>
         </div>

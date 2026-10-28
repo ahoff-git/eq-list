@@ -142,6 +142,19 @@ function ControlWindow() {
   useEffect(() => {
     if (nav.tab !== "achievements") setFocusAchievement(null);
   }, [nav.tab]);
+  /** The dump the stale-export chip sent us to read — the same pattern again, on the exports tab.
+   *  An object, not the bare key, so clicking the chip again after picking another view still lands. */
+  const [focusExport, setFocusExport] = useState<{ fileType: string } | null>(null);
+  const viewExport = useCallback(
+    (fileType: string) => {
+      setFocusExport({ fileType });
+      openTab("exports");
+    },
+    [openTab],
+  );
+  useEffect(() => {
+    if (nav.tab !== "exports") setFocusExport(null);
+  }, [nav.tab]);
   useEffect(() => {
     const a = api();
     if (!a) return;
@@ -365,13 +378,13 @@ function ControlWindow() {
           {tab === "crafting" && <CraftingLogPanel />}
           {tab === "combat" && <DamagePanel />}
           {tab === "session" && <SessionPanel />}
-          {tab === "exports" && <GameExportsPanel />}
+          {tab === "exports" && <GameExportsPanel focus={focusExport} />}
           {tab === "alerts" && <AlertsPanel />}
           {tab === "peers" && <PeersPanel focusPeer={focusPeer} onViewPeer={viewPeer} />}
           {tab === "settings" && <SettingsPanel />}
         </div>
 
-        <StatusBar>{capabilities.log && <StaleExportChip />}</StatusBar>
+        <StatusBar>{capabilities.log && <StaleExportChip onOpen={viewExport} />}</StatusBar>
       </div>
 
       {/* Outside `.app`, which clips its children (`overflow: hidden`): a notice is drawn over the

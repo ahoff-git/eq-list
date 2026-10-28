@@ -10,6 +10,7 @@ import { over } from "@/shared/numbers";
 import { ratePerHour } from "@/app/components/combat/SessionPanel";
 import { StatTile } from "@/app/components/ui";
 import ItemLink from "@/app/components/items/ItemLink";
+import { notAnItem } from "@/shared/shown-name";
 import type { RunningGoal } from "@/shared/types";
 
 /** How many rows a card shows before it says "and N more" — a glance, not the full board. */
@@ -79,7 +80,8 @@ function TimersCard() {
       {next.slice(0, ROWS).map((t) => (
         <div key={t.id} className="now-row">
           <span className="now-clock">{t.state === "alive" ? "alive" : t.state === "up" ? "up" : formatCountdown(countdownMs(t, now))}</span>
-          <span>{t.mob}</span>
+          {/* A clock you started names whatever you typed — not a mob with a page to open. */}
+          <span>{t.kind === "custom" ? t.mob : <ItemLink title={notAnItem(t.mob)} />}</span>
         </div>
       ))}
       <More shown={Math.min(ROWS, next.length)} total={next.length} />

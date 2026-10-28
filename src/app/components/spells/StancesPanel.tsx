@@ -18,6 +18,8 @@ import {
 import FacetPicker from "@/app/components/FacetPicker";
 import SearchField from "@/app/components/SearchField";
 import { Empty, SourceCountRow, segCls } from "@/app/components/ui";
+import { wikiName } from "@/shared/shown-name";
+import ItemLink from "@/app/components/items/ItemLink";
 
 type View = "stances" | "invocations";
 
@@ -122,7 +124,9 @@ function AbilityRow({ ability, ticked }: { ability: Ability; ticked: ReadonlySet
   return (
     <div className="stance-row">
       <div className="row wrap stance-row-head">
-        <b className="stance-name">{ability.name}</b>
+        <b className="stance-name">
+          <ItemLink title={wikiName(ability.name)} />
+        </b>
         <span className="stance-classes">
           {ability.classes.map((c) => (
             <span key={c} className={`badge stance-class ${ticked.has(c) ? "on" : ""}`} title={c}>

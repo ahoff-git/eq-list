@@ -1,5 +1,5 @@
 /**
- * Every item and zone a view names is a link: hover an item for its card, click either for its page.
+ * Every item, zone, mob and spell a view names is a link: hover it for its card, click it for its page.
  *
  * Two ways a name has slipped through as plain text, each caught by its own rule:
  *
@@ -7,9 +7,9 @@
  *      markers (`shown-name.ts`) exist to feed `ItemLink`/`NameList`; one rendered straight into a
  *      cell is a name someone meant to link and didn't — best in slot's Replaces column was exactly
  *      this. Any such call outside an `<ItemLink …>` or `<NameList …>` tag fails.
- *   2. **An item or zone field rendered as JSX text** — `{row.item}`, `{h.row.zones[0]}`,
- *      `{timer.place}`. Link it (`ItemLink`, or `ZoneName`/`ZoneNames` for a zone), or say here why
- *      it stays plain.
+ *   2. **An item, zone, mob or spell field rendered as JSX text** — `{row.item}`, `{h.row.zones[0]}`,
+ *      `{timer.place}`, `{known.mob}`, `{buff.spell}`. Link it (`ItemLink`, or `ZoneName`/`ZoneNames`
+ *      for a zone), or say here why it stays plain.
  *
  * **To change what's allowed, edit `PLAIN` below** — one line per site, with the reason. A reason is
  * required because the exceptions are real (a native `<option>` can't hover, an alert banner is gone
@@ -34,11 +34,12 @@ const DECIDERS = ["gradedTitle", "rankedSpellTitle", "heldAsNamed", "wikiName", 
 const LINKS = ["ItemLink", "NameList"];
 
 /**
- * A JSX text child naming an item or a zone: `{x.item}`, `{x.zone}`, `{x.zones[0]}`, `{x.place}`,
- * optionally followed by a `??` / `||` fallback. Matched on the field, since that's what says what
- * the value is; a bare local (`{zone}`) is too often a label to judge by name.
+ * A JSX text child naming an item, a zone, a mob or a spell: `{x.item}`, `{x.zones[0]}`, `{x.mob}`,
+ * `{x.spell}`, `{x.zone.name}`…, optionally followed by a `??` / `||` fallback. Matched on the field,
+ * since that's what says what the value is; a bare local (`{zone}`) is too often a label to judge by
+ * name, and a bare `.name` could be anything (a player, a preset, an alert style).
  */
-const NAMED_FIELD = /\.(item|zone|zones\[\d+\]|place)$/;
+const NAMED_FIELD = /\.(item|zone|zones\[\d+\]|place|mob|spell|killer|caster|zone\.name|proc\.name|target\.name)$/;
 
 /** Sites that stay plain on purpose — `path under src/app|expression`: why. */
 const PLAIN: Record<string, string> = {
@@ -56,6 +57,22 @@ const PLAIN: Record<string, string> = {
   // Gone in seconds, or chrome rather than a view.
   "components/alerts/CastAlerts.tsx|loot.item": "an alert banner — on screen for seconds, never hovered",
   "components/alerts/CastAlerts.tsx|celebration.item": "an alert banner — on screen for seconds, never hovered",
+  // The alert window: banners and HUD lists over the game, click-through by default and gone in
+  // seconds — and an ItemLink card would be clipped to that small window anyway.
+  "components/alerts/CastAlerts.tsx|a.spell": "an alert banner — on screen for seconds, never hovered",
+  "components/alerts/CastAlerts.tsx|a.caster": "an alert banner — on screen for seconds, never hovered",
+  "components/alerts/CastAlerts.tsx|buff.spell": "an alert banner — on screen for seconds, never hovered",
+  "components/alerts/CastAlerts.tsx|goal.target.name": "an alert banner — on screen for seconds, never hovered",
+  "components/buffs/BuffOverlay.tsx|buff.spell": "a HUD row in the click-through alert window",
+  "components/buffs/DebuffOverlay.tsx|buff.spell": "a HUD row in the click-through alert window",
+  "components/goals/GoalsOverlay.tsx|goal.target.name": "a HUD row in the click-through alert window",
+  "components/mob/SpawnOverlay.tsx|timer.mob": "a HUD row in the click-through alert window",
+  // Not a page's name, or already a control of its own.
+  "components/items/SearchPanel.tsx|m.mob": "already a link — opens what your kills know about the mob",
+  "components/kills/KillList.tsx|kill.killer": "the player who took the kill from you, not a mob",
+  "components/mob/SpawnPanel.tsx|camp.mob": "inside a picker button that chooses the camp",
+  "components/mob/SpawnPanel.tsx|timer.mob": "a hand-made timer's name is free text you typed, not always a mob",
+  "components/peers/PeerTray.tsx|r.row.spell": "a shared watch's trigger — text to match in the log, not a spell's title",
 };
 
 /** Every `.tsx` under `dir`. */
@@ -131,7 +148,7 @@ const scan = () =>
     return [...unlinkedDecisions(file, text), ...plainNames(file, text)];
   });
 
-test("every item and zone a view names is a link, or is listed with the reason it isn't", () => {
+test("every item, zone, mob and spell a view names is a link, or is listed with the reason it isn't", () => {
   const found = [...new Set(scan())];
   const unlisted = found.filter((site) => !(site in PLAIN));
   assert.deepEqual(unlisted, [], "link these (ItemLink, ZoneName / ZoneNames), or add them to PLAIN with the reason they stay plain");

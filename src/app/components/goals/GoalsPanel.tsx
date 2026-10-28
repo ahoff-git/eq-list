@@ -9,7 +9,9 @@ import { count } from "@/shared/format";
 import { CheckField, Empty, segCls } from "@/app/components/ui";
 import ItemNameField from "@/app/components/items/ItemNameField";
 import SuggestField from "@/app/components/SuggestField";
-import type { GoalTargetKind, GoalTemplate, RunningGoal } from "@/shared/types";
+import ItemLink from "@/app/components/items/ItemLink";
+import { heldAsNamed, notAnItem } from "@/shared/shown-name";
+import type { GoalTarget, GoalTargetKind, GoalTemplate, RunningGoal } from "@/shared/types";
 
 /**
  * The three ways to start a farming goal (ADR 0199 adds the last two to ADR 0198's original):
@@ -325,7 +327,7 @@ function GoalRow({ goal, now }: { goal: RunningGoal; now: number }) {
     <div className={`goal-row ${goal.state}`}>
       <div className="gr-top">
         <span className="gr-name">
-          {goal.target.name}
+          <GoalTargetName target={goal.target} />
           {kindLabel && <em className="gr-kind"> ({kindLabel})</em>}
         </span>
         <span className="gr-status">{status}</span>
@@ -343,4 +345,14 @@ function GoalRow({ goal, now }: { goal: RunningGoal; now: number }) {
       </div>
     </div>
   );
+}
+
+/**
+ * What a goal is after, linked by its kind: an item as you typed it (a grade kept), a mob as a page.
+ * "Any" is the tracker's own label for a wildcard, so there's nothing to open.
+ */
+function GoalTargetName({ target }: { target: GoalTarget }) {
+  if (target.kind === "item") return <ItemLink title={heldAsNamed(target.name)} />;
+  if (target.kind === "mob") return <ItemLink title={notAnItem(target.name)} />;
+  return <>{target.name}</>;
 }

@@ -25,6 +25,8 @@ import SecondsField from "@/app/components/SecondsField";
 import SuggestField from "@/app/components/SuggestField";
 import ZonePicker from "@/app/components/map/ZonePicker";
 import { ZoneName } from "@/app/components/map/ZoneName";
+import ItemLink from "@/app/components/items/ItemLink";
+import { notAnItem } from "@/shared/shown-name";
 import { CURATED_ZONES, sortZones } from "@/shared/map/zones";
 import type { Zone } from "@/shared/map/types";
 import type { KnownSpawn, RunningSpawn, SpawnKind } from "@/shared/types";
@@ -536,7 +538,8 @@ function RunningRow({ timer, now, several }: { timer: RunningSpawn; now: number;
             drop to its own line. Shown only where it disambiguates: the clocks are interchangeable,
             so this is a handle to click, not an order, and never reads as "the 2nd one". */}
         <span>
-          {timer.mob}
+          {/* A clock you started names whatever you typed — not a mob with a page to open. */}
+          {custom ? timer.mob : <ItemLink title={notAnItem(timer.mob)} />}
           {several && <em className="spawn-slot"> #{timer.slot}</em>}
         </span>
         <small>
@@ -628,7 +631,7 @@ function KnownRow({ known }: { known: KnownSpawn }) {
   return (
     <div className="spawn-known-row">
       <span className="spawn-name">
-        {known.mob}
+        <ItemLink title={notAnItem(known.mob)} />
         <small>
           <ZoneName zone={known.place} />
         </small>
@@ -1115,7 +1118,7 @@ function NotTracked({ mobs }: { mobs: string[] }) {
       <div className="spawn-dismissed-rows">
         {mobs.map((mob) => (
           <span key={mob} className="spawn-dismissed-row">
-            {mob}
+            <ItemLink title={notAnItem(mob)} />
             <button className="btn ghost sm" onClick={() => void api()?.spawns.markNamed(mob, true)}>
               Track again
             </button>

@@ -17,6 +17,8 @@ import type {
 import { count, percent } from "@/shared/format";
 import { Caret, caretGlyph } from "@/app/components/ui";
 import { ratio } from "@/shared/numbers";
+import { heldAsNamed } from "@/shared/shown-name";
+import ItemLink from "@/app/components/items/ItemLink";
 
 /** Which number the bars are showing. */
 export type DamageView = "dealt" | "taken" | "healed";
@@ -412,7 +414,7 @@ function Procs({ procs, swings, activeSec }: { procs: ProcHitStat[]; swings: num
       </span>
       {procs.map((p) => (
         <span key={p.spell} title={`${p.spell}: ${count(p.hits, "proc")} for ${p.damage.toLocaleString()} damage, ${perMin(p.hits)} a minute`}>
-          {p.spell} <span className="muted">{p.hits}×</span>
+          <ItemLink title={heldAsNamed(p.spell)} /> <span className="muted">{p.hits}×</span>
           {swings > 0 && <span className="muted small"> ({percent(ratio(p.hits, swings), { places: 1 })} of swings)</span>}
         </span>
       ))}

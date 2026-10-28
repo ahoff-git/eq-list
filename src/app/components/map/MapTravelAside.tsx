@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { copyText } from "@/lib/clipboard";
 import { locText } from "@/shared/format";
+import { ZoneName } from "@/app/components/map/ZoneName";
 import type { TravelSurvey } from "@/shared/types";
 
 /**
@@ -52,7 +53,7 @@ function Network({ net }: { net: TravelSurvey["networks"][number] }) {
         <ol className="mta-list">
           {net.destinations.map((d) => (
             <li key={d.id} className={net.here.includes(d.id) ? "is-here" : ""}>
-              {d.zone.name}
+              <ZoneName zone={d.zone.name} />
               <span className="muted small"> · {d.label}</span>
             </li>
           ))}
@@ -84,7 +85,9 @@ export default function MapTravelAside({ survey }: { survey: TravelSurvey | null
   return (
     <aside className="map-travel-aside no-drag">
       <div className="mta-head">
-        <strong>{survey.zone.name}</strong>
+        <strong>
+          <ZoneName zone={survey.zone.name} />
+        </strong>
         <span className="muted small" title="Nodes the graph puts in this zone and can place on this map">
           {placed.length} on the map
         </span>

@@ -18,6 +18,8 @@ import type { DamageAxis, DeathRecap, FightBest, FightStats, HealAxis, HpEstimat
 import { Empty, segCls, StatTile } from "@/app/components/ui";
 import { duration, percent, when } from "@/shared/format";
 import { ratio } from "@/shared/numbers";
+import { notAnItem } from "@/shared/shown-name";
+import ItemLink from "@/app/components/items/ItemLink";
 /**
  * The Combat tab: the damage meter, plus who healed whom. Two axes of choice, because they answer
  * different questions:
@@ -402,7 +404,7 @@ function Deaths({ deaths }: { deaths: DeathRecap[] }) {
       {deaths.map((d) => (
         <div className="death" key={d.at}>
           <div className="row">
-            <span className="death-killer">{d.killer ?? "unknown"}</span>
+            <span className="death-killer">{d.killer ? <ItemLink title={notAnItem(d.killer)} /> : "unknown"}</span>
             <span className="muted small">{new Date(d.at).toLocaleTimeString()}</span>
             <span className="spacer" />
             <span className="muted small">
@@ -413,7 +415,7 @@ function Deaths({ deaths }: { deaths: DeathRecap[] }) {
           <div className="death-sources">
             {d.incoming.slice(0, 5).map((i) => (
               <span key={i.source}>
-                {i.source} <span className="muted">{fmt(i.amount)}</span>
+                <ItemLink title={notAnItem(i.source)} /> <span className="muted">{fmt(i.amount)}</span>
               </span>
             ))}
           </div>

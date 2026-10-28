@@ -111,6 +111,21 @@ const TRACES: Record<string, string> = {
   "tradeskills/TradeskillsPanel.tsx|wikiName(r.link)": "tradeskill guides: every material, choice and result is an ungraded wiki name, so it's the +0 thing",
   "tradeskills/TradeskillsPanel.tsx|wikiName(s.item)": "Tradeskills: the shopping view names each material exactly as the guide does",
   "tradeskills/TradeskillsPanel.tsx|wikiName(t)": "tradeskill guides: every material, choice and result is an ungraded wiki name, so it's the +0 thing",
+  "buffs/BuffPanel.tsx|heldAsNamed(known.spell)": "a spell page found under its exact name is that spell, shown as printed — not levelled by its numeral",
+  "combat/DamageMeter.tsx|heldAsNamed(p.spell)": "a spell page found under its exact name is that spell, shown as printed — not levelled by its numeral",
+  "combat/DamagePanel.tsx|notAnItem(d.killer)": "not-an-item links: a page that isn't an item, recipe or spell never levels, whatever name opens it",
+  "combat/DamagePanel.tsx|notAnItem(i.source)": "not-an-item links: a page that isn't an item, recipe or spell never levels, whatever name opens it",
+  "goals/GoalsPanel.tsx|heldAsNamed(target.name)": "shopping list: an entry added by a graded name keeps it, so the List tab links it at that grade",
+  "goals/GoalsPanel.tsx|notAnItem(target.name)": "not-an-item links: a page that isn't an item, recipe or spell never levels, whatever name opens it",
+  "items/BisDamage.tsx|wikiName(line.proc.name)": "Spells tab: every catalogue row opens and hovers as printed, at level 0 — its title is the spell",
+  "items/BisDamage.tsx|wikiName(p.name)": "Spells tab: every catalogue row opens and hovers as printed, at level 0 — its title is the spell",
+  "mob/SpawnPanel.tsx|notAnItem(timer.mob)": "not-an-item links: a page that isn't an item, recipe or spell never levels, whatever name opens it",
+  "mob/SpawnPanel.tsx|notAnItem(known.mob)": "not-an-item links: a page that isn't an item, recipe or spell never levels, whatever name opens it",
+  "mob/SpawnPanel.tsx|notAnItem(mob)": "not-an-item links: a page that isn't an item, recipe or spell never levels, whatever name opens it",
+  "now/NowOverview.tsx|notAnItem(t.mob)": "not-an-item links: a page that isn't an item, recipe or spell never levels, whatever name opens it",
+  "peers/PeerTray.tsx|notAnItem(entry.timer.mob)": "not-an-item links: a page that isn't an item, recipe or spell never levels, whatever name opens it",
+  "peers/PeerTray.tsx|rankedSpellTitle(entry.buff.spell, entry.buff.rank)": "spells: a ranked name is read back at its rank, and falls back to the unranked page",
+  "spells/StancesPanel.tsx|wikiName(ability.name)": "Spells tab: every catalogue row opens and hovers as printed, at level 0 — its title is the spell",
 };
 
 test("a plain string is not a ShownName — the level has to be decided to link it", () => {

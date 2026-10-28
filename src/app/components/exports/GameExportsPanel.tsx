@@ -1,4 +1,5 @@
 "use client";
+import { useEffect } from "react";
 import { Empty, segCls } from "@/app/components/ui";
 import { useExportDump, useExportTimes } from "@/lib/exports/useGameExports";
 import { usePersistentState } from "@/lib/usePersistentState";
@@ -27,10 +28,16 @@ const COMMANDS = "commands";
  * the game last wrote that dump for the character you're logged in as — the game only writes them
  * when the player types the command, so nudging them to type it again is the most this app can do.
  * Beside it, one view per dump that exists, reading what's inside.
+ *
+ * `focus` is a dump something else sent us to (the status bar's stale-export chip): it becomes the
+ * remembered view, so a dump that isn't there yet falls back to Commands like any other.
  */
-export default function GameExportsPanel() {
+export default function GameExportsPanel({ focus }: { focus?: { fileType: string } | null }) {
   const { times, now, logFile } = useExportTimes();
   const [view, setView] = usePersistentState<string>(STORAGE_KEYS.exportsView, COMMANDS);
+  useEffect(() => {
+    if (focus) setView(focus.fileType);
+  }, [focus, setView]);
 
   const prefix = exportFilePrefix(logFile);
   const available = ALL_EXPORT_COMMANDS.filter((c) => lastExportedAt(c, times) !== undefined);
