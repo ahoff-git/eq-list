@@ -12,7 +12,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { splitLine, parseCombine, parseLoot } from "../../src/shared/log-parser";
-import { heldGrades, inventoryTotals, parseInventoryDump } from "../../src/shared/game-export-dumps";
+import { heldGrades, inventoryTotals, parseDumpTable, parseInventoryDump } from "../../src/shared/game-export-dumps";
+import { exportCommandFor } from "../../src/shared/game-exports";
 import { rankedSpellTitle, spellName, spellRank } from "../../src/shared/combat/combat-parser";
 import { ladderOf, levelInName, pageForName, unrankedSpellTitle } from "../../src/shared/upgrade-view";
 import { itemGrade, itemBaseName } from "../../src/shared/names";
@@ -59,6 +60,18 @@ test("inventory dump: a row's name keeps its grade, and the parsed grade agrees 
   const items = parseInventoryDump(["Location\tName\tID\tCount\tSlots", "Fingers\tMoonstone Ring +4\t10150\t1\t11", "Bank1\tBackpack*\t32601\t1\t8"].join("\r\n"));
   for (const item of items) assert.equal(item.grade, levelInName(item.name, "item"), item.name);
   assert.equal(items[0].name, "Moonstone Ring +4");
+});
+
+test("spell dumps: the Spell column links each name exactly as the game wrote it", () => {
+  // Real headerless shapes from an EQL `/outputfile spellbook` / `missingspells`.
+  const text = ["10\tIllusion: Half Dark Elf", "49\tBurnout II"].join("\r\n");
+  for (const fileType of ["spellbook", "missingspells"]) {
+    const cmd = exportCommandFor(fileType)!;
+    const table = parseDumpTable(text, cmd.columns);
+    const at = table.header.indexOf(cmd.linkColumn!);
+    assert.ok(at >= 0, `${fileType}: the linked column is in the header`);
+    assert.deepEqual(table.rows.map((r) => r[at]), ["Illusion: Half Dark Elf", "Burnout II"], "linked as written");
+  }
 });
 
 test("spells: a ranked name is read back at its rank, and falls back to the unranked page", () => {

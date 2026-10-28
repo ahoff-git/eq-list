@@ -46,6 +46,7 @@ const TRACES: Record<string, string> = {
   "combat/CampReport.tsx|notAnItem(p.row.mob)": "not-an-item links: a page that isn't an item, recipe or spell never levels, whatever name opens it",
   "combat/SpellTable.tsx|rankedSpellTitle(p.row.spell, p.row.rank)": "spells: a ranked name is read back at its rank, and falls back to the unranked page",
   "exports/InventoryDumpView.tsx|gradedTitle(t.baseName, t.bestGrade)": "Exports by item: a total is linked at the best grade among the copies it counts",
+  "exports/DumpTableView.tsx|heldAsNamed(row.cells[n])": "spell dumps: the Spell column links each name exactly as the game wrote it",
   "exports/InventoryDumpView.tsx|heldAsNamed(item.name)": "inventory dump: a row's name keeps its grade, and the parsed grade agrees with ItemLink's reading",
   "faction/FactionPanel.tsx|notAnItem(c.source)": "not-an-item links: a page that isn't an item, recipe or spell never levels, whatever name opens it",
   "faction/FactionPanel.tsx|notAnItem(causeSource(hit)!)": "not-an-item links: a page that isn't an item, recipe or spell never levels, whatever name opens it",
