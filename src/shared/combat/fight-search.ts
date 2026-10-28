@@ -5,16 +5,19 @@
  * narrow the stored fights, and main owns the list — so the matching itself lives here, pure
  * and I/O-free, where it can be tested on its own and reused if another view ever needs it.
  *
- * What it searches is **what the fight is called and where it happened** — the two things a
- * player remembers about a fight from last week ("that Minotaur Lord in Steamfont"). Numbers
+ * What it searches is **who was in the fight and where it happened** — the two things a player
+ * remembers about a fight from last week ("that Minotaur Lord in Steamfont"). Every combatant, not
+ * just the one the fight is labelled after: "every time I fought Nagafen" includes the pull where
+ * his adds out-tanked him for the label, and a group-mate's name finds the evenings they were along.
+ * Numbers
  * and timestamps are deliberately not searchable: they're what the list already sorts and
  * shows, and matching digits against damage totals would turn "10" into noise.
  */
 import type { StoredFight } from "../types";
 
 /**
- * Every whitespace-separated word must appear somewhere in the fight's name or zone, in any
- * order — so "coyote steam" finds the coyotes in Steamfont without knowing which field holds
+ * Every whitespace-separated word must appear somewhere in the fight's name, combatants or zone,
+ * in any order — so "coyote steam" finds the coyotes in Steamfont without knowing which field holds
  * which. Case-insensitive substring matching, as everywhere else in the app.
  *
  * An empty term matches everything: a filter with nothing in it filters nothing.
@@ -22,7 +25,8 @@ import type { StoredFight } from "../types";
 export function fightMatches(fight: StoredFight, term: string): boolean {
   const words = searchWords(term);
   if (words.length === 0) return true;
-  const haystack = `${fight.label} ${fight.zone ?? ""}`.toLowerCase();
+  const combatants = fight.stats.byCombatant.map((c) => c.name).join(" ");
+  const haystack = `${fight.label} ${combatants} ${fight.zone ?? ""}`.toLowerCase();
   return words.every((w) => haystack.includes(w));
 }
 

@@ -942,6 +942,11 @@ export interface DamageCell {
    * reports no-one else's resists.
    */
   resists?: number;
+  /**
+   * The damage type the log gave this source's hits ("fire", "cold"…), when it gave one — what a
+   * resist would have to be raised against. Absent for melee, and on older fights.
+   */
+  damageType?: string;
   /** Landed hits the log tagged "(Critical)". */
   crits: number;
   maxHit: number;

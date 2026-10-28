@@ -10,11 +10,7 @@ import type { FightStats, SpellModeStat, SpellStat } from "@/shared/types";
 import { count, figure, percent } from "@/shared/format";
 import { ratio } from "@/shared/numbers";
 import { rankedSpellTitle } from "@/shared/combat/combat-parser";
-/**
- * A resist rate worth flagging. One in four casts wasted is the point where the spell is the problem
- * rather than the luck — below that it's variance on a small number of casts.
- */
-const HIGH_RESIST_RATE = 0.25;
+import { HIGH_RESIST_RATE } from "@/shared/combat/fight-trends";
 
 /** The synthetic "everything that wasn't a named spell" row's id — excluded from the detail panel,
  *  the same way it was never clickable as a `<tr>`. */

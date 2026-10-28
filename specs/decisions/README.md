@@ -384,6 +384,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0341: A travel graph ships with the app, and routes use it by default: Brewall's graph built with every era open and the live era closed at load; Settings can switch to building from your own map files (reverses 0169's rejected "ship a built graph")](./0341-a-travel-graph-ships-with-the-app.md)
 - [0342: The loadout builder plans for you or anyone sharing their inventory: rows gain an optional per-copy `gear` (worn slot, grade, sockets), the receiver rebuilds the dump, and each person's locks and exclusions are kept apart from yours](./0342-a-loadout-can-be-planned-for-a-peer.md)
 - [0343: Resists and avoidance (dodge/parry/block/riposte) are filed in the damage cells, so every drill-down shows a resist rate and a miss breakdown per spell or skill, per victim, per fight](./0343-resists-and-avoidance-live-in-the-damage-cells.md)
+- [0344: Fight search matches every combatant, and the matches get a trends panel (damage mix, resisted spells, avoidance, deaths) read off their damage cells](./0344-fight-search-finds-combatants-and-reads-trends.md)
 
 ## Open Questions
 

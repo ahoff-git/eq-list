@@ -24,6 +24,12 @@ everything else, so this list can stay short enough to read:
 
 ## Next up
 
+- **Fight trends suggest what to do about them.** The history search's trend tips
+  ([ADR 0344](./decisions/0344-fight-search-finds-combatants-and-reads-trends.md)) say what hurts
+  ("Lava Breath (fire, 72%)") and carry the figures (`TrendTip.sources[].damageType`, melee skill).
+  Turn them into suggestions: raise fire resist (and search gear/buffs for it) against a fire-heavy
+  mob, mitigation/AC against crushing melee, a different spell against a resist wall.
+
 - **One achievements view: the app's and the game's export together.** Now → Achievements
   (`AchievementsPanel`, [ADR 0212](./decisions/0212-an-achievement-criterion-can-watch-the-log-or-wait-to-be-told.md)) tracks the stock
   catalog and your own criteria from the log. Character → Inventory & exports shows the game's

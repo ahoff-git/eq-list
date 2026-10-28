@@ -4329,3 +4329,20 @@ select optgroup {
    since grid cells sit in no table class; scoped to the old `.stat-table` they had stopped applying. */
 .num-accent { color: var(--accent); }
 .num-bad { color: var(--bad); }
+
+/* Above the search results: what the fights found have in common. Footnote-sized, like the
+   spell table's invocation notes, so it reads as a summary of the list rather than a second list. */
+.fight-trends {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 12px;
+  flex: none;
+}
+.fight-trends .trend-tip { margin: 0; }
+.fight-trends .trend-resisted, .fight-trends .trend-deaths { color: var(--bad); }

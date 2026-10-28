@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { useRead, useReading } from "@/lib/hooks";
 import type { FightSearch, SessionSummary, StoredFight } from "@/shared/types";
@@ -7,6 +7,7 @@ import type { FightSearch, SessionSummary, StoredFight } from "@/shared/types";
 import { clock, count, dayTime, duration } from "@/shared/format";
 import { Caret, Empty } from "@/app/components/ui";
 import ZoneTag from "@/app/components/map/ZoneTag";
+import { fightTrends, trendTips, type FightTrends, type TrendTip } from "@/shared/combat/fight-trends";
 /** A stable empty, so a render before the answer lands doesn't look like a change. */
 const NO_FIGHTS: StoredFight[] = [];
 
@@ -90,10 +91,10 @@ export default function DamageHistory({
       <div className="row">
         <input
           className="field hist-search"
-          placeholder="Search mob or zone…"
+          placeholder="Search mob, player or zone…"
           value={term}
           onChange={(e) => setTerm(e.target.value)}
-          title="Show only fights whose mob name or zone matches — every word has to match, in either field"
+          title="Show only fights with someone of that name in them, or in that zone — every word has to match somewhere"
         />
         <span className="muted small">
           {needle ? (unanswered ? "searching…" : matchTally(found)) : sessionTally(sessions.length)}
@@ -108,7 +109,10 @@ export default function DamageHistory({
           always-on-top float otherwise pushes the fight you picked off the bottom of the tab. */}
       <div className="hist-list">
         {needle ? (
-          <Matches fights={found.fights} quiet={unanswered} picked={picked} onPick={onPick} />
+          <>
+            {!unanswered && <Trends fights={found.fights} term={needle} />}
+            <Matches fights={found.fights} quiet={unanswered} picked={picked} onPick={onPick} />
+          </>
         ) : (
           sessions.map((s) => (
             <Session
@@ -165,6 +169,49 @@ function Matches({
       ))}
     </div>
   );
+}
+
+/**
+ * What the fights the search found have in common — whose damage it mostly is, which of your
+ * spells keep getting resisted, how often you died. Read off the fights on screen (the newest
+ * slice, when the search was capped), so it says how many it's from.
+ */
+function Trends({ fights, term }: { fights: StoredFight[]; term: string }) {
+  const trends = useMemo(() => fightTrends(fights, term), [fights, term]);
+  const tips = useMemo(() => (trends ? trendTips(trends) : []), [trends]);
+  if (!trends || !tips.length) return null;
+  return (
+    <div className="fight-trends">
+      <span className="dmg-caption" title={trendsScope(trends)}>
+        trends · {trendsSubject(trends)} · {count(trends.measured, "fight")}
+      </span>
+      {tips.map((tip) => (
+        <TipLine key={`${tip.kind}:${tip.spell?.spell ?? ""}`} tip={tip} />
+      ))}
+    </div>
+  );
+}
+
+function TipLine({ tip }: { tip: TrendTip }) {
+  return <p className={`trend-tip trend-${tip.kind}`}>{tip.text}</p>;
+}
+
+/** Who the trends are about, short enough for the caption. */
+function trendsSubject(t: FightTrends): string {
+  if (!t.subjects.length) return "every mob";
+  return t.subjects.length === 1 ? t.subjects[0] : `${t.subjects[0]} +${t.subjects.length - 1}`;
+}
+
+/** The caption's hover: exactly what the figures cover, since "trends" over three fights is thin. */
+function trendsScope(t: FightTrends): string {
+  const older = t.fights - t.measured;
+  return [
+    t.subjects.length > 1 ? `About: ${t.subjects.join(", ")}` : "",
+    `From ${count(t.measured, "fight")} with a full breakdown`,
+    older > 0 ? `${count(older, "older fight")} recorded before breakdowns were kept, so only counted for deaths` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 /** One sitting: when it was, what it came to, and — open — the fights in it. */
