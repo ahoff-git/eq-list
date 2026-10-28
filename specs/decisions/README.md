@@ -383,6 +383,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0340: Routes borrow a pack that labels the ports: a drawn pack with no ring or spire routes over the installed pack that has the most, and the setup check's travel row offers a rebuild only when the stored graph differs from a fresh build (narrows 0100's never-repairs)](./0340-a-setup-check-may-offer-a-fix-it-can-prove.md)
 - [0341: A travel graph ships with the app, and routes use it by default: Brewall's graph built with every era open and the live era closed at load; Settings can switch to building from your own map files (reverses 0169's rejected "ship a built graph")](./0341-a-travel-graph-ships-with-the-app.md)
 - [0342: The loadout builder plans for you or anyone sharing their inventory: rows gain an optional per-copy `gear` (worn slot, grade, sockets), the receiver rebuilds the dump, and each person's locks and exclusions are kept apart from yours](./0342-a-loadout-can-be-planned-for-a-peer.md)
+- [0343: Resists and avoidance (dodge/parry/block/riposte) are filed in the damage cells, so every drill-down shows a resist rate and a miss breakdown per spell or skill, per victim, per fight](./0343-resists-and-avoidance-live-in-the-damage-cells.md)
 
 ## Open Questions
 

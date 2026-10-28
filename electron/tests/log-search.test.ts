@@ -1,14 +1,14 @@
 /**
- * Black-box tests for the log searcher's matcher (`src/shared/log-search.ts`) and its file reader
- * (`electron/log-search.ts`). Only need re-running if either changes.
+ * Black-box tests for the log searcher's matcher and context window (`src/shared/log-search.ts`) and
+ * their file readers (`electron/log-search.ts`). Only need re-running if either changes.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createLogSearch } from "../../src/shared/log-search";
-import { searchLogFile } from "../log-search";
+import { createLogSearch, createLogWindow, LOG_LINES_MAX } from "../../src/shared/log-search";
+import { readLogLines, searchLogFile } from "../log-search";
 
 const LOG = [
   "[Sat Aug 29 00:45:50 2026] You begin casting Garrison's Mighty Mana Shock.",
@@ -97,6 +97,54 @@ test("a newer search from the same window cuts the older one short; another wind
     assert.equal((await first).superseded, true);
     assert.equal((await other).total, 50_000);
     assert.equal((await second).total, 50_000);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function window(from: number, to: number) {
+  const w = createLogWindow(from, to);
+  for (const [i, raw] of LOG.entries()) {
+    w.feed(raw, i + 1);
+    if (w.full(i + 1)) break;
+  }
+  return w.result();
+}
+
+test("a context window is the lines asked for, oldest first, parsed like a hit", () => {
+  const { lines, end } = window(2, 4);
+  assert.deepEqual(lines.map((l) => [l.line, l.kind]), [
+    [2, "damage"],
+    [3, "kill"],
+    [4, "party"],
+  ]);
+  assert.equal(end, false);
+});
+
+test("a window past the file's end says so, and skips the blank line", () => {
+  const { lines, end } = window(4, 50);
+  assert.deepEqual(lines.map((l) => l.line), [4, 6]);
+  assert.equal(end, true);
+});
+
+test("a window is clamped to the file's start and to LOG_LINES_MAX lines", () => {
+  assert.equal(window(-5, 1).lines[0].line, 1);
+  const w = createLogWindow(1, 1_000_000);
+  assert.equal(w.full(LOG_LINES_MAX - 1), false);
+  assert.equal(w.full(LOG_LINES_MAX), true);
+});
+
+test("the line reader stops at the window, and a missing file is no lines", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-loglines-"));
+  try {
+    const file = path.join(dir, "eqlog_Kainos_qeynos.txt");
+    fs.writeFileSync(file, LOG.join("\r\n"));
+    const got = await readLogLines(file, 3, 4);
+    assert.deepEqual(got.lines.map((l) => l.line), [3, 4]);
+    assert.equal(got.end, false);
+    assert.equal((await readLogLines(file, 5, 10)).end, true);
+    assert.deepEqual(await readLogLines(path.join(dir, "nope.txt"), 1, 5), { file: path.join(dir, "nope.txt"), lines: [], end: true });
+    assert.deepEqual(await readLogLines(undefined, 1, 5), { lines: [], end: true });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

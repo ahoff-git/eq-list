@@ -598,13 +598,15 @@ export function parseCombat(line: LogLine): CombatEvent | null {
     const m = message.match(re);
     if (!m?.groups) continue;
     // Only the "You resist <their>'s <spell>" form names another caster; in every other
-    // form the spell is ours.
+    // form the spell is ours. In that form the one resisting is you, said with "You" rather
+    // than named — so the target is filled in, which is what files the resist in its fight.
+    const theirs = m.groups.caster !== undefined;
     return {
       kind: "spell-outcome",
-      caster: m.groups.caster ? combatant(m.groups.caster) : SELF,
+      caster: theirs ? combatant(m.groups.caster) : SELF,
       spell: spellName(m.groups.spell),
       outcome,
-      target: m.groups.target ? combatant(m.groups.target) : undefined,
+      target: m.groups.target ? combatant(m.groups.target) : theirs ? SELF : undefined,
       logId,
       at,
       raw,

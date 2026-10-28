@@ -826,6 +826,10 @@ list, hunt, search, damage, session, peers, settings.
       The match is `shared/log-search.ts`; the file is streamed in **main** (`electron/log-search.ts`),
       the newest 500 are sent back with a count of all of them, and a newer search from the same
       window cuts an older one short rather than scanning 70MB for an answer nobody will read.
+      Each hit's **↕ Context** button (`LogContext`) swaps the list for the log around that line —
+      centred on it, marked, and read a page at a time (`log.lines`, `createLogWindow`) as you
+      scroll toward either edge; **← Results** goes back to the same list. A log has no index of
+      line numbers, so each page streams from the top and stops at its last line.
     - `HighScoreBoard` — the **🏆 Records** scope: your **personal bests**, the one question the
       other three scopes can't answer (they hold a fight, a session and a list; none is a bar to
       clear). Grouped by *hits* / *survival* / *fights* / *streaks*, each row leading with the figure

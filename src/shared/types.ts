@@ -930,10 +930,28 @@ export interface DamageCell {
   ticks: number;
   /** Swings that didn't land. Melee only: the log's misses name a verb, never a spell. */
   misses: number;
+  /**
+   * Of `misses`, the ones the log says the defender **avoided** — dodged, parried, blocked,
+   * riposted — by how; the rest were plain whiffs. Absent when there were none, and on fights
+   * stored before it was recorded.
+   */
+  avoided?: AvoidanceCounts;
+  /**
+   * Casts of this spell the victim resisted — a spell's own kind of miss. Absent when there were
+   * none, and on older fights. Only *your* spells and spells cast *at you* can show one: the log
+   * reports no-one else's resists.
+   */
+  resists?: number;
   /** Landed hits the log tagged "(Critical)". */
   crits: number;
   maxHit: number;
 }
+
+/** How a defender turned a swing aside, when the log says so. */
+export type Avoidance = NonNullable<MissEvent["avoidance"]>;
+
+/** Avoided swings by how — the breakdown under a miss count. */
+export type AvoidanceCounts = Record<Avoidance, number>;
 
 /** Which axis a level of a damage tree groups by. */
 export type DamageAxis = "target" | "attacker" | "kind" | "source";
@@ -1005,6 +1023,17 @@ export interface DamageNode {
    * both sides: they aren't swings, and counting them reads as perfect accuracy.
    */
   hitRate: number;
+  /** Of `misses`, the ones the defender actively avoided, by how. Zero-filled. */
+  avoided: AvoidanceCounts;
+  /** Casts of this node's spells the victim resisted — see `DamageCell.resists`. */
+  resists: number;
+  /**
+   * Resists over every landing plus every resist — 0 when nothing was resisted. Only damaging
+   * landings are visible here, so a spell that never damages (a mez, a root) has no denominator
+   * and shows its resists as a count; `SpellStat.resistRate` is the per-spell figure that sees
+   * every cast.
+   */
+  resistRate: number;
   /** True when this level names you or something of yours. Only set on combatant levels. */
   mine?: boolean;
   children: DamageNode[];
@@ -3286,6 +3315,15 @@ export interface LogSearchResult {
   superseded?: boolean;
 }
 
+/** A run of the log's lines in file order (`log.lines`) — the context around a search hit. */
+export interface LogLines {
+  /** The file read, or undefined when there's no log to read. */
+  file?: string;
+  lines: LogSearchHit[];
+  /** The file ended before the last line asked for — there is nothing later to load. */
+  end: boolean;
+}
+
 /** One `/outputfile` dump as main read it — parsed in the renderer by `game-export-dumps.ts`. */
 export interface GameExportDump {
   fileName: string;
@@ -3807,6 +3845,11 @@ export interface EqlApi {
      * marked `superseded` was cut short by a newer search and should be ignored.
      */
     search(query: string, options?: LogSearchOptions): Promise<LogSearchResult>;
+    /**
+     * Lines `from`..`to` (1-based, inclusive) of the watched log, oldest first — the context
+     * around a search hit. Capped to `LOG_LINES_MAX` lines a call; `end` means the file ran out.
+     */
+    lines(from: number, to: number): Promise<LogLines>;
     /**
      * When each of the followed character's `/outputfile` dumps was last written, keyed by the
      * lower-cased type in its file name (`src/shared/game-exports.ts`). Empty when there are none.

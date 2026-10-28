@@ -4,10 +4,12 @@ import { api } from "@/lib/api";
 import { useWatcherStatus } from "@/lib/hooks";
 import SearchField from "@/app/components/SearchField";
 import { CheckField, Empty } from "@/app/components/ui";
-import { countOf, when } from "@/shared/format";
+import { countOf } from "@/shared/format";
 import { LOG_SEARCH_MIN_CHARS } from "@/shared/log-search";
 import type { LogSearchResult } from "@/shared/types";
 import { createLogger } from "@/shared/logging";
+import LogContext from "./LogContext";
+import LogLineRow from "./LogLineRow";
 
 const log = createLogger("log-search");
 
@@ -20,7 +22,8 @@ const SEARCH_DEBOUNCE_MS = 300;
  * It searches the **file**, not what the meter has seen since launch, so last week's pull is as
  * findable as the last one — and it reads each hit through the same parser the meter does, which is
  * what the kind beside every line is: a quick way to see whether the app read a line the way you did.
- * "Combat lines only" keeps just the lines the combat parser claims.
+ * "Combat lines only" keeps just the lines the combat parser claims. Each hit opens **in context**
+ * (`LogContext`): the log around it, to scroll through, with the results kept for coming back to.
  */
 export default function LogSearch() {
   const status = useWatcherStatus();
@@ -28,10 +31,14 @@ export default function LogSearch() {
   const [combatOnly, setCombatOnly] = useState(false);
   const [result, setResult] = useState<LogSearchResult | null>(null);
   const [searching, setSearching] = useState(false);
+  /** The hit opened in context, by line number — null while the results are showing. */
+  const [context, setContext] = useState<number | null>(null);
 
   const query = term.trim().length >= LOG_SEARCH_MIN_CHARS ? term.trim() : "";
 
   useEffect(() => {
+    // A new search (or a new file) is a new list: the line opened from the old one belongs to it.
+    setContext(null);
     if (!query) {
       setResult(null);
       setSearching(false);
@@ -95,38 +102,29 @@ export default function LogSearch() {
         />
       ) : result && !searching && !hits.length ? (
         <Empty title={`Nothing in your log mentions “${query}”`} hint="The match ignores case, and includes the timestamp." />
+      ) : context !== null ? (
+        <LogContext line={context} needle={query} file={status.file} onClose={() => setContext(null)} />
       ) : (
         <ol className="log-hits">
           {hits.map((hit) => (
-            <li key={hit.line} className="log-hit">
-              <span className="lh-when" title={`Line ${hit.line.toLocaleString()} of ${status.file}`}>
-                {when(hit.at)}
-              </span>
-              <span className="lh-kind muted small" title="What the parser read this line as">
-                {hit.kind ?? ""}
-              </span>
-              <span className="lh-text">
-                <Highlighted text={hit.message} needle={query} />
-              </span>
-            </li>
+            <LogLineRow
+              key={hit.line}
+              hit={hit}
+              needle={query}
+              file={status.file}
+              action={
+                <button
+                  className="btn ghost sm"
+                  onClick={() => setContext(hit.line)}
+                  title="Open the log at this line, to scroll through what came before and after"
+                >
+                  ↕ Context
+                </button>
+              }
+            />
           ))}
         </ol>
       )}
     </div>
   );
-}
-
-/** `text` with every case-insensitive occurrence of `needle` marked. */
-function Highlighted({ text, needle }: { text: string; needle: string }) {
-  const lower = text.toLowerCase();
-  const find = needle.toLowerCase();
-  const parts: { text: string; hit: boolean }[] = [];
-  let from = 0;
-  for (let at = lower.indexOf(find); at !== -1 && find; at = lower.indexOf(find, from)) {
-    if (at > from) parts.push({ text: text.slice(from, at), hit: false });
-    parts.push({ text: text.slice(at, at + find.length), hit: true });
-    from = at + find.length;
-  }
-  if (from < text.length) parts.push({ text: text.slice(from), hit: false });
-  return <>{parts.map((p, i) => (p.hit ? <mark key={i}>{p.text}</mark> : <span key={i}>{p.text}</span>))}</>;
 }

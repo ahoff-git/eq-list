@@ -55,7 +55,7 @@ import type { GameClockTracker } from "./game-clock-tracker";
 import type { DamageOverlayTracker } from "./damage-overlay-tracker";
 import type { Lookup } from "./lookup";
 import { readLogTail } from "./log-tail";
-import { searchLogFile } from "./log-search";
+import { readLogLines, searchLogFile } from "./log-search";
 import { inventoryShareRows, readExport, readExportTimes, readInventory } from "./game-exports";
 import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariOutbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, SpawnKind, GoalTarget, AchievementCriterionInput, TravelAnswer, TravelEnd, TravelOptions, WindowToggles, FactionHitsQuery, LootSearchFilter, LootDropsQuery, FightStats, LogSearchOptions } from "../src/shared/types";
 import type { AlertRouter } from "./alert-router";
@@ -336,6 +336,10 @@ function registerSettingsIpc(context: IpcContext, shared: SharedIpc): void {
   // megabyte of IPC.
   ipcMain.handle(CH.logSearch, (e, query: unknown, options?: LogSearchOptions) =>
     searchLogFile(context.watcher.status().file, typeof query === "string" ? query : "", options ?? {}, e.sender.id),
+  );
+  // A run of the same file's lines by number — a search hit opened in context and scrolled through.
+  ipcMain.handle(CH.logLines, (_e, from: unknown, to: unknown) =>
+    readLogLines(context.watcher.status().file, Number(from) || 1, Number(to) || 1),
   );
   // The `/outputfile` dumps beside the followed log's `Logs` folder — their ages, for the Exports tab.
   ipcMain.handle(CH.logExports, () => readExportTimes(context.watcher.status().file));

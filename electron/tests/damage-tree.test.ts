@@ -8,7 +8,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createDamageCells, damageKind, damageSource, drillDown, rollUpDamage, sumDamage } from "../../src/shared/combat/damage-tree";
+import { createDamageCells, damageKind, damageSource, drillDown, isResist, rollUpDamage, sumDamage } from "../../src/shared/combat/damage-tree";
 import { parseCombat } from "../../src/shared/combat/combat-parser";
 import { splitLine } from "../../src/shared/log-parser";
 import type { DamageAxis, DamageEvent, DamageNode, MissEvent } from "../../src/shared/types";
@@ -197,6 +197,54 @@ test("ticks are kept out of the hit rate, and crits are a rate of the hits that 
     whiffs.map((n) => [n.label, n.damage, n.misses, n.hitRate]),
     [["Bash", 0, 1, 0]],
   );
+});
+
+test("a miss keeps how it was avoided, and the roll-up says which ones were plain whiffs", () => {
+  const cells = cellsFrom([
+    "You slash a coyote for 10 points of damage.",
+    "You try to slash a coyote, but miss!",
+    "You try to slash a coyote, but a coyote parries!",
+    "You try to slash a coyote, but a coyote parries!",
+    "You try to slash a coyote, but a coyote dodges!",
+  ]);
+  const [slash] = rollUpDamage(cells, ["source"]);
+  assert.equal(slash.misses, 4);
+  assert.deepEqual(slash.avoided, { dodge: 1, parry: 2, block: 0, riposte: 0 });
+  assert.equal(slash.hitRate, 1 / 5);
+  // Incoming, the defender is you — the same breakdown, read the other way round.
+  const [bite] = rollUpDamage(cellsFrom(["A coyote tries to bite YOU, but YOU block!"]), ["source"]);
+  assert.deepEqual(bite.avoided, { dodge: 0, parry: 0, block: 1, riposte: 0 });
+});
+
+test("a resist is filed beside the spell's landings, per victim, as a rate of the times it reached them", () => {
+  const acc = createDamageCells();
+  const lines = [
+    "You hit a coyote for 30 points of cold damage by Blast of Cold.",
+    "A coyote has taken 3 damage by Blast of Cold.", // a tick: not a landing, so not in the rate
+    "A coyote resisted your Blast of Cold!",
+    "A wild tiger resisted your Blast of Cold!",
+    "You resist a female rat's Plague Rat Disease!",
+  ];
+  for (const line of lines) {
+    const event = parseCombat(splitLine(`[Wed Jul 29 00:00:01 2026] ${line}`, 1)!)!;
+    if (event.kind === "spell-outcome") {
+      assert.ok(isResist(event));
+      acc.record(event);
+    } else acc.record(event as DamageEvent);
+  }
+  const cells = acc.cells();
+  const cold = drillDown(cells, "attacker", "You", ["source", "target"])[0];
+  assert.deepEqual([cold.label, cold.resists, cold.resistRate], ["Blast of Cold", 2, 2 / 3]);
+  assert.deepEqual(
+    cold.children.map((n) => [n.label, n.resists, n.resistRate]),
+    // The tiger never took a landing, so it has a count and no rate.
+    [["a coyote", 1, 1 / 2], ["a wild tiger", 1, 1]],
+  );
+  // Theirs at you: the caster's resist, filed under them.
+  const rat = drillDown(cells, "target", "You", ["attacker", "source"])[0];
+  assert.deepEqual([rat.label, rat.resists, rat.children[0].label], ["a female rat", 1, "Plague Rat Disease"]);
+  // A resist is not damage, so it can't move any total.
+  sumsUp(rollUpDamage(cells, ABILITY_FIRST), sumDamage(cells));
 });
 
 /**

@@ -21,7 +21,7 @@
  */
 import { EventEmitter } from "node:events";
 import { isYours, SELF } from "../src/shared/combat/combat-parser";
-import { createDamageCells, rollUpDamage } from "../src/shared/combat/damage-tree";
+import { createDamageCells, isResist, rollUpDamage } from "../src/shared/combat/damage-tree";
 import { createHealCells } from "../src/shared/combat/heal-tree";
 import { createDotAttribution } from "../src/shared/combat/dot-attribution";
 import { createProcSpotter } from "../src/shared/combat/proc-spotter";
@@ -1332,6 +1332,9 @@ export function createCombatStats(
         break;
       }
       case "spell-outcome": {
+        // Filed before the ownership check below, which drops other casters' spells: a resist of
+        // *their* spell by *you* is still a fact about this fight's exchange.
+        if (isResist(event)) w.damage.record(event);
         const whoseCast = owns([event.caster]);
         const sp = spellFor(w, whoseCast, event.caster, event.spell);
         if (!sp) break;

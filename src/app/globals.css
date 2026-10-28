@@ -2222,10 +2222,10 @@ button {
 .hist-fight .hf-when { font-family: var(--mono); white-space: nowrap; }
 
 /* The log searcher (Combat → 🔎 Log): one matched line per row, the time leading like the log's own. */
-.log-hits { list-style: none; margin: 0; padding: 0; max-height: 70vh; overflow-y: auto; }
+.log-hits { position: relative; list-style: none; margin: 0; padding: 0; max-height: 70vh; overflow-y: auto; }
 .log-hit {
   display: grid;
-  grid-template-columns: max-content 7em 1fr;
+  grid-template-columns: max-content 7em 1fr max-content;
   gap: 10px;
   padding: 3px 8px;
   border-top: 1px solid var(--border);
@@ -2236,6 +2236,13 @@ button {
 .log-hit .lh-when { font-family: var(--mono); white-space: nowrap; color: var(--text-dim); }
 .log-hit .lh-text { overflow-wrap: anywhere; }
 .log-hit mark { background: transparent; color: var(--accent); font-weight: 600; }
+/* "↕ Context" only on the row under the mouse — on every row it's a column of noise. */
+.log-hit .lh-action { visibility: hidden; }
+.log-hit:hover .lh-action, .log-hit .lh-action:focus-within { visibility: visible; }
+.log-hit .lh-action .btn { padding-top: 0; padding-bottom: 0; }
+/* The context view: the opened line marked like a selected fight, the file's ends said aloud. */
+.log-hit.on { background: var(--bg-input); box-shadow: inset 2px 0 0 var(--accent); }
+.log-edge { padding: 6px 8px; text-align: center; }
 .hist-fight .hf-label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .hist-fight .hf-dmg { color: var(--accent); font-variant-numeric: tabular-nums; }
 /* A zone name is long and the mob's name is the thing being read, so the zone takes a fixed

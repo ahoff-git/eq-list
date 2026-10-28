@@ -3,6 +3,7 @@ import { useState } from "react";
 import { drillDown } from "@/shared/combat/damage-tree";
 import { healDrillDown } from "@/shared/combat/heal-tree";
 import type {
+  Avoidance,
   CombatantStat,
   DamageAxis,
   DamageCell,
@@ -218,6 +219,7 @@ function meta(node: DamageNode): string {
     `${node.hits}×`,
     node.crits > 0 ? `${percent(node.critRate)} crit` : "",
     node.misses > 0 ? `${percent(node.hitRate)} of ${swings}` : "",
+    resistSummary(node),
     node.maxHit > 0 ? `max ${node.maxHit.toLocaleString()}` : "",
   ]
     .filter(Boolean)
@@ -235,7 +237,8 @@ function nodeDetail(node: DamageNode): string {
     `${node.label} — ${node.damage.toLocaleString()} damage`,
     node.hits > 0 ? `${node.hits} hits · ${avg} average · ${node.maxHit.toLocaleString()} biggest` : "",
     node.ticks > 0 ? `${node.ticks} of them damage-over-time ticks` : "",
-    swings > 0 ? `${percent(node.hitRate)} of ${swings} swings landed (${node.misses} missed)` : "",
+    node.misses > 0 ? `${percent(node.hitRate)} of ${swings} swings landed — ${missBreakdown(node)}` : "",
+    node.resists > 0 ? resistDetail(node) : "",
     node.crits > 0 ? `${node.crits} critical (${percent(node.critRate)} of hits)` : "",
     "",
     ...shareLines(node),
@@ -243,6 +246,39 @@ function nodeDetail(node: DamageNode): string {
   ]
     .filter((line) => line !== "")
     .join("\n");
+}
+
+/** Past tense of each way a swing is avoided, in the order a defender's skills are usually listed. */
+const AVOIDED_AS: [Avoidance, string][] = [
+  ["dodge", "dodged"],
+  ["parry", "parried"],
+  ["block", "blocked"],
+  ["riposte", "riposted"],
+];
+
+/** "12 missed: 5 whiffed, 4 dodged, 3 parried" — why the swings that didn't land, didn't. */
+function missBreakdown(node: DamageNode): string {
+  const avoided = AVOIDED_AS.filter(([how]) => node.avoided[how] > 0);
+  if (!avoided.length) return `${node.misses} missed`;
+  const whiffed = node.misses - avoided.reduce((n, [how]) => n + node.avoided[how], 0);
+  const parts = [whiffed > 0 ? `${whiffed} whiffed` : "", ...avoided.map(([how, as]) => `${node.avoided[how]} ${as}`)];
+  return `${node.misses} missed: ${parts.filter(Boolean).join(", ")}`;
+}
+
+/**
+ * The on-the-line resist figure. A rate only when there were landings to set it against — a mez
+ * that never does damage has none here, and "100% resisted" would be a lie about it.
+ */
+function resistSummary(node: DamageNode): string {
+  if (!node.resists) return "";
+  return node.hits > node.ticks ? `${percent(node.resistRate)} resisted` : `${node.resists} resisted`;
+}
+
+function resistDetail(node: DamageNode): string {
+  const landings = node.hits - node.ticks;
+  return landings > 0
+    ? `${percent(node.resistRate)} resisted — ${node.resists} of ${landings + node.resists} times it reached its target`
+    : `${count(node.resists, "resist")} (it never landed damage here, so there's no rate to give)`;
 }
 
 /**
@@ -450,6 +486,9 @@ function bare(label: string, axis: DamageNode["axis"], damage: number, parent: n
     of: {},
     critRate: 0,
     hitRate: 0,
+    avoided: { dodge: 0, parry: 0, block: 0, riposte: 0 },
+    resists: 0,
+    resistRate: 0,
     children: [],
   };
 }
