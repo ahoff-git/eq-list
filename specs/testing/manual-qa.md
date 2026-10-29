@@ -1169,6 +1169,9 @@ features for later in [../ideas.md](../ideas.md).
   Take `/outputfile inventory`, open a page for something in your bags and the depot: the line under
   the card counts each area and the export's age; a page for something you don't hold says none;
   clicking the age opens Exports.
+- **A zone page's map button and spawns, with real kills.** ([ADR 0351](../decisions/0351-a-zone-page-opens-the-map-and-lists-its-spawns.md).)
+  Open a zone you've hunted: the button opens the map window on it; mobs you've killed show counts
+  and a coordinate that opens the map at the spot; a kill the wiki doesn't list says so.
 - **Two loadout rules taken secondhand.** The loadout builder assumes a weapon in an `Any Slot`
   doesn't swing, and that LORE applies across both `Any Slot`s
   ([ADR 0310](../decisions/0310-best-in-slot-is-an-exact-assignment-by-your-weights.md)). Wear a

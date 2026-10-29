@@ -391,6 +391,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0348: A mob card's HP and damage are scaled by a difficulty slider (D0–D4, instance type, multi-class) on the wiki's tier table and an unmeasured per-tier multiplier, shown as an estimate](./0348-a-mob-card-is-scaled-by-difficulty.md)
 - [0349: The search bar autocompletes from sections, wiki pages, what you hold, stances and AAs in one fuzzy ranking with a prefix lift, a Tab ghost and recent picks; a page opens directly](./0349-the-search-bar-autocompletes.md)
 - [0350: An item page says how many you have from your inventory export, per area (bags, bank, Tradeskill depot…), with the export's age; none when the dump lacks it](./0350-an-item-page-says-how-many-you-have.md)
+- [0351: A zone page opens its map and lists its known spawns — the wiki roster joined with kills, nameds (no indefinite article) first, then most killed, each placed one opening the map there](./0351-a-zone-page-opens-the-map-and-lists-its-spawns.md)
 
 ## Open Questions
 
@@ -731,4 +732,8 @@ and degrading to blank facts when the file isn't there.*
   public repo or licence, so it's a scrape worth asking about first; the flag is one person's curation
   (Lucy's trust level, not the wiki's); and it warns `Out of era items may be listed!`. It was also
   down (HTTP 502, 2026-08-28) — re-check before spending time.
-
+- **What should "named" mean, app-wide?** `isNamedMob` reads eqlwiki's `Category:Named Mobs`, whose
+  6,586 titles include nearly every mob ("a gnoll", "a large rat" both answer true), so the map's
+  named pins ([ADR 0265](./0265-named-spawns-mark-themselves-on-the-map.md)) can mark common spawns.
+  [ADR 0351](./0351-a-zone-page-opens-the-map-and-lists-its-spawns.md) uses the roster's article
+  instead. Open: switch `isNamedMob` to that rule, intersect the two, or find a narrower category.

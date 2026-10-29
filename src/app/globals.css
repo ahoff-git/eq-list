@@ -4295,6 +4295,11 @@ select optgroup {
 /* An item page's count from your inventory export (HeldOnPage, ADR 0350), just under its card. */
 .held-on-page { margin: 6px 0 2px; color: var(--good); }
 .held-on-page.muted { color: var(--text-dim); }
+
+/* A zone page's map button and known spawns (ZoneSpawns, ADR 0351). */
+.zone-spawns { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.zone-spawns > .btn { align-self: flex-start; }
+.zone-spawns h4 { margin: 6px 0 0; }
 .search-bar .jump-list {
   position: absolute;
   top: 100%;

@@ -38,6 +38,7 @@ const TRACES: Record<string, string> = {
   "items/BisEffects.tsx|heldAsNamed(p.by)": "inventory dump: a row's name keeps its grade, and the parsed grade agrees with ItemLink's reading",
   "items/BisView.tsx|wikiName(t)": "the catalogue: an item page is the +0 thing, so a level is applied once, never twice",
   "items/BisView.tsx|wikiName(o.from)": "the catalogue: an item page is the +0 thing, so a level is applied once, never twice",
+  "mob/ZoneSpawns.tsx|notAnItem(s.name)": "not-an-item links: a page that isn't an item, recipe or spell never levels, whatever name opens it",
   "map/ZoneName.tsx|notAnItem(zonePageTitle(zone))": "not-an-item links: a page that isn't an item, recipe or spell never levels, whatever name opens it",
   "peers/PeerTray.tsx|notAnItem(e.name)": "not-an-item links: a page that isn't an item, recipe or spell never levels, whatever name opens it",
   "peers/PeerTray.tsx|heldAsNamed(e.name)": "shopping list: an entry added by a graded name keeps it, so the List tab links it at that grade",

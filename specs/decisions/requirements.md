@@ -697,6 +697,8 @@ reading like a measurement, and they are shared code
   line and recent picks when empty. ([0349](./0349-the-search-bar-autocompletes.md))
 - **An item page says how many you have**, per area of the inventory export, with the export's age;
   "none" when a dump lacks it, nothing with no dump. ([0350](./0350-an-item-page-says-how-many-you-have.md))
+- **A zone page opens its map and lists its known spawns**: the wiki roster joined with kills,
+  nameds first by the roster's missing article, then most killed. ([0351](./0351-a-zone-page-opens-the-map-and-lists-its-spawns.md))
 - **A loadout slot nothing matches keeps what you wear**, marked as kept; locks, exclusions and a
   swung two-hander's off-hand still win. ([0347](./0347-a-slot-nothing-matches-keeps-what-you-wear.md))
 

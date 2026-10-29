@@ -16,7 +16,12 @@ import { npcKey } from "../items/item-levels";
 import { stripArticle } from "../log-parser";
 import { NAMED_MOBS } from "./named-mobs.generated";
 
-const namedKey = (name: string): string => npcKey(stripArticle(name));
+/**
+ * One mob's name folded so a wiki title, a zone roster row and a kill log's name meet: no leading
+ * article, no trailing disambiguating parenthetical, case and spacing folded.
+ */
+export const npcNameKey = (name: string): string => npcKey(stripArticle(name));
+const namedKey = npcNameKey;
 
 let names: Set<string> | undefined;
 
