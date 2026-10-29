@@ -26,6 +26,8 @@ export const STORAGE_KEYS = {
   areaSections: "eqlist.main.areaSections",
   /** Main window: the Hunt tab's zone filter. */
   huntZone: "eqlist.main.huntZone",
+  /** Main window: the search bar's recent picks, most recent first (ADR 0349). */
+  searchRecent: "eqlist.main.searchRecent",
   /** Main window: the difficulty a mob page's HP and damage are shown at (ADR 0348). */
   mobDifficulty: "eqlist.main.mobDifficulty",
   /** Main window: whether the Hunt tab groups by zone or by item. */

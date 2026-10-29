@@ -1,19 +1,12 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
-import { api } from "@/lib/api";
+import { useMemo, useState } from "react";
+import { MIN_QUERY_CHARS, useWikiSearch } from "@/lib/useWikiSearch";
 import { useKnownItems, useLucySearch, useSettings } from "@/lib/hooks";
 import { searchKnownItems, unknownToTheWiki } from "@/shared/items/known-items";
 import { createLogger } from "@/shared/logging";
 import { TextField } from "@/app/components/ui";
-import type { SearchResult } from "@/shared/types";
 
 const log = createLogger("item-name-field");
-
-/** How long to sit on a keystroke before asking the wiki — same rhythm as the Search tab. */
-const SEARCH_DEBOUNCE_MS = 200;
-
-/** Below this a query matches nearly everything, so it's not worth asking. */
-const MIN_QUERY_CHARS = 2;
 
 /**
  * A plain text field for an item name, backed by the same layered lookup the Search tab uses:
@@ -38,36 +31,8 @@ export default function ItemNameField({
   const [highlight, setHighlight] = useState(0);
   const settings = useSettings();
 
-  // The query once typing has settled — the wiki lookup and Lucy's both key off this, one request
-  // per settled query rather than one per keystroke.
-  const [debounced, setDebounced] = useState("");
-  useEffect(() => {
-    const settled = value.trim().length >= MIN_QUERY_CHARS ? value : "";
-    if (!settled) {
-      setDebounced("");
-      return;
-    }
-    const id = setTimeout(() => setDebounced(settled), SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(id);
-  }, [value]);
-
-  const [wikiHits, setWikiHits] = useState<SearchResult[]>([]);
-  useEffect(() => {
-    const a = api();
-    if (!a || !debounced) {
-      setWikiHits([]);
-      return;
-    }
-    let cancelled = false;
-    void a.wiki.search(debounced).then((res) => {
-      if (cancelled) return;
-      log.debug("wiki hits", debounced, res.length);
-      setWikiHits(res);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [debounced]);
+  // The wiki's matches once typing has settled; Lucy's lookup keys off the same settled query.
+  const { hits: wikiHits, settled: debounced } = useWikiSearch(value);
 
   // What you've held yourself, minus anything the wiki already answered — same ranking the Search
   // tab uses, computed locally so it needs no debounce.

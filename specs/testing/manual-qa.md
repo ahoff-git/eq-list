@@ -1177,7 +1177,9 @@ features for later in [../ideas.md](../ideas.md).
   ([ADR 0346](../decisions/0346-search-is-a-bar-in-the-frame.md), [ADR 0348](../decisions/0348-a-mob-card-is-scaled-by-difficulty.md).)
   The bar sits right of the back/forward trail on every screen, Ctrl+K focuses it, its list isn't
   clipped and closes on Escape or a click away, and at the narrowest overlay width the trail still
-  shows ←. On a mob page, dragging Difficulty recolours the HP and damage figures, the hover shows the
+  shows ←. Typing a name offers wiki pages and your held items, Tab takes the ghost, Enter opens the
+  page directly, and an empty bar lists recent picks ([ADR 0349](../decisions/0349-the-search-bar-autocompletes.md)).
+  On a mob page, dragging Difficulty recolours the HP and damage figures, the hover shows the
   wiki's number, and the setting survives opening another mob.
 
 ## Peer networking — two clients

@@ -692,6 +692,9 @@ reading like a measurement, and they are shared code
   opening the rest. ([0321](./0321-find-answers-from-one-box.md))
 - **Search is always on screen**: a bar beside the back/forward trail, focused by Ctrl+K, jumps to
   a section or hands the text to Search. ([0346](./0346-search-is-a-bar-in-the-frame.md))
+- **The search bar autocompletes in one ranking**: sections, wiki pages, held items, stances and
+  AAs scored together, a name starting with the text first, with a Tab ghost that matches the top
+  line and recent picks when empty. ([0349](./0349-the-search-bar-autocompletes.md))
 - **A loadout slot nothing matches keeps what you wear**, marked as kept; locks, exclusions and a
   swung two-hander's off-hand still win. ([0347](./0347-a-slot-nothing-matches-keeps-what-you-wear.md))
 

@@ -342,7 +342,7 @@ function ControlWindow() {
             (ADR 0173) — and the search bar beside it, in the frame on every screen (ADR 0346). */}
         <div className="nav-row">
           <NavBar />
-          <SearchBar targets={jumpTargets} onJump={openTab} onLookUp={lookUp} />
+          <SearchBar targets={jumpTargets} onJump={openTab} onOpenPage={nav.openPage} onLookUp={lookUp} />
         </div>
 
         {/* The one region click-through hands to the game — see `PASS_THROUGH`. */}

@@ -255,7 +255,10 @@ list, hunt, search, damage, session, peers, settings.
   section; each area reopens on the section last used there (`eqlist.main.areaSections`); a
   one-section area draws no second row. The **search bar** (`chrome/SearchBar.tsx`), always drawn
   beside the back/forward trail and focused by **Ctrl+K**, jumps to any section or looks the typed
-  text up in Search ([ADR 0346](../decisions/0346-search-is-a-bar-in-the-frame.md)). Now's first section is the **Overview** (`now/NowOverview.tsx`), one card
+  text up in Search ([ADR 0346](../decisions/0346-search-is-a-bar-in-the-frame.md)). It
+  autocompletes wiki pages, what you hold, stances and AAs in one ranking (`global-suggest.ts`),
+  ghosts the top prefix match for Tab, and remembers recent picks
+  ([ADR 0349](../decisions/0349-the-search-bar-autocompletes.md)). Now's first section is the **Overview** (`now/NowOverview.tsx`), one card
   per running board, each opening its section. The status bar carries the **stale-export reminder**
   (`exports/StaleExportChip.tsx`), and an item's hover card says **who has it** (`lib/exports/ownership.tsx`).
   ([ADR 0320](../decisions/0320-tabs-are-grouped-into-areas-by-what-you-are-doing.md))

@@ -389,6 +389,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0346: Search is a bar in the window's frame: the Ctrl+K palette is always drawn beside the back/forward trail, jumping to a section or looking the text up in Find → Search (changes 0320)](./0346-search-is-a-bar-in-the-frame.md)
 - [0347: A loadout slot nothing matches keeps what you wear there (marked kept), rather than being left blank; locks, a swung two-hander's off-hand and exclusions still win](./0347-a-slot-nothing-matches-keeps-what-you-wear.md)
 - [0348: A mob card's HP and damage are scaled by a difficulty slider (D0–D4, instance type, multi-class) on the wiki's tier table and an unmeasured per-tier multiplier, shown as an estimate](./0348-a-mob-card-is-scaled-by-difficulty.md)
+- [0349: The search bar autocompletes from sections, wiki pages, what you hold, stances and AAs in one fuzzy ranking with a prefix lift, a Tab ghost and recent picks; a page opens directly](./0349-the-search-bar-autocompletes.md)
 
 ## Open Questions
 
