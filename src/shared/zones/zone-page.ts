@@ -17,3 +17,12 @@ import { placeName } from "./place";
 export function zonePageTitle(zone: string): string {
   return zoneLevels(zone)?.zone ?? placeName(zone);
 }
+
+/**
+ * Which of these zone names open the same page as `zone` — the Items tab's Zone values that mean this
+ * zone, however each source spelled it ("The Feerrott" and "Feerrott", "Castle Mistmoore").
+ */
+export function spellingsOfZone(zone: string, names: readonly string[]): string[] {
+  const page = zonePageTitle(zone);
+  return names.filter((name) => zonePageTitle(name) === page);
+}

@@ -699,6 +699,8 @@ reading like a measurement, and they are shared code
   "none" when a dump lacks it, nothing with no dump. ([0350](./0350-an-item-page-says-how-many-you-have.md))
 - **A zone page opens its map and lists its known spawns**: the wiki roster joined with kills,
   nameds first by the roster's missing article, then most killed. ([0351](./0351-a-zone-page-opens-the-map-and-lists-its-spawns.md))
+- **A zone name opens its page, with a 🗺 beside it for the map**, and the page lists the items
+  found there by the Items tab's own table, every spelling of the zone ticked. ([0352](./0352-a-zone-link-opens-its-page-and-a-zone-page-lists-its-items.md))
 - **A loadout slot nothing matches keeps what you wear**, marked as kept; locks, exclusions and a
   swung two-hander's off-hand still win. ([0347](./0347-a-slot-nothing-matches-keeps-what-you-wear.md))
 

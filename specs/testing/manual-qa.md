@@ -1172,6 +1172,11 @@ features for later in [../ideas.md](../ideas.md).
 - **A zone page's map button and spawns, with real kills.** ([ADR 0351](../decisions/0351-a-zone-page-opens-the-map-and-lists-its-spawns.md).)
   Open a zone you've hunted: the button opens the map window on it; mobs you've killed show counts
   and a coordinate that opens the map at the spot; a kill the wiki doesn't list says so.
+- **Zone links and a zone page's items.** ([ADR 0352](../decisions/0352-a-zone-link-opens-its-page-and-a-zone-page-lists-its-items.md).)
+  On an item page's drop list, click a zone name: its page opens and lists the items found there
+  (a zone with two spellings, like Mistmoore, shows both spellings' items). Click the 🗺 beside the
+  name instead: the map opens on the zone with the mob picked out. Check that the icon doesn't crowd
+  a narrow row such as the spawn board's.
 - **Two loadout rules taken secondhand.** The loadout builder assumes a weapon in an `Any Slot`
   doesn't swing, and that LORE applies across both `Any Slot`s
   ([ADR 0310](../decisions/0310-best-in-slot-is-an-exact-assignment-by-your-weights.md)). Wear a

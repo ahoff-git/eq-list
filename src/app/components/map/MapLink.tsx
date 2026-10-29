@@ -1,5 +1,6 @@
 "use client";
 import { showOnMap } from "@/lib/map/showOnMap";
+import { ZoneName } from "@/app/components/map/ZoneName";
 import type { Confidence } from "@/shared/estimates";
 import { locText } from "@/shared/format";
 import { areaConfidence, areaConfidenceWhy, roamWhy, type MobArea } from "@/shared/mob/mob-stats";
@@ -15,7 +16,7 @@ import type { MapFocus, MapTarget } from "@/shared/types";
  * — so the same gesture explained itself differently depending on which panel you were in.
  *
  * One component, three shapes over it, because a click that opens the map is always one of three
- * things: a **zone** (`ZoneLink`), a **spot** (`MapLink` with a `loc`), or an **observed roam
+ * things: a **zone** (`ZoneLink`, whose name opens the zone's page and whose 🗺 opens the map), a **spot** (`MapLink` with a `loc`), or an **observed roam
  * centre** (`RoamLink`, which is a spot that also knows how rough it is and what it rests on).
  *
  * **A click stops here** (`stopPropagation`), like `ItemLink`'s: these sit inside rows that are
@@ -66,7 +67,10 @@ function describe(target: MapTarget): string {
   return target.focus?.mob || target.focus?.drop ? `${where}, with what's known about it picked out` : where;
 }
 
-/** A zone name that views that zone — the plainest form, and the one every list has. */
+/**
+ * A zone name with the map beside it: the name opens the zone's page (`ZoneName`), and the 🗺 after it
+ * opens the zone on the map, picking out `focus` when the row has a mob or drop to show (ADR 0352).
+ */
 export function ZoneLink({
   zone,
   focus,
@@ -79,9 +83,12 @@ export function ZoneLink({
   children?: React.ReactNode;
 }) {
   return (
-    <MapLink target={{ zone, focus }} className={className}>
-      {children ?? zone}
-    </MapLink>
+    <span className={`zone-link${className ? ` ${className}` : ""}`}>
+      <ZoneName zone={zone}>{children ?? zone}</ZoneName>
+      <MapLink target={{ zone, focus }} className="zone-map">
+        🗺
+      </MapLink>
+    </span>
   );
 }
 

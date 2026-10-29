@@ -7,8 +7,8 @@ import { zonePageTitle } from "@/shared/zones/zone-page";
  * A zone, named in a view: shown as its source wrote it, opening the zone's own page.
  *
  * **The one way a list or a table names a zone**, so what a zone name does is decided here and
- * nowhere else — to make one open the map instead, change this. `ZoneLink` (`MapLink.tsx`) stays
- * for a row that is about *where something is*, with a mob or a drop to pick out on the map.
+ * nowhere else — to make one open the map instead, change this. `ZoneLink` (`MapLink.tsx`) is this
+ * name with a 🗺 beside it, for a row that is about *where something is*.
  *
  * The name is resolved to the wiki's title before it's opened (`zonePageTitle`), because the log's
  * `Nagafen's Lair - Group` and a gazetteer's `Castle Mistmoore` aren't titles the wiki has.
