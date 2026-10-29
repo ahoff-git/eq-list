@@ -37,7 +37,7 @@ import UpdateBanner from "@/app/components/chrome/UpdateBanner";
 import WebDownloadBanner from "@/app/components/chrome/WebDownloadBanner";
 import Toasts from "@/app/components/chrome/Toasts";
 import TabBar, { type TabItem } from "@/app/components/chrome/TabBar";
-import JumpPalette, { type JumpTarget } from "@/app/components/chrome/JumpPalette";
+import SearchBar, { type JumpTarget } from "@/app/components/chrome/SearchBar";
 import PeersPanel from "@/app/components/peers/PeersPanel";
 import PeerOfferToasts from "@/app/components/peers/PeerOfferToasts";
 import AchievementAlertToasts from "@/app/components/achievements/AchievementAlertToasts";
@@ -200,18 +200,18 @@ function ControlWindow() {
   const [huntGrouping, setHuntGrouping] = usePersistentState<HuntGrouping>(STORAGE_KEYS.huntGrouping, "zone");
 
   const prefillUsed = useCallback(() => setPrefill(null), []);
-
-  // A screengrab lookup fills the Search box with OCR'd text and jumps here (so does a
-  // name clicked in the map window, which has no search of its own). Going to the tab is what
-  // closes any page open on it — the box is a different place from a page (ADR 0173).
-  useEffect(() => {
-    const a = api();
-    if (!a) return;
-    return a.search.onPrefill((text) => {
+  // Going to the tab is what closes any page open on it — the box is a different place from a page (ADR 0173).
+  const lookUp = useCallback(
+    (text: string) => {
       openTab("search");
       setPrefill(text);
-    });
-  }, [openTab]);
+    },
+    [openTab],
+  );
+
+  // A screengrab lookup fills the Search box with OCR'd text and jumps here (so does a
+  // name clicked in the map window, which has no search of its own).
+  useEffect(() => api()?.search.onPrefill(lookUp), [lookUp]);
 
   // A caller elsewhere already knows the exact title (a map marker naming a mob eqlwiki or the
   // kill log itself named) — open straight to its page rather than a results list with one match
@@ -296,15 +296,6 @@ function ControlWindow() {
           (/alert), which floats over the game. This window is the always-alive one that can
           reliably play the sound. */}
       <CastAlerts showVisual={false} />
-      <JumpPalette
-        targets={jumpTargets}
-        onJump={openTab}
-        onLookUp={(text) => {
-          openTab("search");
-          setPrefill(text);
-        }}
-      />
-
       <div ref={appShellRef} className={`app glass ${maximized ? "maximized" : ""}`}>
         <Titlebar>
           <h1>
@@ -348,8 +339,11 @@ function ControlWindow() {
         <TabBar className="sections" items={area.sections.map((k) => sectionItems[k as Tab])} active={tab} onSelect={openTab} />
 
         {/* Where you have been, under the tabs and above the panel — because the trail crosses both
-            (ADR 0173). */}
-        <NavBar />
+            (ADR 0173) — and the search bar beside it, in the frame on every screen (ADR 0346). */}
+        <div className="nav-row">
+          <NavBar />
+          <SearchBar targets={jumpTargets} onJump={openTab} onLookUp={lookUp} />
+        </div>
 
         {/* The one region click-through hands to the game — see `PASS_THROUGH`. */}
         <div className="panel" {...PASS_THROUGH}>

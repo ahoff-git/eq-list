@@ -4276,29 +4276,31 @@ select optgroup {
 .now-clock { font-variant-numeric: tabular-nums; min-width: 4.5em; color: var(--text-dim); }
 .now-warn { color: var(--warn, #e0a030); }
 
-/* Ctrl+K jump palette (JumpPalette, ADR 0320). */
-.jump-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 200;
+/* The universal search bar (SearchBar, ADR 0346): beside the trail, its list dropped over the panel.
+   The row carries the trail's strip so the two read as one line of the frame; the trail keeps its own
+   overflow clip, which is why the bar sits beside it rather than inside it. */
+.nav-row {
+  position: relative;
+  z-index: 20;
   display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  padding-top: 72px;
-  background: rgba(0, 0, 0, 0.35);
+  align-items: center;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
 }
-.jump-palette {
-  width: min(420px, calc(100% - 32px));
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px;
+.nav-row .crumbs { flex: 1; min-width: 0; border-bottom: none; }
+.search-bar { position: relative; flex: 0 1 220px; min-width: 120px; padding: 3px 16px 5px 0; }
+.search-bar .field { width: 100%; }
+.search-bar .jump-list {
+  position: absolute;
+  top: 100%;
+  right: 16px;
+  width: min(360px, calc(100vw - 32px));
+  padding: 6px;
   background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
 }
-.jump-palette .field { width: 100%; }
 .jump-list { display: flex; flex-direction: column; max-height: 320px; overflow-y: auto; }
 .jump-item {
   display: flex;

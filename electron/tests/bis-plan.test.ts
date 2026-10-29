@@ -102,6 +102,17 @@ test("the plan: wear the best of what you hold, merge where it pays, fill socket
   ]);
 });
 
+test("a slot nothing matches keeps what you wear there, unless you excluded it", () => {
+  // Nothing here carries HP, so the solver would leave both finger slots blank.
+  const plan = bisPlan({ rows, inventory: parseInventoryDump(dump), criteria: wizard, weights: { hp: 1 }, options: OWNED });
+  assert.deepEqual(plan.loadout.picks.map((p) => [p.slot, p.item.title, p.kept]).sort(), [
+    ["FINGER", "Iron Ring", true],
+    ["FINGER", "Moonstone Ring", true],
+  ]);
+  const without = bisPlan({ rows, inventory: parseInventoryDump(dump), criteria: wizard, weights: { hp: 1 }, options: withExcluded(OWNED, "Iron Ring") });
+  assert.deepEqual(without.loadout.picks.map((p) => p.item.title), ["Moonstone Ring"]);
+});
+
 test("the Search box's name text narrows what can be hunted, and the plan says how many it left", () => {
   // Respected, not ignored — but the page has to be able to say *why* nothing is suggested, so the
   // count the name left is part of the plan.

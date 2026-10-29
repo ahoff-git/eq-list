@@ -1,10 +1,10 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useFuzzyFilter } from "@/lib/useFuzzyFilter";
 import SearchField from "@/app/components/SearchField";
 import type { TabItem } from "@/app/components/chrome/TabBar";
 
-/** One place the palette can take you: a section, named with the area it lives in. */
+/** One place the bar can take you: a section, named with the area it lives in. */
 export interface JumpTarget {
   section: TabItem;
   area: string;
@@ -13,12 +13,17 @@ export interface JumpTarget {
 const textOf = (t: JumpTarget) => `${t.section.label} ${t.area}`;
 
 /**
- * **Ctrl+K**: type a few letters, press Enter, be there — any section in any area, or, when nothing
- * matches by name, a lookup of what you typed in Find → Search
- * ([ADR 0320](../../../../specs/decisions/0320-tabs-are-grouped-into-areas-by-what-you-are-doing.md)).
- * The quick way past the two rows of tabs; the rows stay for reading where you are.
+ * The universal search bar, always in the window's frame beside back and forward: type a few
+ * letters, press Enter, be there — any section in any area, or a lookup of what you typed in
+ * Find → Search, which answers from the wiki, your inventory, stances and AAs at once
+ * ([ADR 0321](../../../../specs/decisions/0321-find-answers-from-one-box.md)). **Ctrl+K** focuses it.
+ *
+ * It began as a Ctrl+K palette that only existed while summoned
+ * ([ADR 0320](../../../../specs/decisions/0320-tabs-are-grouped-into-areas-by-what-you-are-doing.md));
+ * drawn all the time, nobody has to know the shortcut to find it
+ * ([ADR 0346](../../../../specs/decisions/0346-search-is-a-bar-in-the-frame.md)).
  */
-export default function JumpPalette({
+export default function SearchBar({
   targets,
   onJump,
   onLookUp,
@@ -27,6 +32,7 @@ export default function JumpPalette({
   onJump: (section: string) => void;
   onLookUp: (text: string) => void;
 }) {
+  const field = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const usable = useMemo(() => targets.filter((t) => !t.section.disabled), [targets]);
@@ -39,27 +45,27 @@ export default function JumpPalette({
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        setOpen((o) => !o);
+        field.current?.focus();
+        field.current?.select();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-  useEffect(() => {
-    setQuery("");
-    setActive(0);
-  }, [open, setQuery]);
   useEffect(() => setActive(0), [query]);
 
-  if (!open) return null;
-
-  const choose = (i: number) => {
+  const close = () => {
     setOpen(false);
+    setQuery("");
+    field.current?.blur();
+  };
+  const choose = (i: number) => {
+    close();
     if (i < filtered.length) onJump(filtered[i].section.key);
     else if (lookUp) onLookUp(lookUp);
   };
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape") setOpen(false);
+    if (e.key === "Escape") close();
     else if (e.key === "ArrowDown") setActive((i) => Math.min(choices - 1, i + 1));
     else if (e.key === "ArrowUp") setActive((i) => Math.max(0, i - 1));
     else if (e.key === "Enter" && choices) choose(active);
@@ -68,10 +74,22 @@ export default function JumpPalette({
   };
 
   return (
-    <div className="jump-backdrop" onMouseDown={() => setOpen(false)}>
-      <div className="jump-palette" onMouseDown={(e) => e.stopPropagation()} onKeyDown={onKeyDown}>
-        <SearchField value={query} onChange={setQuery} placeholder="Go to… or look up a name" autoFocus />
-        <div className="jump-list" role="listbox">
+    <div className="search-bar no-drag" onKeyDown={onKeyDown}>
+      <SearchField
+        ref={field}
+        value={query}
+        onChange={(text) => {
+          setQuery(text);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        placeholder="Search or go to… (Ctrl+K)"
+        aria-label="Search everything, or go to a section"
+      />
+      {open && choices > 0 && (
+        // Mouse-down is kept from the field, so a click lands before the blur closes the list.
+        <div className="jump-list" role="listbox" onMouseDown={(e) => e.preventDefault()}>
           {filtered.map((t, i) => (
             <button key={t.section.key} role="option" aria-selected={i === active} className={`jump-item ${i === active ? "active" : ""}`} onClick={() => choose(i)}>
               {t.section.label}
@@ -85,7 +103,7 @@ export default function JumpPalette({
             </button>
           )}
         </div>
-      </div>
+      )}
     </div>
   );
 }

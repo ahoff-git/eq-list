@@ -1165,6 +1165,21 @@ features for later in [../ideas.md](../ideas.md).
       partway (not yet at its goal) and confirm **no** toast fires for that progress ping, even though
       the 🏅 banner still does — only a whole achievement finishing earns the click-through toast.
 
+- **Two loadout rules taken secondhand.** The loadout builder assumes a weapon in an `Any Slot`
+  doesn't swing, and that LORE applies across both `Any Slot`s
+  ([ADR 0310](../decisions/0310-best-in-slot-is-an-exact-assignment-by-your-weights.md)). Wear a
+  weapon in an Any Slot and fight: no swings from it. Try two copies of a LORE item, one per Any Slot:
+  refused.
+- **A loadout slot nothing matches keeps what you wear.** ([ADR 0347](../decisions/0347-a-slot-nothing-matches-keeps-what-you-wear.md).)
+  With a fresh inventory dump, set the weights to one stat few items carry: every other slot shows
+  your worn piece with "· kept", none blank.
+- **The search bar and the mob difficulty slider, in the running app.**
+  ([ADR 0346](../decisions/0346-search-is-a-bar-in-the-frame.md), [ADR 0348](../decisions/0348-a-mob-card-is-scaled-by-difficulty.md).)
+  The bar sits right of the back/forward trail on every screen, Ctrl+K focuses it, its list isn't
+  clipped and closes on Escape or a click away, and at the narrowest overlay width the trail still
+  shows ←. On a mob page, dragging Difficulty recolours the HP and damage figures, the hover shows the
+  wiki's number, and the setting survives opening another mob.
+
 ## Peer networking — two clients
 
 - **The shared game clock — never run with a real peer.**

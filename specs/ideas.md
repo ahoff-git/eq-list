@@ -53,6 +53,14 @@ outcome goes in an ADR, a README, or the code — never here).
 
 ## Travel
 
+- **A dungeons-only guide line.** In-zone A\* over the map's geometry stays ruled out
+  ([retired ADR 0049](./decisions/README.md#retired-and-reused-numbers), [map](./map/README.md)'s
+  non-responsibilities): an `L` record is a wall in a dungeon and a contour outdoors. eql-log-reader
+  ships it anyway (`_nav_graph()`/`_nav_path()` in `eql_atlas_map.py` walk the drawn segments), which
+  looks right in a corridor and would route you along a hillside outdoors. The one version worth
+  costing is narrower: draw only where the geometry is known to be walls, using `zone_type` in
+  `spells_us.txt` (column 33, outdoor/dungeon) or the map's z-spread, and refuse outdoors.
+
 - **Ask from the other windows too.** The 🧭 panel ships in the map window
   ([ADR 0062](./decisions/0062-a-travel-graph-of-zone-lines.md), [travel](./travel/README.md)), and
   `api().travel.route` is available to any of them. The two that would want it: the **Hunt tab**,
@@ -62,6 +70,15 @@ outcome goes in an ADR, a README, or the code — never here).
   planner.
 
 ## Loot, list and the meter
+
+- **Best in slot could price an effect.** An effect can be required
+  ([ADR 0318](./decisions/0318-best-in-slot-takes-your-word.md)) but not weighed: unwanted is worth
+  nothing, wanted is kept at any price ([ADR 0310](./decisions/0310-best-in-slot-is-an-exact-assignment-by-your-weights.md)).
+  A per-effect weight would let the solver trade them. The snag: same-named effects don't stack,
+  which an assignment can't express.
+- **Why did I get this coin?** An unsourced coin (`kill-log.ts`'s `noteCoin` returning `false`, an
+  ordinary case per ADR 0047) gets a faction-style cause guess, but only as a debug line (`main.ts`'s
+  `onCoin`). A ledger of it, like `faction-log.ts`, is worth a tab only if someone wants one.
 
 - **An ignore list, and a highlight worth the name.** The Loot tab's split views, filters and sortable
   columns ship ([ADR 0058](./decisions/0058-a-ledger-needs-filters-and-a-column-to-sort-by.md)), and
@@ -170,6 +187,25 @@ And four the same sweep says to **refuse**, recorded so they aren't proposed aga
 
 ## Wiki data
 
+- **`dbstr_us.txt`, the third game text file.** 9.8 MB beside the two already read (`spells_us.txt`,
+  [ADR 0080](./decisions/0080-the-game-s-own-spell-file.md); `spells_us_str.txt`,
+  [ADR 0140](./decisions/0140-a-buff-is-watched-until-it-lapses.md)). It holds AA and item description
+  strings. No consumer yet; the other two each answered a limit we'd already written down.
+- **A Project Quarm baseline under our own observations.** eql-log-reader distils the public Quarm
+  database (same EQMacEmu lineage) into named spawn points, respawn timers, drop tables with
+  percentages, zone adjacency and an item id map (`eql_atlas_baseline.json.gz` /
+  `eql_atlas_baseline_build.py`), plus ~3,300 quest turn-ins (`eql_quest_db.json.gz`). It would seed
+  spawn timers before your second kill, back [drop-truth.ts](../src/shared/mob/drop-truth.ts)'s
+  wiki half, and fill travel-graph holes. **Needs an ADR first**: different provenance, licensing and
+  game than [ADR 0003](./decisions/0003-eqlwiki-runtime-data-source.md) chose, so era-gated, shown as a
+  claim, and outranked by observation ([ADR 0025](./decisions/0025-observation-over-the-wiki.md)).
+- **A borrowed claim promoted to proven.** eql-log-reader marks a quest confirmed on EQL, per
+  character and permanently, once the log shows the NPC say that quest's recorded success line
+  (`QuestState.confirmed` in `eql_quest.py`; case- and whitespace-folded). We can let an inferred bound
+  fall ([ADR 0031](./decisions/0031-an-inferred-bound-must-be-able-to-fall.md)) but nothing ratchets
+  borrowed data to "seen ourselves". The care is evidence a false positive can't fake (a whole
+  sentence, not a substring); absence of confirmation means nothing.
+
 - **The spell file's other columns.** Damage per mana is done
   ([ADR 0080](./decisions/0080-the-game-s-own-spell-file.md)) and permanence is now read off the
   duration formula ([ADR 0140](./decisions/0140-a-buff-is-watched-until-it-lapses.md)), which leaves
@@ -191,3 +227,14 @@ And four the same sweep says to **refuse**, recorded so they aren't proposed aga
   reset it at ([ADR 0229](./decisions/0229-a-faction-correction-is-a-stated-offset.md)) — a faction's
   real total. Worth a look for other gaps — resist-rate targets? gear goals? — rather than inventing
   new one-off inputs for each.
+
+## Distribution and performance
+
+- **Point the landing page's Download straight at the asset.** Pages hosting is live
+  (`.github/workflows/deploy-pages.yml`, https://ahoff-git.github.io/eq-list/) and Download goes to
+  `/releases/latest`, which already redirects. Linking `/releases/latest/download/<asset>` would save
+  the hop but needs a predictable asset name templated in somewhere.
+- **Intern the item catalogue after parsing.** 5.7 MB of JSON per first mount, parsed in 24 ms and
+  held across mounts. JSON can't share the repeated `Class: ALL` arrays, so a post-parse intern pass
+  would cut the window's memory, if that ever matters. Any other payload that large crossing
+  `contextBridge` should be sent as text from the start, as the catalogue now is.

@@ -253,8 +253,9 @@ list, hunt, search, damage, session, peers, settings.
   Settings), and the row under it is the showing area's **sections**. Each section is one of the old
   tabs, under its old key, so the trail and `openTab` are unchanged. The area is derived from the
   section; each area reopens on the section last used there (`eqlist.main.areaSections`); a
-  one-section area draws no second row. **Ctrl+K** (`JumpPalette`) jumps to any section or looks the
-  typed text up in Search. Now's first section is the **Overview** (`now/NowOverview.tsx`), one card
+  one-section area draws no second row. The **search bar** (`chrome/SearchBar.tsx`), always drawn
+  beside the back/forward trail and focused by **Ctrl+K**, jumps to any section or looks the typed
+  text up in Search ([ADR 0346](../decisions/0346-search-is-a-bar-in-the-frame.md)). Now's first section is the **Overview** (`now/NowOverview.tsx`), one card
   per running board, each opening its section. The status bar carries the **stale-export reminder**
   (`exports/StaleExportChip.tsx`), and an item's hover card says **who has it** (`lib/exports/ownership.tsx`).
   ([ADR 0320](../decisions/0320-tabs-are-grouped-into-areas-by-what-you-are-doing.md))
@@ -982,6 +983,17 @@ list, hunt, search, damage, session, peers, settings.
 
     Files are found by `electron/game-exports.ts` beside `Logs/` and parsed in the renderer by
     `src/shared/game-export-dumps.ts`. Matching and staleness live in `src/shared/game-exports.ts`.
+
+    Format notes, from real dumps (2026-10-20). The client's usage line is `/outputfile [achievements
+    | faction | guild | guildbank | guildhall | inventory | missingspells | raid | realestate | recipes
+    [argument] | spellbook ] [optional filename]`: no depot, hoard or storage option, so all of those
+    come through `inventory`. `recipes all` is refused. Each dump also logs `Outputfile Complete:
+    <file>`, which could replace polling the folder. Some file names carry a class code
+    (`-WIZ-Factions`). `Hoard N` and `Personal-DepotN` rows appear only while their windows are open.
+    The Storage tabs come last, under a second `KeyRing Name ID` header (`Equipment`, `Augmentation` =
+    Exaltation, `Activated`); the Currencies tab isn't dumped. `Any Slot` is EQL's name for two worn
+    slots. eqltools-companion saw a bought item missing from Storage across three dumps (its commit
+    56031f1), cause unknown, so the tab warns that Storage may drop rows.
   - `PeersPanel` — **the whole peer network, in one tab** (`PeerTray`, `PeerScores`, `PeerInventories`,
     `PeerOfferToasts`; owned by [peers](../peers/README.md)). Before Settings and after everything you
     read while playing: it is the same *kind* of thing as Settings — somewhere you go to decide

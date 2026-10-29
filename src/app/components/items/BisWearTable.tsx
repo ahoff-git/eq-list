@@ -223,7 +223,15 @@ export default function BisWearTable({
         renderCell: ({ row: r }) =>
           r.pick ? (
             r.pick.item.heldAt ? (
-              isMoved(r) ? <>from {r.pick.item.heldAt}</> : <span className="muted">{r.pick.item.heldAt}</span>
+              isMoved(r) ? (
+                <>from {r.pick.item.heldAt}</>
+              ) : r.pick.kept ? (
+                <span className="muted" title="Nothing under your weights and criteria matched this slot, so you keep what you wear">
+                  {r.pick.item.heldAt} · kept
+                </span>
+              ) : (
+                <span className="muted">{r.pick.item.heldAt}</span>
+              )
             ) : (
               <HuntSource row={plan.huntFrom[r.pick.item.title]} />
             )

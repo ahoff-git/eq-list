@@ -18,6 +18,6 @@ export default function SearchField({
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
-} & Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "placeholder" | "className">) {
+} & Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "placeholder" | "className"> & { ref?: React.Ref<HTMLInputElement> }) {
   return <TextField {...rest} className={className} placeholder={placeholder} value={value} onChange={onChange} />;
 }

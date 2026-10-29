@@ -4,7 +4,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bestLoadout, copiesFor, gradedValues, huntSuggestions, mergedGrade, type BisCandidate } from "../../src/shared/items/bis";
+import { bestLoadout, copiesFor, gradedValues, huntSuggestions, keepWorn, mergedGrade, type BisCandidate } from "../../src/shared/items/bis";
 import { NO_ITEM_STATS, type ItemStats } from "../../src/shared/items/item-stats";
 
 let n = 0;
@@ -64,6 +64,25 @@ test("LORE: one of each, the best copy", () => {
 
 test("worthless items are not worn just to fill a slot", () => {
   assert.equal(bestLoadout([item("Junk", ["HEAD"], 0)], ["HEAD"]).picks.length, 0);
+});
+
+test("keepWorn: a slot nothing matched keeps what you wear there, marked as kept", () => {
+  const layout = ["HEAD", "CHEST", "FINGER", "FINGER"];
+  const hat = item("Old Hat", ["HEAD"], 0);
+  const ring = item("Old Ring", ["FINGER"], 0);
+  const solved = bestLoadout([item("Tunic", ["CHEST"], 5)], layout);
+  const loadout = keepWorn(solved, [{ slot: "HEAD", item: hat }, { slot: "CHEST", item: item("Old Tunic", ["CHEST"], 0) }, { slot: "FINGER", item: ring }], layout);
+  assert.deepEqual(worn(loadout), ["CHEST:Tunic", "FINGER:Old Ring", "HEAD:Old Hat"]);
+  assert.deepEqual(loadout.picks.filter((p) => p.kept).map((p) => p.item.title).sort(), ["Old Hat", "Old Ring"]);
+  assert.equal(loadout.total, 5);
+});
+
+test("keepWorn: a slot locked empty, the off-hand of a swung two-hander, and a picked item stay as solved", () => {
+  const layout = ["HEAD", "PRIMARY", "SECONDARY"];
+  const staff = item("Staff", ["PRIMARY"], 9, { twoHanded: true });
+  const solved = bestLoadout([staff], layout, [{ slotIndex: 0, item: null }]);
+  const loadout = keepWorn(solved, [{ slot: "HEAD", item: item("Hat", ["HEAD"], 0) }, { slot: "SECONDARY", item: item("Shield", ["SECONDARY"], 0) }, { slot: "PRIMARY", item: staff }], layout);
+  assert.deepEqual(worn(loadout), ["PRIMARY:Staff"]);
 });
 
 test("hunting: each target is weighed against the weakest thing it would push out", () => {

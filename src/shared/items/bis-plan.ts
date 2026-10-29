@@ -34,6 +34,7 @@ import {
   isTwoHanded,
   copiesFor,
   huntSuggestions,
+  keepWorn,
   mergedGrade,
   valueIn,
   WORN_LAYOUT,
@@ -232,6 +233,16 @@ interface Held {
   item: InventoryItem;
   row: ItemRow;
   candidate: BisCandidate;
+}
+
+/**
+ * A worn slot as the dump names it, in `WORN_LAYOUT`'s spelling: EQL's `Any Slot` (and Live's Charm
+ * and Power Source, which it stands for) is `ANY`, and the dump's plural `Fingers` is `FINGER`.
+ */
+function layoutSlot(dumpSlot: string): string {
+  const s = dumpSlot.toUpperCase();
+  if (s === "ANY SLOT" || s === "CHARM" || s === "POWER SOURCE") return "ANY";
+  return s === "FINGERS" ? "FINGER" : s;
 }
 
 /** How many of one item a loadout could wear: one if LORE, else as many as its widest slot pair. */
@@ -613,11 +624,19 @@ export function bisPlan({ rows, inventory, criteria, weights, closedZones, optio
   }
 
   const final = solveWith(usableCandidates());
-  loadout = final.loadout;
+  // A slot nothing matched keeps what you wear there — even a piece the criteria would hide, since
+  // you're wearing it — unless you've excluded it or promised it as a stone.
+  const wornNow = inventory.flatMap((it, i) => {
+    const row = it.area === "worn" && !isExaltation(it.name) ? rowOf(it.baseName) : undefined;
+    if (!row || isOut(row.item.title) || reserved.has(`held:${i}`)) return [];
+    const item = heldById.get(`held:${i}`)?.candidate ?? candidate(`held:${i}`, row, it.grade, inventoryPlaceText(it));
+    return [{ slot: layoutSlot(it.slot), item }];
+  });
+  loadout = keepWorn(final.loadout, wornNow);
   const inLoadout = new Set(loadout.picks.map((p) => p.item.id));
 
   // ── What you're wearing now ──
-  const wornHere = (h: Held) => (h.item.slot === "Any Slot" ? "ANY" : h.item.slot.toUpperCase());
+  const wornHere = (h: Held) => layoutSlot(h.item.slot);
   const wearing = round2(
     held.filter((h) => h.item.area === "worn").reduce((t, h) => t + (valueIn(h.candidate, wornHere(h)) ?? h.candidate.value), 0),
   );

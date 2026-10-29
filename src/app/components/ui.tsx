@@ -125,7 +125,7 @@ export function TextField({
 }: {
   value: string;
   onChange: (value: string) => void;
-} & Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange">) {
+} & Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange"> & { ref?: React.Ref<HTMLInputElement> }) {
   const [text, setText] = useState(value);
   /** The last value this field put upstream — anything else arriving is a genuine outside change. */
   const sent = useRef(value);

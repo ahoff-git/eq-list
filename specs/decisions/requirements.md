@@ -231,6 +231,9 @@ reading like a measurement, and they are shared code
 
 ## Kills, drops and mob knowledge
 
+- **A mob card's HP and damage are shown at a chosen difficulty**, on the wiki's tier table and a
+  multiplier nothing measured, so a scaled figure is always called an estimate.
+  ([0348](./0348-a-mob-card-is-scaled-by-difficulty.md))
 - **A kill is recorded with its evidence, not just a position** — the fix and its age, the previous
   fix, distance/time/speed, a dead-reckoned guess in its own fields, and a confidence score. Nothing
   is discarded; a kill with no fix is still recorded. ([0022](./0022-invocation-effects-and-kill-locations.md))
@@ -687,6 +690,10 @@ reading like a measurement, and they are shared code
 - **Search's one box finds what has no page too**: your held items at their best grade, stances and
   invocations, and AAs, each matched as its own section matches, five per group with the heading
   opening the rest. ([0321](./0321-find-answers-from-one-box.md))
+- **Search is always on screen**: a bar beside the back/forward trail, focused by Ctrl+K, jumps to
+  a section or hands the text to Search. ([0346](./0346-search-is-a-bar-in-the-frame.md))
+- **A loadout slot nothing matches keeps what you wear**, marked as kept; locks, exclusions and a
+  swung two-hander's off-hand still win. ([0347](./0347-a-slot-nothing-matches-keeps-what-you-wear.md))
 
 ## Peers
 

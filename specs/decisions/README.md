@@ -386,8 +386,19 @@ finished, so a number is claimed before a second author can reach for it.
 - [0343: Resists and avoidance (dodge/parry/block/riposte) are filed in the damage cells, so every drill-down shows a resist rate and a miss breakdown per spell or skill, per victim, per fight](./0343-resists-and-avoidance-live-in-the-damage-cells.md)
 - [0344: Fight search matches every combatant, and the matches get a trends panel (damage mix, resisted spells, avoidance, deaths) read off their damage cells](./0344-fight-search-finds-combatants-and-reads-trends.md)
 - [0345: A debuff's landing is read off its own sentence (paired with your cast) and filed in the cells, so debuffs get a resist rate per target; your own spells always show theirs, 0% included](./0345-a-debuff-lands-by-its-own-sentence.md)
+- [0346: Search is a bar in the window's frame: the Ctrl+K palette is always drawn beside the back/forward trail, jumping to a section or looking the text up in Find → Search (changes 0320)](./0346-search-is-a-bar-in-the-frame.md)
+- [0347: A loadout slot nothing matches keeps what you wear there (marked kept), rather than being left blank; locks, a swung two-hander's off-hand and exclusions still win](./0347-a-slot-nothing-matches-keeps-what-you-wear.md)
+- [0348: A mob card's HP and damage are scaled by a difficulty slider (D0–D4, instance type, multi-class) on the wiki's tier table and an unmeasured per-tier multiplier, shown as an estimate](./0348-a-mob-card-is-scaled-by-difficulty.md)
 
 ## Open Questions
+
+- **What multiplier is each difficulty tier, really?** [ADR 0348](./0348-a-mob-card-is-scaled-by-difficulty.md)
+  scales a mob card on the wiki's relative tiers with an unsourced 100/130/170/220/300% ladder. The
+  app could measure it: the damage dealt to kill a mob at a known difficulty (the zone name carries
+  it) is a lower bound on its health there, pooled per mob the way `hp-estimate.ts` bounds yours.
+  Open: whether that's worth building, and whether damage really scales like health. Also open: how
+  a multiplayer raid's health scales with party size, which the wiki says it does and doesn't
+  quantify, and at what difficulty the wiki's own `HP:` figures were read (taken as public D0).
 
 - **What does AGI buy in AC on EQL, and where do the mana and STA knees sit?** [ADR 0317](./0317-hp-mana-and-ac-are-weighted-through-the-stats-that-make-them.md)
   uses ⅓ AC per AGI (one eqlwiki figure) and the 101–200 band's mana rate for everyone. A gear swap
@@ -686,3 +697,36 @@ and degrading to blank facts when the file isn't there.*
   ([ADR 0321](./0321-find-answers-from-one-box.md)), but finding an item *by shape* (slot, class,
   stats) is still the Items section. Whether those filters could appear under the box once you pick
   "items", without crowding a lookup by name, is open.
+- **How would a route be drawn across several maps without reading as a path to walk?** Everything
+  it needs exists: `surveyZone` places a zone's nodes, a border node carries its position in both
+  zones (the pin that stitches two maps), and `routeInstructions` orders the nodes
+  ([ADR 0113](./0113-the-graph-is-drawn-on-the-map-it-was-read-from.md)). But a line between two
+  points is a claim about the ground, which [retired ADR 0049](./README.md#retired-and-reused-numbers)
+  and the map's non-responsibilities rule out. A schematic ("these places, in order") is a smaller
+  claim but will still look like a path, so it needs an answer in how it's drawn (straight, curved,
+  beaded) before it's built. Two smaller problems: two maps share no coordinate frame, so laying them
+  out has only a legible answer, not a correct one; and a zone crossed only by conveyance may be a stop
+  rather than a map.
+- **When a pack draws one era of a zone twice, which drawing wins?** Today the named one, which suits
+  the overlay and often loses coverage: `oceanoftears` holds Ocean of Tears' druid ring, dock and
+  Narrik translocator where the kept `oot` holds a succor point; `freeporteast` has six exits to
+  `freporte`'s two; `southro` ten to `sro`'s four. The frames differ, so they can't be merged
+  ([ADR 0111](./0111-one-zone-one-map-file.md)). [ADR 0174](./0174-the-era-decides-which-drawing-is-the-zone.md)
+  settles only a pair that is two eras.
+- **Should the map's zone picker hide a second drawing of a zone, or offer it as one?** The travel
+  graph folds `mistythicket` into `misty` (`duplicateZoneFiles`), but `zonesFromFiles` still returns
+  both, so the picker shows "Misty Thicket" and a bare "mistythicket", and kills keyed to each are two
+  piles. Hiding it is simplest; it is also a real map someone may prefer.
+- **Should a hand-written delay cue on a permanent buff be suppressed, or annotated?** A watch with a
+  `delay` ([ADR 0082](./0082-an-alert-can-be-scheduled.md)) still says "recast Yaulp" 25 s after a cast,
+  though `SpellFacts.permanent` knows Yaulp never ends here
+  ([ADR 0140](./0140-a-buff-is-watched-until-it-lapses.md)). Silently suppressing a rule the player
+  wrote is surprising; a note on the rule's row fits how every other soft figure is shown.
+- **May we read EQLGS, and at what trust?** It states an item's expansion and a hand-curated
+  "verified as available in EverQuest Legends" flag, keyed on Lucy's item ids (`eqlgs.net/item/detail/1649`
+  is `lucy.allakhazam.com/item.html?id=1649`), with plain zone names and this server's drop lists —
+  everything Lucy's inferred era lacks ([ADR 0124](./0124-lucy-is-a-second-opinion.md)). It has no
+  public repo or licence, so it's a scrape worth asking about first; the flag is one person's curation
+  (Lucy's trust level, not the wiki's); and it warns `Out of era items may be listed!`. It was also
+  down (HTTP 502, 2026-08-28) — re-check before spending time.
+

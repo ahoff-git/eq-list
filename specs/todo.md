@@ -1,8 +1,8 @@
 # Todo
 
 **Open work only** — a bug, or a decided change someone means to make. Delete an item when it's done
-and record the outcome where it belongs (an ADR, a README, or the code). Three neighbours take
-everything else, so this list can stay short enough to read:
+and record the outcome where it belongs (an ADR, a README, or the code). Keep each item to a few
+lines; the reasoning lives in the ADR it links. Everything else has a neighbour:
 
 - [ideas.md](./ideas.md) — features worth building that nothing is waiting on.
 - [decisions/README.md](./decisions/README.md) `## Open Questions` — anything that needs *deciding*
@@ -10,579 +10,88 @@ everything else, so this list can stay short enough to read:
 - [testing/manual-qa.md](./testing/manual-qa.md) — built, typechecked and tested, but never yet run
   for real (in-game, packaged, or across two clients).
 
-## Distribution
+## Bugs
 
-- **Landing page — point Download straight at the asset (optional).** Hosting is done and live:
-  `.github/workflows/deploy-pages.yml` publishes `landing/` to GitHub Pages
-  (https://ahoff-git.github.io/eq-list/), Pages is enabled with source = GitHub Actions.
-  `landing/index.html`'s buttons are wired (Download → `/releases/latest`, Launch → `eqlist://open`).
-  Still open: pointing Download straight at `/releases/latest/download/<asset>` needs a stable,
-  *predictable* filename pattern (`${version}` still changes release to release, which is fine — the
-  link would just need to be templated by something, since nothing hardcodes the current version
-  today). Low value since `/releases/latest` already redirects correctly; only worth it to save the
-  extra hop.
+- **A group-mate killed by a named lands on the spawn board as a named.** `provenNamed` only learns
+  someone is a person when they kill an article mob, so `Bunnyslayer` (slain by Lord Nagafen) passes
+  as a named. Likely tell: the killer is a known named (article proof, or a rare tag per
+  [ADR 0324](./decisions/0324-the-game-saying-rare-is-proof.md)), and a named killing something is a
+  player or pet dying.
+- **Respawn learning reads only your last 200 kills.** `spawn-tracker.ts` calls unscoped
+  `killLog.kills()`, capped by [ADR 0243](./decisions/0243-remove-the-remaining-storage-caps.md). A full
+  read is ~40ms per kill at 10k kills, so it wants a cached read keyed on `killLog.version()`.
+- **"West Cabilis" and "East Cabilis" don't resolve to Cabilis**, so a Cabilis merchant reads as
+  open while Kunark is shut (item "How to get it", Tradeskills hover). Probably one alias in the zone
+  resolver every era check shares — look at what else it would fold.
+- **`poiKind` files `Druid Rings` under "Names & places".** `\bdruid ring\b` misses the plural. Pinned
+  black box with a corpus tally ([ADR 0048](./decisions/0048-a-map-label-is-read-by-its-words.md)), so
+  re-tally rather than patch.
+- **A stale `out/` looks exactly like a broken feature.** `npm run app` rebuilds only a *missing*
+  build, so an old renderer can pair with a new main process. Stamp both halves with one version, or
+  have `launch.mjs` compare mtimes against `src/`.
+- **ADR 0280 says the MCP server registers seven tools; it registers nine** (`item_facet_options`,
+  `list_spell_classes` came later). Record the drift the next time that area is touched.
 
-## Next up
+## Maps, zones and travel
 
-- **Fight trends suggest what to do about them.** The history search's trend tips
-  ([ADR 0344](./decisions/0344-fight-search-finds-combatants-and-reads-trends.md)) say what hurts
-  ("Lava Breath (fire, 72%)") and carry the figures (`TrendTip.sources[].damageType`, melee skill).
-  Turn them into suggestions: raise fire resist (and search gear/buffs for it) against a fire-heavy
-  mob, mitigation/AC against crushing melee, a different spell against a resist wall.
+- **Three expansion pages the zone table can't read**: Omens of War, Ring of Scale, The Darkened Sea
+  (`scripts/fetch-zone-expansions.mjs`, [ADR 0065](./decisions/0065-a-zone-belongs-to-an-expansion.md)).
+  Their wikitext may need one more row separator.
+- **The travel graph reads each zone from the chosen pack only.** It ignores `STOCK_ONLY_ZONES` and
+  can't borrow a zone the pack lacks the way the map does
+  ([ADR 0063](./decisions/0063-a-zone-the-pack-lacks-is-borrowed.md)). One fix for both: harvest each
+  pinned or borrowed zone's labels from its own folder (`zonesFromSources` is the shape).
+- **102 borders are still one-sided**, each a `2000?` stand-in on a route. Each is one
+  `manual-links.ts` entry read off the map. Start with East Freeport ↔ West Freeport.
+- **Second drawings of a zone still slip through.** Re-run the duplicate-drawing audit against the
+  pack's whole file list ([ADR 0111](./decisions/0111-one-zone-one-map-file.md)); West Freeport's
+  borders to *The Commonlands* and *Oldcommons* are the clearest leftover.
+- **Five ring/spire files resolve to no zone**: `commonlands`, `lavastorm_original`,
+  `nektulos_1_original`, `eastkorlach`, `frontiermtnsb`. The first three look like `STALE_DRAWINGS`
+  cases; check against the game's own map file as [ADR 0174](./decisions/0174-the-era-decides-which-drawing-is-the-zone.md) did.
+- **A mob with several camps still gets one map pin.** `MobKnowledge.tsx`'s ± and `huntPins()` pin
+  only the best-supported place ([ADR 0228](./decisions/0228-a-mob-can-have-more-than-one-known-location.md)).
+  `LOCATION_CLUSTER_UNITS` (600) is also an unmeasured global guess.
 
-- **One achievements view: the app's and the game's export together.** Now → Achievements
-  (`AchievementsPanel`, [ADR 0212](./decisions/0212-an-achievement-criterion-can-watch-the-log-or-wait-to-be-told.md)) tracks the stock
-  catalog and your own criteria from the log. Character → Inventory & exports shows the game's
-  achievements dump (`AchievementsDumpView`) separately. Combine them so one list shows what the
-  game says is done next to what the app is tracking, and an exported completion ticks the matching
-  app achievement.
+## Features
 
-- **A group-mate killed by a named lands on the spawn board as a named.** `provenNamed` only knows
-  someone is a person once the log shows them killing an article mob, so a group-mate who never lands
-  a killing blow in your log passes both article checks when a named kills them. On a live install
-  (2026-10-21): `Bunnyslayer` and `Karartik` (slain by Lord Nagafen), `Gonekn` (Magus Rokyl) and
-  `Gabartik` (Master Yael). The killer being a known named, by the article proof or a rare tag
-  ([ADR 0324](./decisions/0324-the-game-saying-rare-is-proof.md)), looks like the tell: a named killing
-  something is the shape of a player or pet dying, never of a named dying.
+- **Fight trends suggest what to do.** Turn [ADR 0344](./decisions/0344-fight-search-finds-combatants-and-reads-trends.md)'s
+  tips into advice: fire resist against a fire-heavy mob, AC against crushing melee, another spell
+  against a resist wall.
+- **One achievements view.** Show the game's achievements dump beside the app's tracked ones
+  ([ADR 0212](./decisions/0212-an-achievement-criterion-can-watch-the-log-or-wait-to-be-told.md)), and
+  tick an app achievement when the export says it's done.
+- **The shopping list counts what you hold.** Use the inventory dump plus loot and sells since it, as
+  EQBuddy's `SinceDump` does (`src/EQBuddy.Core/InventoryFile.cs`).
+- **An alert can be spoken.** A per-watch `speechSynthesis` toggle, independent of the beep, speaking
+  the watch's `message`, with duplicate suppression (EQBuddy).
+- **Gate a shared emote on your own cast.** Arm a zone-visible land emote only after your own `You
+  begin casting <spell>`, in a short-lived pending-cast map (`alert-queue.ts` is the neighbour), and
+  withdraw it on a fizzle or a kill of a same-named mob (eql-alerts v0.1.29). The cast also tells which
+  rank landed. The Burnout pet decider below rides on the same map.
+- **Committed datasets say what built them.** The travel graph, zone table and gazetteer get a
+  manifest of their sources (bytes, mtime, sha256, extractor version), so `data-health.ts` can compute
+  staleness ([ADR 0096](./decisions/0096-stored-data-says-which-rules-wrote-it.md) did the `userData`
+  half). everquest-legends-mcp's `manifest.json` is the shape, and its `zones.json` could cover the
+  three unreadable expansion pages.
+- **Data-integrity tests over committed artefacts.** Every travel edge resolves to a known zone,
+  every gazetteer zone has a map, every expansion has a zone, keys agree across tables. Write down
+  the harvest scripts' merge precedence while there.
 
-- **Three more pet/group-mate deciders from eql-meter v0.1.28** (see [neighbours.md](./neighbours.md)),
-  on top of the ones [ADR 0127](./decisions/0127-an-unknown-name-is-held-not-dropped.md)'s three-step
-  plan already built against — all three now done: a stored fight re-derives
-  ([ADR 0128](./decisions/0128-a-fight-is-re-derived-not-refused.md)), attribution is read-time
-  everywhere it needed to be, and `FightScope.admits` holds and replays a swing that was waiting on a
-  name ([ADR 0284](./decisions/0284-a-held-event-replays-at-its-own-moment.md)). The honest state of
-  these three is that **none is counted on a log of ours** — `fixtures/` holds no instance of any of
-  them, so the line count and false-positive rate every decider ADR 0127 checked carries is missing,
-  and getting it is the gate on adopting these rather than a follow-up to it:
+## Blocked on evidence
 
-  - `<Pet> says, 'My leader is <Player>.'` — the `/pet who leader` answer, and the odd one out twice
-    over. It is **asked for** rather than waited on, which makes it the `AskValue` nag
-    ([ADR 0017](./decisions/0017-camp-efficiency-and-asking-the-player.md)) pointed at a pet instead
-    of a `/loc`, and the one decider a blind window can be ended *deliberately* with. It also names
-    the **leader**, so it is the only signal here that can place a **group-mate's** pet: every proof
-    ADR 0077 admits is addressed to you and therefore only ever answers "is this mine", where this one
-    answers "whose is it". That is a wider claim than ADR 0077 makes, and should be read as an
-    extension of it rather than an application of it.
-  - `<Pet> told you, 'I am unable to wake <mob>, Master.'` — the same private-tell proof as the attack
-    confirmation and structurally as safe (a tell addressed to you cannot be about someone else's
-    pet), but it fires on an order that **failed**, so it can land inside the blind window before
-    anything has been attacked — which is where ADR 0127's measured damage is lost.
-  - `You begin casting Burnout.` followed by `<Pet> goes berserk.` — a pet-only buff, so its landing
-    names a pet; eql-meter reads Augment Death and Focus Death the same way. Worth noting for the
-    order of work rather than for the evidence: this is the **same two-correlated-lines trick** as
-    *Gate a shared emote on your own cast* below, and wants the same pending-cast map. Build that one
-    first and this rides on it instead of growing a second copy.
-
-- **eqlgs.net is down** (checked 2026-08-28: `HTTP 502 Bad Gateway` at the origin — the host answers,
-  the app behind it doesn't). That blocks the item below, which depends on reading its pages. Worth
-  re-checking before spending any time on it; a 502 is the kind of thing that comes back.
-
-- **An item's era is derived where a neighbour simply states it.** [Lucy](./lucy-data/README.md) is
-  in ([ADR 0124](./decisions/0124-lucy-is-a-second-opinion.md)) and its one real weakness is the era:
-  Lucy has no era or expansion field anywhere, so the verdict is inferred from the zones on its drop
-  and merchant rows, and for a quest reward or a crafted good it can only answer `unknown` — which is
-  most search rows, until you open one. **[EQLGS](./neighbours.md) has the field.** Its item search
-  shows an expansion badge *and* a hand-curated availability flag whose hover reads verbatim `Item is
-  verified as available in EverQuest Legends`, and — the part that makes this cheap — **it is keyed on
-  the same item ids Lucy is**: `eqlgs.net/item/detail/1649` and `lucy.allakhazam.com/item.html?id=1649`
-  are the same bracelet, and its own page links out to Lucy. So `LucyItem.id` is already the join key;
-  nothing has to be matched by name. Two further prizes on the same page: its **zone names need no
-  decoder** (it says `The Hole` where Lucy says `Ruins of Old Paineel 2.0 (The Hole)`), and its drop
-  lists are **this server's** — ten elemental NPCs in The Hole for that bracelet, where Lucy has two.
-  What to settle first: it has **no public repo and no licence to read**, so this is a scrape of
-  someone's website and worth asking them about; the availability flag is one person's curation, not a
-  measurement, so it belongs at Lucy's trust level rather than the wiki's; and it says
-  `WARNING: Out of era items may be listed!` over its own results, which is a caveat to carry through
-  rather than launder.
-
-- **A consider's level is unread — and one real line unblocks it.** The model is built and tested
-  ([ADR 0121](./decisions/0121-a-mob-is-a-range-of-levels.md), `src/shared/levels.ts`): a mob's level
-  is a *range*, its bounds widen with evidence, the wiki's `Level: 33-37` already parses, and pooling
-  a range across contributors is arithmetic that already exists. What's missing is the live source.
-  `parseSighting` reads a consider today for a different purpose — it recognises the closed set of
-  faction wordings (`regards you indifferently`, `scowls at you, ready to attack`, …) as proof the mob
-  is up ([ADR 0097](./decisions/0097-a-sighting-is-the-tightest-evidence-there-is.md)) and **throws
-  the rest of the line away**, including the `-- this opponent looks like an even fight` tail.
-
-  It needs **one consider line, copied out of a real log**, showing where the level appears — in the
-  tail, on a line of its own, or somewhere else. That regard list fails closed on purpose (a false
-  sighting is permanent, a missed one costs a click), so guessing the wording is exactly the mistake
-  it exists to prevent. With the line in hand this is: extend the consider parse to carry an optional
-  `level`, fold it through `observeLevel` per mob, store it beside the observations, and put it in the
-  contribution payload — the machinery from
-  [ADR 0132](./decisions/0132-a-contribution-is-keyed-by-who-made-it.md) carries it unchanged.
-
-- **A faction hit's cause is a guess, unverified, and naming a quest is still a guess on top of a guess.**
-  [ADR 0218](./decisions/0218-a-faction-hit-is-parsed-not-only-watched.md) built the parser and
-  ledger; [ADR 0219](./decisions/0219-a-faction-cause-is-a-guess-from-timing.md) added a kill-based
-  guess; [ADR 0220](./decisions/0220-a-conversation-can-be-the-guessed-cause-too.md) added a
-  dialogue-based fallback for when no kill explains a hit; [ADR 0221](./decisions/0221-a-guessed-speaker-can-name-a-quest-giver.md)
-  matches the guessed speaker's name against the wiki's own cached "Quest giver" field; [ADR 0223](./decisions/0223-a-guessed-line-can-match-a-quests-own-dialogue.md)
-  compares the observed line against each of that giver's own cached quests' dialogue
-  (`fuzzyScore`) to narrow further when it can. `src/shared/faction-cause.ts` blames the most recent
-  own-kill within 3 seconds, or the most recent "Name says/tells you, '...'" line within 15 — naming
-  the specific quest when its own dialogue matched, or every quest that speaker is known to give when
-  nothing narrowed it — shown in the Faction tab dim, italic and captioned as a guess rather than a
-  fact. Real gaps remain:
-
-  1. ~~**The kill window's *width*, and the dialogue threshold, were unmeasured.**~~ **Measured** —
-     [ADR 0281](./decisions/0281-three-seconds-and-point-five-were-already-right.md), against 11,292
-     real raised/lowered hits (20,571 total) spanning 2.5 months. Both constants stay: 96.3% of hits
-     already land within 3 seconds of a kill, with the gap distribution essentially empty from 3s to
-     10s — no meaningful population the window is clipping — and widening it would cost real accuracy,
-     since this player's own kills land within 5s of each other 22.5% of the time. `DIALOGUE_MATCH_MIN_SCORE`
-     likewise sits in a clean, empty gap between real-world non-matches (score ≤0.32) and real matches
-     (score ≥0.67). The bigger finding: **not one of this player's 20,571 hits has ever been recorded
-     with a dialogue cause**, and it isn't the threshold's fault — see the next item.
-  2. **The dialogue guess can't tell an NPC from a nearby player**, and never will without some kind
-     of NPC-name registry this app doesn't have (unlike a mob, which `mob-knowledge.ts` has learned
-     from kills). In principle a friend's private tell landing inside the window reads exactly like a
-     quest NPC's reply, and — doubly unlikely — could even carry a wrongly-guessed quest title if that
-     friend's name happens to collide with a real giver's *and* the wording happens to score well
-     against one of their quests. In practice this needs several independent coincidences to line up
-     at once (a faction hit with no kill nearby — already the minority — plus unrelated chat landing in
-     a narrow window, with nothing else said in it), so it's a real but low-odds edge case rather than
-     something worth narrowing the window against on its own; accepted as a known, stated limitation
-     (ADR 0220) rather than solved. Worth re-checking if a real log ever shows it actually happening.
-  3. ~~**A hit that resolves to no cause never gets a second look.**~~ **Closed** —
-     [ADR 0282](./decisions/0282-an-unmatched-dialogue-line-is-kept-to-retry.md). `guess()`
-     (`src/shared/faction-cause.ts`) now carries a dialogue line forward as `FactionRecord.unmatchedDialogue`
-     whenever one was in window but named no quest, instead of discarding it the instant nothing
-     matched; `faction_hits` gained three nullable columns to hold it (`unmatched_npc`/`unmatched_text`/
-     `unmatched_gap_sec`, migration version 10); and `recheckDialogueCauses`'s query widened to also pick
-     up a hit with `caused_by_kind IS NULL` and an unmatched line on record, promoting it to a real
-     `dialogue` cause the moment `questsForSpeaker` agrees. Deliberately scoped to only the hits that
-     actually saw a dialogue line nearby (the 185+39 of 20,571 ADR 0281 measured), never "every null hit,
-     forever" — a hit with nothing nearby at all stores nothing new and is untouched by the widened
-     query, the same floor ADR 0281 already named. **39 (9%)** of the original 417 still name a giver the
-     cache has never fetched at all (ADR 0221/0223's already-known limit) and simply keep retrying every
-     launch; **193 (46%)** remain the real floor — no kill, no dialogue, nothing nearby either way.
-
-  ~~Once (1) is settled, the **pooled** half ADR 0193 originally asked for is still open on top of
-  it.~~ **Closed** — [ADR 0283](./decisions/0283-a-faction-causes-pooled-half-gets-built.md).
-  `electron/faction-observations.ts` is a third consumer of `contributions.ts`'s generic
-  `ContributionStore`, built exactly like `mob-knowledge.ts`: own `sanitize`/merge, the same five
-  rules, kill and dialogue causes kept apart by `kind` all the way through pooling and into the UI
-  (never blended into one undifferentiated number). Your own share is derived from
-  `faction-log.ts`'s already-resolved `causes` rollup, never stored twice; peers' reports arrive over
-  the same `mobs`/`kills` pipeline, extended rather than duplicated. The Faction tab's Standings
-  drill-down now shows a small "+N peer hits" note (`pooledCauseBadge`, `faction-sort.ts`) when
-  another install's ledger also settled on the same cause.
-
-  Separately: an **unsourced coin** (`kill-log.ts`'s `noteCoin` returning `false` — a real, ordinary
-  case, ADR 0047) now gets the same guess, but only as a debug-log line (`main.ts`'s `onCoin`
-  handler) — there is no ledger that tracks *why* you got money the way `faction-log.ts` tracks a
-  faction's standing. Worth a real tab only if someone actually wants one; nothing forces it.
-
-- **A mob with several known locations still only ever gets one pin on the map.** [ADR 0228](./decisions/0228-a-mob-can-have-more-than-one-known-location.md)
-  taught `mob-stats.ts` to keep every distinct camp (`MobArea[]`, clustered rather than blended) instead
-  of one bad average, and the three "where does this live" lists (the map panel, a mob's own wiki page,
-  an item's "who drops this") now show all of them. The map canvas itself doesn't yet: `MobKnowledge.tsx`'s
-  ± button still pins only the best-supported one (`onMarkMob`/`markMobArea` in `map/page.tsx`), and
-  `hunt-pins.ts`'s `huntPins()` still asks `mobPlace()` for exactly one ranked position per hunted mob.
-  Teaching either to drop several pins for one mob is a natural follow-up — deliberately deferred rather
-  than folded into ADR 0228, since it would have pulled `mob-place.ts`'s *source*-ranking logic (mine vs.
-  peers' vs. the wiki) into the same pass as *location* clustering, two different questions this app is
-  careful to keep apart.
-  Also unmeasured: `LOCATION_CLUSTER_UNITS` (600 EQ units, the distance under which two positions are
-  assumed to be the same camp) is a single global guess standing in for something that genuinely varies
-  by zone size — the one number in ADR 0228 with the least real evidence behind it, same situation
-  `CORRELATION_WINDOW_SEC` was in before a real log corrected it (ADR 0224).
-
-- **Three expansion pages the zone table can't read.** `scripts/fetch-zone-expansions.mjs` gets 22 of 25
-  expansions; **Omens of War**, **Ring of Scale** and **The Darkened Sea** write their zone lists in a
-  shape neither of the two it handles matches, so it skips them and says so
-  ([ADR 0065](./decisions/0065-a-zone-belongs-to-an-expansion.md)). Their zones therefore aren't excluded:
-  they'll be offered in the picker and, being their own continents, sit as isolated zones rather than
-  corrupting a route. Worth a look at those three pages' wikitext — it may be one more row separator.
-
-- **Travel: the graph doesn't honour `STOCK_ONLY_ZONES`.** The map draws a pinned zone from the game's
-  own files, but `buildFromSource` harvests exit labels per source, so the graph reads that zone's
-  labels from the *chosen pack's* file — the two can disagree about a zone we've deliberately said the
-  pack gets wrong. Same plumbing as the item below (a harvest has to read each borrowed or pinned zone
-  from its own folder), so worth doing in one go.
-
-- **Travel: a graph could borrow a zone the pack lacks, the way the map now does.**
-  [ADR 0063](./decisions/0063-a-zone-the-pack-lacks-is-borrowed.md) made the zone *list* fall back to the
-  game's own maps for a zone the chosen pack has no file for; `travel-graph.ts` still builds strictly per
-  source (`zonesFromFiles`, one folder). So a zone only the backstop covers is a hole in the graph — and
-  worse than a hole, since its neighbours' `to <zone>` labels then resolve to nothing and show up as
-  unresolved destinations. `zonesFromSources` is the shape to reuse; the wrinkle is that harvesting has
-  to read each borrowed zone's labels from *its own* folder.
-
-- **Draw the chosen route across the maps it crosses.** *(Asked for again — still the biggest open
-  piece of the travel UI.)* The graph's nodes are now on the map they were
-  read from ([ADR 0113](./decisions/0113-the-graph-is-drawn-on-the-map-it-was-read-from.md)); the half
-  that was deliberately not built is the *route* — every map a trip passes through, laid out and joined
-  at the borders they share, with the chosen path drawn through the waypoints. Everything it needs
-  exists: `surveyZone` gives a zone's nodes and positions, a border node carries **its position in each
-  of its two zones**, which is exactly the pin that stitches two maps together, and `routeInstructions`
-  already says which nodes the route uses in order.
-
-  **The thing to settle first is not technical.** A line between two points on a map is a claim about
-  the ground between them, and this graph cannot support one — that is the whole of
-  [retired ADR 0049](./decisions/README.md), and the map's non-responsibilities still say so. A
-  cross-map schematic may be a different claim (“these are the places, in order” rather than “this is
-  the way”), but it will *look* like a path however it is drawn, so it needs an answer to **what stops
-  a reader walking it** before any of it is built — probably in how it is drawn (deliberately not
-  following the geometry: straight, or curved, or beaded) rather than in a caption nobody reads.
-
-  Two smaller things fall out of it: two maps have **no shared coordinate frame** (a border's two
-  positions are in two different ones), so laying them out is a placement problem with no correct
-  answer, only a legible one; and a zone the route only passes *through* by conveyance has no walk in
-  it at all, so it may deserve to be drawn as a stop rather than a map.
-
-- **Ocean of Tears, and the maps that are split in confusing ways.** The wiki pass
-  ([ADR 0117](./decisions/0117-the-wiki-says-which-zones-touch.md)) got East Freeport ↔ Ocean of Tears
-  back, but the underlying mess is still there and is the biggest known source of thin data. Four of
-  the five duplicate drawings ([ADR 0111](./decisions/0111-one-zone-one-map-file.md)) carry **more
-  travel labels in the drawing the fold discards**: `oceanoftears` holds Ocean of Tears' druid ring,
-  boat dock and the Narrik translocator while the kept `oot` holds only a succor point; `freeporteast`
-  holds six exits to `freporte`'s two; `southro` holds ten to `sro`'s four. They **cannot** be merged —
-  the frames genuinely differ, the same `to Innothule Swamp` sitting at `-1101, 3200` in `sro` and
-  `342, 596` in `southro` — so the kept drawing has to win and those labels are simply lost.
-
-  One thread left to pull: **which drawing should win?** Today it is the *named* one, which is right for
-  the map overlay (the survey must be drawn in the frame you are looking at) and often wrong for
-  coverage. [ADR 0174](./decisions/0174-the-era-decides-which-drawing-is-the-zone.md) settles only the
-  case where the two drawings are two *eras* — there the era decides and the name doesn't get a vote —
-  and says nothing about a pair that is one era drawn twice, which is what `oceanoftears`/`oot` is.
-
-  The audit this asked for has since been run twice and each pass found one pair the spelling test
-  misses: `freeporteast` and then `northro`, both now in `STALE_DRAWINGS`. Worth running again against
-  the pack's whole file list rather than waiting for the next bug report.
-
-- **More second copies of a zone, in the same shape as the ones already listed.** `NOT_IN_GAME` and
-  `STALE_DRAWINGS` cleared the ones that were producing visible noise; the same query that found them
-  still returns names worth a look, and West Freeport is the clearest — it still shows borders to *The
-  Commonlands* and *Oldcommons*, which are the revamped single Commonlands and an older copy of it,
-  where this server has East and West Commonlands. Each needs somebody who knows which zone is live on
-  Legends rather than a rule: the query (a zone whose whole travel content is one border the neighbour
-  never drew) is in [ADR 0111](./decisions/0111-one-zone-one-map-file.md)'s neighbourhood and returns
-  four real places among its 44, so it can only ever be a worklist.
-
-- **Five ring/spire zone files this Brewall pack draws don't resolve to a recognised zone at all.**
-  Found while cross-referencing the travel graph's druid/wizard hub members against the wiki's own
-  spell cards for [ADR 0255](./decisions/0255-the-spell-list-can-call-a-ring-dead-too.md): `commonlands`,
-  `lavastorm_original`, `nektulos_1_original`, `eastkorlach` and `frontiermtnsb` each carry a druid ring
-  or wizard spire, and none of them resolves against the app's own zone catalogue — `zoneNames` falls
-  back to prettifying the raw file (`"Eastkorlach"`, `"Frontiermtnsb"`) instead of naming a real place.
-  `commonlands` and `lavastorm_original`/`nektulos_1_original` look like the same shape as
-  `STALE_DRAWINGS`' existing entries — a second, older drawing of a zone this pack already covers under
-  its real name (`ecommons`/`commons`, `lavastorm`, `nektulos`) — but that needs checking against the
-  game's own map file the way [ADR 0174](./decisions/0174-the-era-decides-which-drawing-is-the-zone.md)
-  did for `toxxulia` and `northro`, not assuming. `eastkorlach` and `frontiermtnsb` don't obviously match
-  anything at all and may be a real Kunark zone this app's catalogue simply lacks a name for. Deliberately
-  not guessed at or dropped here — ADR 0255 only touched zones it could positively identify.
-
-- **102 borders are still one-sided.** 161 before the far side started naming what this side couldn't
-  ([ADR 0115](./decisions/0115-a-border-one-side-could-not-name.md)), then up as the wiki added borders
-  nobody drew ([ADR 0117](./decisions/0117-the-wiki-says-which-zones-touch.md)) and down again as the
-  instance zones and Timorous Deep's destination board came out
-  ([ADR 0119](./decisions/0119-a-pile-of-destinations-is-a-sign.md)). What is left is the real thing:
-  a zone whose mapmaker labelled no way back. Each puts a `2000?` stand-in
-  ([`UNKNOWN_CROSSING`](../src/shared/travel/types.ts)) on a leg — once, now that a stand-in can no
-  longer be chained ([ADR 0118](./decisions/0118-a-stand-in-is-not-a-shortcut.md)) — and each is one
-  `manual-links.ts` entry from a measured distance: open the map with the 🧭 panel up, read the
-  coordinate off the way out, add the boundary's missing side. Worth doing for the ones that keep
-  turning up in real routes; the survey aside names them per zone under *Here, but nowhere on this map*,
-  and marks the wiki-only ones `wiki` — those never had a coordinate to lose, so they are where a
-  hand-authored entry buys the most. **East Freeport ↔ West Freeport is the one to do first**: it sits
-  on the route between Faydwer and everything east of it, and East Freeport's classic drawing is the one
-  the fold keeps while the gnome and half its exits are in the modern one.
-
-- **The map's zone picker lists a zone drawn twice, twice.** The travel graph now folds a pack's second
-  drawing of a zone into the first ([ADR 0111](./decisions/0111-one-zone-one-map-file.md)) — five pairs
-  in Brewall, `mistythicket` beside `misty` — but that fold is the graph's alone. `zonesFromFiles` still
-  returns both, so the picker offers "Misty Thicket" and a bare "mistythicket" beneath it, and kills and
-  mob knowledge keyed to whichever you were looking at are two piles. Cosmetic where the graph's version
-  was a wrong answer, which is why it was left: `zonesFromFiles` is the map subsystem's core and its
-  outputs are pinned by tests. The rule is written and tested already (`duplicateZoneFiles`) — the work
-  is deciding whether the picker should hide the duplicate outright or show it as a second *drawing* of
-  one zone, since it is a real map someone may prefer.
-
-- **`poiKind` reads `Druid Rings` as a plain name.** Its transport vocabulary spells the ring singular
-  (`\bdruid ring\b` can't reach the plural), so those markers are filed under "Names & places" in the
-  map's own label filter instead of "Ports & boats". The travel graph re-reads its fallback kinds to get
-  around it; the filter still shows them in the wrong section. One character in the regex, but it's a
-  pinned black box with a corpus tally behind it
-  ([ADR 0048](./decisions/0048-a-map-label-is-read-by-its-words.md)) — worth re-tallying rather than
-  patching blind.
-
-- **"West Cabilis" and "East Cabilis" don't resolve to Cabilis.** The wiki's merchant tables name the
-  two halves; the expansion table and the wiki's own out-of-era list both say `Cabilis`. So
-  `zoneShut("West Cabilis", closed)` is `undefined` while Kunark is shut, and a Cabilis merchant reads
-  as somewhere to buy: on an item page's "How to get it" and in the Tradeskills hover ("Buy: Klok
-  Scaleroot (West Cabilis)…" for Birthwort). Probably one alias in the zone resolver, but it is the
-  resolver every era check shares, so it wants its own look at what else the fold would catch.
-
-## From the neighbours
-
-Changes decided by reading **EQBuddy** and **eql-tooltip**, both of which solve our problems for
-a different player and got somewhere we haven't. Taken because the knowledge in them is *empirical* —
-which letters OCR confuses in EQ's font, what a player actually wants an alert to do — and that is
-the kind of thing worth borrowing rather than rediscovering a year later.
-
-Every repo named below, and the file to open in it, is in [neighbours.md](./neighbours.md).
-
-- **An alert can be spoken.** [alertSounds.ts](../src/lib/alertSounds.ts) synthesizes beeps, and a beep
-  can only say *something* happened — mid-fight, distinguishing four of them means looking away from the
-  game, which is the one thing an overlay exists to prevent. `speechSynthesis` is already in the renderer
-  where the alert overlay lives, so this is a per-watch toggle and a call, not a dependency. Two details
-  from EQBuddy that make it usable rather than maddening: **duplicate suppression**, so a chain of fades
-  doesn't chant at you, and speech being *orthogonal* to the beep — a watch can ding, speak, both, or
-  neither. What it speaks should be the watch's `message` when set, since that field already exists to
-  say what the player actually wants to hear rather than what the log said.
-
-## From the neighbours, second pass
-
-A wider read: **eql-log-reader** (a five-overlay Python suite over the same log),
-**everquest-legends-mcp** (a read-only MCP server over EQL's public sources), **eql-info** (which
-decoded the client's spell file), and **everquest-legends-companion** (a planning PWA) — all four, and
-the file to open in each, in [neighbours.md](./neighbours.md).
-The theme running through them is that **we read the log, the wiki and the map files, and stop
-there** — while the game ships several more files, and two public databases describe this game's
-lineage. Most of what follows is about widening the input, not the output.
-
-- **`dbstr_us.txt` is the third of the game's own text files, and still unexamined.** 9.8 MB, sitting
-  beside the two we now read (`spells_us.txt` for the facets a spell has,
-  [ADR 0080](./decisions/0080-the-game-s-own-spell-file.md); `spells_us_str.txt` for the sentences it
-  prints, [ADR 0140](./decisions/0140-a-buff-is-watched-until-it-lapses.md)). It is where AA and item
-  **description** strings live. No consumer in mind yet, which is why this is a note and not a plan —
-  recorded because the other two each turned out to answer a question we had already written down as
-  a limit.
-
-- **A Project Quarm baseline, as a seed layer under our own observations.** Spawn timers now ship and learn
-  from scratch ([ADR 0092](./decisions/0092-a-named-s-respawn-is-learned-from-your-own-kills.md)) — nothing
-  seeds a named before your first two kills of it, and the wiki usually can't. eql-log-reader ships a
-  distillation of the public Project Quarm database — same EQMacEmu lineage as EQL — carrying exactly
-  the three things we keep wanting: **named spawn points, respawn timers, and drop tables with
-  percentages**, plus zone adjacency and an item id↔name map. A second file distils ~3,300 item turn-ins
-  from Quarm's quest scripts. Both are regenerated by committed dev scripts from a public dump
-  (`eql_atlas_baseline.json.gz` / `eql_atlas_baseline_build.py` and `eql_quest_db.json.gz` /
-  `eql_quest_db_build.py`), so this is a build-time input rather than a runtime dependency. Their
-  `ARCHITECTURE.md` §2 is the shortest description of what each file actually holds.
-
-  It bears on three open things at once: the spawn timers above, the wiki-claimed half of
-  [drop-truth.ts](../src/shared/drop-truth.ts), and the two travel items above, where the graph has
-  holes because it can only know what a mapmaker labelled.
-
-  **This needs an ADR before any code.** It is a second reference source with different provenance,
-  different licensing and a different game than [ADR 0003](./decisions/0003-eqlwiki-runtime-data-source.md)
-  chose, and the whole argument for it rests on how it's *presented*: era-gated, shown as a claim rather
-  than a fact, and outranked by observation the moment we have one — which is
-  [ADR 0025](./decisions/0025-observation-over-the-wiki.md) again, pointed at a source that is further
-  from this game than the wiki is, not closer.
-
-- **A borrowed claim can be promoted to proven, permanently.** The other half of the item above, and
-  worth its own line because it generalises past Quarm. eql-log-reader flags a quest **✔ confirmed on
-  EQL** — permanently, per character — the moment the log shows the hand-in NPC speaking that quest's
-  recorded success dialogue (`QuestState.confirmed` in `eql_quest.py`, a `{qid: epoch first seen}` map
-  persisted per character; the dialogue is case- and whitespace-folded before matching). The claim came
-  from another game's scripts; the *proof* came from this one,
-  and once proven it stops being provisional. We have the reverse machinery already —
-  [ADR 0031](./decisions/0031-an-inferred-bound-must-be-able-to-fall.md) lets an inferred bound fall, and
-  [ADR 0056](./decisions/0056-a-dropped-record-keeps-what-it-taught.md) keeps what a dropped record
-  taught — but nothing that *ratchets*: no way for a piece of borrowed data to be marked "this one we
-  have seen ourselves." The care is in picking evidence a false positive can't fake (a whole dialogue
-  sentence, not a substring) and in being clear that confirmation is per character and permanent, while
-  its absence means nothing at all.
-
-- **In-zone A\*, revisited with new evidence — and the evidence says no.** Recorded because it will come
-  up again. eql-log-reader draws a guide line by A* over the map's own geometry, which is precisely what
-  [ADR 0049 was retired](./decisions/README.md#retired-and-reused-numbers) for and what
-  [map](./map/README.md)'s non-responsibilities rule out: *"an `L` record is a wall in a dungeon and a
-  contour line outdoors — so a route through the geometry could only ever be a guess dressed as
-  advice."* Reading their implementation settles whether they solved it: they did not. `_nav_graph()` /
-  `_nav_path()` in `eql_atlas_map.py` snap every `L` segment endpoint to a coarse grid (8×8×24) and make
-  the **line segments themselves** the traversable edges, then A* over that with straight-line distance
-  as the heuristic — so the path follows the drawn lines. In a dungeon, where those lines are corridor
-  walls, following a wall roughly parallels the corridor and looks convincing. Outdoors, where they are
-  contours, it would confidently route you along a hillside. So the objection stands, and shipping it
-  anyway is what a neighbour did, not a counter-argument.
-
-  What *would* reopen it: the claim narrowed to zones where the geometry is known to be walls —
-  `zone_type` in `spells_us.txt` (column 33: outdoor / dungeon) is one signal we'd have for free once we
-  read that file, and the map's own z-spread is another. A dungeons-only guide line that refuses to draw
-  outdoors is a different, smaller claim than the one that was retired, and it's the only version worth
-  costing.
-
-- **A generated dataset should be stamped by the script that built it.** *Half done:* the stores under
-  `userData` now stamp themselves and the app flags what the rules have moved on from
-  ([ADR 0096](./decisions/0096-stored-data-says-which-rules-wrote-it.md)). What's left is the other
-  kind — the **committed** artefacts (the travel graph, the zone/expansion table, the zone gazetteer),
-  which are registered as concerns but whose state can only be *asserted* by hand-bumping a revision,
-  never computed. So the panel can give you the command and cannot tell you whether you need it.
-
-  The MCP neighbour's shape is the one to copy: `src/data/eql-client/manifest.json` lists every source
-  file with **bytes, mtime and sha256**, plus an `extractedAt` and an `extractorVersion`. With that
-  beside a generated dataset, "is this stale?" becomes computable — re-hash the sources and compare —
-  rather than a revision somebody remembered to bump. `scripts/` already owns the build side, so this is
-  a manifest writer shared by three scripts and a reader in `data-health.ts`.
-
-  The same extraction is also a way out of a bug above: **three expansion pages the zone table can't
-  read**. The MCP's client-derived zone inventory (`src/data/eql-client/zones.json`) is 192 map files'
-  worth of labelled POIs with x/y/z and a `classicExpansionHint` per zone, none of it parsed from wiki
-  prose — so the zones we currently miss because
-  [ADR 0065](./decisions/0065-a-zone-belongs-to-an-expansion.md)'s harvester can't read three page
-  layouts are simply *listed* by the client. Worth doing as one piece of work: a script that reads the
-  install, writes the dataset, and writes the manifest next to it.
-
-- **Data-integrity tests, as their own category.** Our 73 test files test **logic** — parsers, fuzzy,
-  routing, geometry. None asserts that our shipped *data* is self-consistent. The companion app runs
-  exactly that as a named category — `src/lib/maps.test.ts` is the pattern in miniature: *every zone has
-  imported map geometry*, then structural assertions over every file (non-trivial path count, sane
-  bounds, every colour index defined), with the failing zone's id in the assertion message. It is the
-  one thing that would have caught, as failures rather than as
-  things somebody eventually noticed, at least three items on this list: unresolved `to <zone>`
-  destinations, zones the travel graph has no node for, and three expansions silently skipped by their
-  harvester. The assertions are obvious once named — every travel edge resolves to a known zone, every
-  gazetteer zone has a map file some source provides, every zone key in one table exists in the others,
-  every expansion in the table has at least one zone. The point is that they run over the **committed
-  artefacts**, so a regenerated dataset can't quietly get smaller. Related and cheap: our harvest
-  scripts already **merge rather than overwrite** (`apply-travel-manual.mjs`), and the precedence rule
-  that governs it should be written down as a rule rather than lived in the code.
-
-## From the neighbours, third pass
-
-Four more tools, all of them newer and narrower: **eqltools-companion** (an Electron overlay for
-eqltools.com — the closest thing to us anyone has built), **eql-alerts** and **eql-meter** (a Tauri
-trigger app and combat meter), and **eqdps** (a Go meter with a TUI and a GUI). The file to open for
-each item below is in [neighbours.md](./neighbours.md) — see its *Which neighbour backs which item*
-table, which covers every item on this page.
-
-What this pass turned up is different in kind from the last two: less "here is a feature we lack" and
-more **"here is a log line, a game command, or a distinction that does the work a heuristic is
-currently doing"**.
-
-Four of the six are **done** and have left this list: rank-aware spell costs
-([ADR 0080](./decisions/0080-the-game-s-own-spell-file.md)), the named-pet proof and the bystander rule
-([ADR 0077](./decisions/0077-a-pet-is-proven-not-guessed.md)), a fight recording why it ended
-([ADR 0078](./decisions/0078-a-fight-records-why-it-ended.md)), and the unread-line tally
-([ADR 0079](./decisions/0079-an-unread-line-is-counted-by-its-shape.md)). What's left:
-
-- **The inventory dump is read; a few things still don't use it.** The Exports tab ([overlay-ui](./overlay-ui/README.md))
-  parses `/outputfile inventory` (`src/shared/game-export-dumps.ts`): worn gear with its sockets,
-  bags and their contents, the bank, the shared bank, the Tradeskill Depot, the Dragon's Hoard, and
-  the Storage window's tabs. It shows them by place or by item, and stars anything on the shopping
-  list. The Items tab can search it ("what I own", with a Where column), the faction dump feeds the
-  Faction tab as a correction ([ADR 0308](./decisions/0308-the-game-s-faction-dump-is-a-stated-total.md)),
-  and peers can search each other's when they opt in
-  ([ADR 0309](./decisions/0309-an-inventory-is-shared-live-and-judged-by-the-receiver.md)). What's left:
-
-  - **The list should count what you hold.** An entry's "5 of 3" is loot seen in the log; the dump
-    knows you already had 640 Bone Chips. EQBuddy (`src/EQBuddy.Core/InventoryFile.cs`) layers
-    log-seen loot and sells *since the dump* on top of it as `SinceDump`, so the number stays current
-    and says which part came from where. That's the shape to copy. It also unlocks the
-    quest-readiness item above and the **ignore list** in [ideas.md](./ideas.md).
-  - **Best in slot can't price an effect.** An effect can now be *required*
-    ([ADR 0318](./decisions/0318-best-in-slot-takes-your-word.md)), but not weighed: one nobody asked
-    for is worth nothing to the solver, and a wanted one is kept at any price
-    ([ADR 0310](./decisions/0310-best-in-slot-is-an-exact-assignment-by-your-weights.md)). A
-    per-effect weight would let it trade them; the snag is that same-named effects don't stack,
-    which an assignment can't express. Two rules are also secondhand and worth checking in game: an Any Slot weapon not
-    swinging, and whether LORE applies across Any Slots.
-  - **Storage may drop rows.** eqltools-companion (commit 56031f1, "storage export drops rows")
-    recorded a bought item missing from Storage across three dumps. Cause unknown; the tab warns
-    about it.
-
-  Format notes, from real dumps (2026-10-20), to save rediscovering them. The client's own usage line
-  is `usage: /outputfile [achievements | faction | guild | guildbank | guildhall | inventory |
-  missingspells | raid | realestate | recipes [argument] | spellbook ] [optional filename]`, so there
-  is no depot, hoard or storage option; everything comes through `inventory`. Each dump also logs
-  `Outputfile Complete: <file>`, which could replace polling the folder. Some file names carry a
-  class code (`-WIZ-Factions`, `-WIZ-Spellbook`). `recipes all` is refused. Inventory: `Hoard N` and
-  `Personal-DepotN` rows appear only while their windows are open. The Storage tabs come last, under
-  a second `KeyRing Name ID` header (`Equipment`, `Augmentation` = Exaltation, `Activated`); the
-  Currencies tab isn't dumped. `Any Slot` is EQL's name for two worn slots.
-
-- **Gate a shared emote on your own cast, instead of guessing from the sentence.**
-  [cast-alerts.ts](../src/shared/cast-alerts.ts)'s `isNamedCaster` decides player-vs-mob from the
-  article on a name, and the file says plainly that this is *"the only player-vs-mob signal a single
-  cast line offers."* True — and the way out is to stop judging a single line. Many EQL land emotes are
-  **zone-visible** (`X has been mesmerized.`, `X has been poisoned.`), so at a busy camp every nearby
-  caster lights up your overlay. eql-alerts scopes them to you by arming the emote **only if you
-  recently logged `You begin casting <that spell>`** — two correlated lines inside a short window,
-  rather than a heuristic on one.
-
-  We already parse both halves: `combatant()` folds you to `SELF` and the cast event carries the
-  spell, so this is a small pending-cast map keyed by canonical spell name with a short expiry, read
-  where a shared-emote watch fires. It is the **same shape as a delayed alert**
-  ([ADR 0082](./decisions/0082-an-alert-can-be-scheduled.md)) — a thing that happened, remembered
-  briefly, acted on when a second thing does or doesn't follow — so `alert-queue.ts` is the neighbour
-  to read before starting, even though the state it keeps is the mirror image (a cue waits to *fire*,
-  a pending cast waits to be *matched*).
-
-  Note the honest edge eql-alerts also documents: some upgrade ranks still share one emote line
-  (their example is Dazzle upgrading the generic mesmerize sentence), so the gate identifies *whose*
-  spell it was, not always *which*.
-
-  Two refinements shipped since (**eql-alerts** v0.1.29, 2026-08-13), and the second is a mechanism we
-  would otherwise have had to find the hard way. First, the shared line **can** be narrowed after all:
-  they resolve one `mesmerized` sentence to Mesmerize, Mesmerization, Dazzle or Fascination and scale
-  the duration by rank — so *which* is answerable from the cast that armed the gate, which turns the
-  edge above from a limit into a lookup. Second, and the part that is not just more coverage: a
-  pending cast has to be **withdrawn**, not merely left to expire. A **fizzle** means the cast never
-  landed, so an emote that follows it is somebody else's; and a **kill of a same-named mob** ends the
-  attribution, so a later emote naming that name is a fresh mob and a fresh caster. Without both, the
-  gate is strictly better than the article heuristic and still wrong at exactly the busy camp it was
-  built for — two casters on `a gnoll pup`, one of whom fizzled.
-
-- **A delay cue can still prompt a recast of a buff that never ends.** The permanence trap itself is
-  answered — `buffdurationformula` states it, so the buff board reads it off the player's own install
-  rather than carrying eql-alerts' hand-built list
-  ([ADR 0140](./decisions/0140-a-buff-is-watched-until-it-lapses.md)) — but only the *board* knows.
-  A hand-written watch with a `delay` ([ADR 0082](./decisions/0082-an-alert-can-be-scheduled.md)) will
-  still say "recast Yaulp" 25 s after a cast, because a rule matches a line and knows nothing about the
-  spell behind it. `SpellFacts.permanent` is now the fact that could gate it; what needs deciding is
-  whether a rule should be *silently* suppressed (surprising — the player wrote it) or **told**, as a
-  note on the rule's row saying this spell has no duration on this server. The second is more in
-  keeping with how every other soft figure here behaves.
+- **A consider's level.** The model exists ([ADR 0121](./decisions/0121-a-mob-is-a-range-of-levels.md));
+  it needs one real consider line from a log to see where the level is written.
+- **Three pet/group-mate deciders from eql-meter v0.1.28** (`My leader is <Player>.`, `I am unable to
+  wake <mob>, Master.`, `Burnout` → `goes berserk.`). `fixtures/` has no instance of any of them, so
+  their counts and false-positive rates ([ADR 0127](./decisions/0127-an-unknown-name-is-held-not-dropped.md))
+  are the gate on adopting them.
 
 ## Performance
 
-- **The zone list still pays ~110ms of Levenshtein, once per process.** Down from ~500ms
-  ([ADR 0169](./decisions/0169-the-travel-graph-is-built-once-and-remembered.md)), and it is one-time —
-  the resolver memoises its misses — but it is *renderer* time at map-window open, and it is paid again
-  in the main window and in main. All of it is `zoneAvailable` falling through to the `fuzzy` tier for
-  the ~250 names a 568-file pack draws that the 352-zone expansion table has never heard of: custom
-  zones, instances, expansions past this server. `zones/resolve.ts` records that, measured against the
-  shipped table, that tier fires on **nothing**, so the question is whether it should be reached at all
-  from a bulk availability check — or whether the sweep wants an admissible prune, which needs a bound
-  on `fuzzyScore` and so belongs inside `fuzzy.ts` rather than beside it.
-- **5.7 MB of JSON text per first mount**, parsed in 24ms and held across mounts. Cheap now, but the
-  text is bigger than the object form because JSON cannot share the repeated `Class: ALL` arrays — a
-  post-parse intern pass would cut the window's memory if that ever matters.
-- **The app is unsigned**, which makes a big cache and a long crawl more suspicious to a scanner than
-  they would otherwise be. See the code-signing item under Distribution.
-- **Anything else large crossing `contextBridge` has the same cliff.** The item catalogue is the only
-  payload of this size today; the next one to appear should be text from the start rather than
-  discovered the same way.
-- **A page write still drops the whole pack**, so the catalogue is rebuilt the first time anything
-  asks afterwards — still work for one changed page, now against the SQL-backed store
-  [ADR 0256](./decisions/0256-the-wiki-page-cache-moves-onto-sqlite.md) moved onto (superseding
-  [0165](./decisions/0165-the-page-cache-is-a-few-files-not-eleven-thousand.md)'s bucket files,
-  which this note's old timing was measured against — worth re-measuring the cold-rebuild cost
-  against the table before assuming the old number still applies). Patching the rows for that page,
-  as the shard index already does, would remove it.
-
-- **Respawn learning reads only your last 200 kills.** `spawn-tracker.ts` calls unscoped
-  `killLog.kills()`, which [ADR 0243](./decisions/0243-remove-the-remaining-storage-caps.md) turned
-  into a `DEFAULT_LIMIT` (200) recent window, believing the Spawn panel was its only unscoped caller.
-  So `provenNamed` and every learned interval see one evening, and `respawns` shares five rows. The
-  share hub had the same bug and now reads `placedKills()` (ADR 0336). The tracker needs the whole
-  history too, but `read()` runs per kill, and a full read is ~40ms at 10k kills, which would undo
-  the log-replay speedup. It wants a cached or incremental read keyed on `killLog.version()`.
-
-## Build hygiene
-
-- **A stale `out/` looks exactly like a broken feature.** The renderer bundle and `dist-electron` are
-  built by separate scripts (`build:next`, `build:electron`), and a run that rebuilt only the second
-  left the app pairing a months-old renderer with a current main process — which presented as the
-  Items tab hanging, and cost an hour to diagnose. `npm run app` rebuilds only when the build is
-  *missing*, never when it is merely stale. Worth either stamping both halves with the same version
-  and refusing to start on a mismatch, or making `launch.mjs` compare mtimes against `src/`.
-- **ADR 0280's tool count is stale.** It says `scripts/mcp-server.mjs` registers "Seven tools"; it
-  actually registers nine — `item_facet_options` and `list_spell_classes` were added afterward and
-  never folded back into the decision text. Update the ADR's Decision section (or note it as a known
-  drift) next time that file is touched.
+- **The zone list pays ~110ms of Levenshtein once per process**, from `zoneAvailable` falling through
+  to `fuzzy` for ~250 names the expansion table never heard of, where that tier matches nothing. Skip
+  it for a bulk check, or add an admissible prune inside `fuzzy.ts`.
+- **A page write drops the whole pack**, so the catalogue rebuilds on next use. Re-measure against
+  the SQLite store ([ADR 0256](./decisions/0256-the-wiki-page-cache-moves-onto-sqlite.md)), then patch
+  that page's rows as the shard index does.

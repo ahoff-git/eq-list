@@ -77,6 +77,8 @@ export interface BisPick {
   item: BisCandidate;
   /** What it is worth *in this slot*. */
   value: number;
+  /** Worn now and kept because nothing the solver weighed beat an empty slot here (`keepWorn`). */
+  kept?: true;
 }
 
 export interface BisLoadout {
@@ -279,6 +281,43 @@ export function bestLoadout(candidates: readonly BisCandidate[], layout: readonl
     main === -1 || off === -1 || lockAt.has(main) ? "unswung" : !lockAt.has(off) ? "both" : lockAt.get(off) === null ? "swing" : "unswung";
   const picks = [...fixed, ...solveOpen(pool, open, hands)].sort((a, b) => a.slotIndex - b.slotIndex);
   return { picks, total: totalOf(picks), locked: [...lockAt.keys()].sort((a, b) => a - b) };
+}
+
+/**
+ * A slot the solver left open because nothing matched it is filled with what you wear there now,
+ * rather than shown blank: an empty slot reads as "take this off", which nobody meant by narrowing
+ * the weights or the criteria. Slots you've locked stay as locked, the off-hand a swung two-hander
+ * took stays empty, and nothing the loadout already wears (or a LORE twin of it) is worn twice.
+ * The kept pieces count in the total at what they're worth, which may be nothing.
+ */
+export function keepWorn(
+  loadout: BisLoadout,
+  worn: readonly { slot: string; item: BisCandidate }[],
+  layout: readonly string[] = WORN_LAYOUT,
+): BisLoadout {
+  const main = layout.indexOf("PRIMARY");
+  const off = layout.indexOf("SECONDARY");
+  const filled = new Set([...loadout.locked, ...loadout.picks.map((p) => p.slotIndex)]);
+  const used = new Set(loadout.picks.map((p) => p.item.id));
+  const lore = new Set(loadout.picks.filter((p) => p.item.lore).map((p) => p.item.title.toLowerCase()));
+  let bothHands = loadout.picks.some((p) => p.slotIndex === main && p.item.twoHanded);
+  const kept: BisPick[] = [];
+  for (const { slot, item } of worn) {
+    if (used.has(item.id) || (item.lore && lore.has(item.title.toLowerCase()))) continue;
+    const slotIndex = layout.findIndex((s, i) => s === slot && !filled.has(i));
+    if (slotIndex === -1 || (slotIndex === off && bothHands)) continue;
+    if (item.twoHanded && slotIndex === main) {
+      if (filled.has(off)) continue;
+      bothHands = true;
+    }
+    kept.push({ slotIndex, slot, item, value: valueIn(item, slot) ?? 0, kept: true });
+    filled.add(slotIndex);
+    used.add(item.id);
+    if (item.lore) lore.add(item.title.toLowerCase());
+  }
+  if (!kept.length) return loadout;
+  const picks = [...loadout.picks, ...kept].sort((a, b) => a.slotIndex - b.slotIndex);
+  return { ...loadout, picks, total: totalOf(picks) };
 }
 
 // ─── Grades ─────────────────────────────────────────────────────────────────

@@ -26,6 +26,8 @@ export const STORAGE_KEYS = {
   areaSections: "eqlist.main.areaSections",
   /** Main window: the Hunt tab's zone filter. */
   huntZone: "eqlist.main.huntZone",
+  /** Main window: the difficulty a mob page's HP and damage are shown at (ADR 0348). */
+  mobDifficulty: "eqlist.main.mobDifficulty",
   /** Main window: whether the Hunt tab groups by zone or by item. */
   huntGrouping: "eqlist.main.huntGrouping",
   /** Main window: whether the "this is the web view, get the desktop app" banner was dismissed. */

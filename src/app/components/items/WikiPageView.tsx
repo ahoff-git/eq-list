@@ -23,6 +23,10 @@ import { effectLineParts } from "@/shared/items/item-stats";
 import { cardAtLevel, ladderOf, levelledTitle } from "@/shared/upgrade-view";
 import UpgradeSlider from "@/app/components/items/UpgradeSlider";
 import LevelledText from "@/app/components/items/LevelledText";
+import DifficultySlider from "@/app/components/mob/DifficultySlider";
+import { mobLinesAtDifficulty, WIKI_STATED, type DifficultySetting } from "@/shared/mob/difficulty-scaling";
+import { usePersistentShape } from "@/lib/usePersistentState";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { notAnItem, wikiName } from "@/shared/shown-name";
 
 /**
@@ -52,7 +56,14 @@ export default function WikiPageView({
   const ladder = useMemo(() => ladderOf(page), [page]);
   const [level, setLevel] = useState(heldLevel);
   useEffect(() => setLevel(heldLevel), [page.title, heldLevel]);
-  const card = useMemo(() => cardAtLevel(page, ladder, level), [page, ladder, level]);
+  // A mob's HP and damage at a difficulty (ADR 0348). Kept across pages, since it's where you play
+  // rather than a fact about one mob.
+  const [difficulty, setDifficulty] = usePersistentShape<DifficultySetting>(STORAGE_KEYS.mobDifficulty, WIKI_STATED);
+  const isMob = page.kind === "mob" && !!page.card;
+  const card = useMemo(() => {
+    const levelled = cardAtLevel(page, ladder, level);
+    return isMob && levelled ? { ...levelled, lines: mobLinesAtDifficulty(levelled.lines, difficulty) } : levelled;
+  }, [page, ladder, level, isMob, difficulty]);
   // Which buttons this page gets. The rule lives in `wiki-add.ts` because the search results list
   // adds by the same one, and the two had drifted — see that file.
   const add = wikiAddAction(page);
@@ -243,6 +254,7 @@ export default function WikiPageView({
       </div>
 
       {ladder && <UpgradeSlider ladder={ladder} level={level} held={heldLevel} onChange={setLevel} />}
+      {isMob && <DifficultySlider setting={difficulty} onChange={setDifficulty} />}
 
       {card && (
         <div className="page-card">
