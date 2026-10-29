@@ -695,6 +695,8 @@ reading like a measurement, and they are shared code
 - **The search bar autocompletes in one ranking**: sections, wiki pages, held items, stances and
   AAs scored together, a name starting with the text first, with a Tab ghost that matches the top
   line and recent picks when empty. ([0349](./0349-the-search-bar-autocompletes.md))
+- **An item page says how many you have**, per area of the inventory export, with the export's age;
+  "none" when a dump lacks it, nothing with no dump. ([0350](./0350-an-item-page-says-how-many-you-have.md))
 - **A loadout slot nothing matches keeps what you wear**, marked as kept; locks, exclusions and a
   swung two-hander's off-hand still win. ([0347](./0347-a-slot-nothing-matches-keeps-what-you-wear.md))
 

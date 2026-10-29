@@ -1,16 +1,20 @@
 "use client";
 import { createContext, useContext, useMemo, type ReactNode } from "react";
-import { useHeldGrades, useOwnedItems } from "@/lib/exports/useGameExports";
+import { useInventory } from "@/lib/exports/useGameExports";
 import { rowsOf, usePeerShare } from "@/lib/peers/usePeerShare";
 import { holdingsOf, type Holdings } from "@/shared/tradeskills/held-materials";
 import { normalizeItemName } from "@/shared/items/grouping";
 import { ownershipNotes } from "@/shared/items/ownership-notes";
 import type { InventoryShareRow } from "@/shared/peers/peer-share";
-import type { OwnedPlace } from "@/shared/game-export-dumps";
+import { heldGrades, inventoryTotals, ownedItems, type InventoryTotal, type OwnedPlace } from "@/shared/game-export-dumps";
 
 interface Ownership {
   owned: Map<string, OwnedPlace[]> | null;
   grades: Map<string, number>;
+  /** Each item's count per area (bags, bank, depot…), keyed like `owned` — null with no dump. */
+  totals: Map<string, InventoryTotal> | null;
+  /** When the game wrote the dump these came from. */
+  at?: number;
   peers: Holdings;
 }
 
@@ -24,14 +28,17 @@ const OwnershipContext = createContext<Ownership | null>(null);
  * the views where reading one is the point (`useHoldings`, ADR 0309); a hover isn't a request.
  */
 export function OwnershipProvider({ children }: { children: ReactNode }) {
-  const { owned } = useOwnedItems();
-  const grades = useHeldGrades();
+  // One read of the dump for all three views of it.
+  const { items, at } = useInventory();
+  const owned = useMemo(() => (items ? ownedItems(items, normalizeItemName) : null), [items]);
+  const grades = useMemo(() => (items ? heldGrades(items, normalizeItemName) : new Map<string, number>()), [items]);
+  const totals = useMemo(() => (items ? new Map(inventoryTotals(items).map((t) => [normalizeItemName(t.baseName), t])) : null), [items]);
   const { received } = usePeerShare();
   const peers = useMemo(
     () => holdingsOf([], rowsOf<InventoryShareRow>(received, "inventory").map((r) => ({ by: r.by, item: r.row.item, count: r.row.count }))),
     [received],
   );
-  const value = useMemo(() => ({ owned, grades, peers }), [owned, grades, peers]);
+  const value = useMemo(() => ({ owned, grades, totals, at, peers }), [owned, grades, totals, at, peers]);
   return <OwnershipContext.Provider value={value}>{children}</OwnershipContext.Provider>;
 }
 
@@ -44,3 +51,16 @@ export function useOwnershipNotes(name: string): string[] {
     return ownershipNotes(ownership.owned?.get(key), ownership.grades.get(key), ownership.peers.get(key)?.peers);
   }, [ownership, name]);
 }
+
+/**
+ * How many of an item your inventory export holds, per area, for its page: `total` absent when you
+ * hold none, and `at` absent when there is no dump to have looked in (or outside the provider).
+ */
+export function useHeldOnPage(name: string): { total?: InventoryTotal; at?: number } {
+  const ownership = useContext(OwnershipContext);
+  return useMemo(() => {
+    if (!ownership?.totals) return {};
+    return { total: ownership.totals.get(normalizeItemName(name)), at: ownership.at };
+  }, [ownership, name]);
+}
+

@@ -4,7 +4,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ownershipNotes } from "../../src/shared/items/ownership-notes";
+import { heldOnPageText, ownershipNotes } from "../../src/shared/items/ownership-notes";
 
 const place = (text: string, count = 1, exaltation = false) => ({ text, count, exaltation });
 
@@ -29,3 +29,14 @@ test("past three places, the rest are counted", () => {
 test("peers who share: each by name, with their count", () => {
   assert.deepEqual(ownershipNotes(undefined, undefined, [{ by: "Bob", count: 2 }, { by: "Ann", count: 1 }]), ["Peers: Bob 2, Ann 1"]);
 });
+
+test("an item page's line: the total, best grade, and a count per area in the dump's order", () => {
+  const places = [
+    { label: "Bags", slots: ["1", "3"], count: 600 },
+    { label: "Bank", slots: ["14"], count: 30 },
+    { label: "Tradeskill depot", slots: [], count: 10 },
+  ];
+  assert.equal(heldOnPageText({ count: 640, bestGrade: 0, places }), "640 — Bags 600 · Bank 30 · Tradeskill depot 10");
+  assert.equal(heldOnPageText({ count: 1, bestGrade: 3, places: [{ label: "Worn", slots: ["Fingers"], count: 1 }] }), "1 (best +3) — Worn 1");
+});
+

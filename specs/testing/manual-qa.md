@@ -1165,6 +1165,10 @@ features for later in [../ideas.md](../ideas.md).
       partway (not yet at its goal) and confirm **no** toast fires for that progress ping, even though
       the 🏅 banner still does — only a whole achievement finishing earns the click-through toast.
 
+- **An item page's inventory count.** ([ADR 0350](../decisions/0350-an-item-page-says-how-many-you-have.md).)
+  Take `/outputfile inventory`, open a page for something in your bags and the depot: the line under
+  the card counts each area and the export's age; a page for something you don't hold says none;
+  clicking the age opens Exports.
 - **Two loadout rules taken secondhand.** The loadout builder assumes a weapon in an `Any Slot`
   doesn't swing, and that LORE applies across both `Any Slot`s
   ([ADR 0310](../decisions/0310-best-in-slot-is-an-exact-assignment-by-your-weights.md)). Wear a

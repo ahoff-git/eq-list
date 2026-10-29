@@ -1,4 +1,4 @@
-import type { OwnedPlace } from "../game-export-dumps";
+import type { InventoryTotal, OwnedPlace } from "../game-export-dumps";
 
 /** How many places one line names before it says how many more — a hover card, not the Exports view. */
 const PLACES = 3;
@@ -30,3 +30,15 @@ function placeText(p: OwnedPlace): string {
   const what = p.exaltation ? `${p.text} (exaltation)` : p.text;
   return p.count > 1 ? `${what} ×${p.count}` : what;
 }
+
+/**
+ * An item page's "in your inventory" line: the total, then each area with its count — `Bags 600 ·
+ * Bank 30 · Tradeskill depot 10` — in the dump's own area order. Unlike the hover card, a page has
+ * room for every area, and a count per area is the question it answers ("do I need to fetch some
+ * from the bank?"). Slots are left to the Exports view.
+ */
+export function heldOnPageText(total: Pick<InventoryTotal, "count" | "bestGrade" | "places">): string {
+  const where = total.places.map((p) => `${p.label} ${p.count}`).join(" · ");
+  return `${total.count}${total.bestGrade ? ` (best +${total.bestGrade})` : ""} — ${where}`;
+}
+
