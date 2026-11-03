@@ -4,7 +4,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { NO_BIS_OPTIONS, bisOptionCount, lockAll, normalizeBisOptions, toggleTitle, withLock } from "../../src/shared/items/bis-options";
+import { NO_BIS_OPTIONS, bisOptionCount, lockAll, normalizeBisOptions, toggleTitle, withLock, withoutChanges } from "../../src/shared/items/bis-options";
 import { activePreset, normalizePreset, removePreset, savePreset, type ItemPreset } from "../../src/shared/items/item-presets";
 import { NO_CRITERIA } from "../../src/shared/items/item-search";
 import { NO_MELEE_WEIGHTS } from "../../src/shared/items/melee";
@@ -13,7 +13,7 @@ test("stored options are made whole, and a lock on a slot the layout doesn't hav
   assert.deepEqual(normalizeBisOptions(undefined), NO_BIS_OPTIONS);
   assert.deepEqual(
     normalizeBisOptions({ locks: { 3: { title: "Cap" }, 4: { empty: true }, 99: { title: "Nowhere" }, x: { title: "Bad" } }, excluded: ["A", 7, ""] }),
-    { locks: { 3: { title: "Cap" }, 4: { empty: true } }, wantEffects: [], excluded: ["A"], includeHunt: true, huntGrade: 0, melee: NO_MELEE_WEIGHTS },
+    { locks: { 3: { title: "Cap" }, 4: { empty: true } }, wantEffects: [], excluded: ["A"], includeHunt: true, huntGrade: 0, melee: NO_MELEE_WEIGHTS, goals: {} },
   );
   // An older build's two lists of things ruled out are one list now; a name in both is kept once.
   assert.deepEqual(normalizeBisOptions({ benched: ["Iron Ring"], skipHunt: ["Cap", "iron ring"] }).excluded, ["Iron Ring", "Cap"]);
@@ -56,4 +56,11 @@ test("the active preset is the one the current state is exactly, whatever order 
   const old = { ...preset("Old", "a"), criteria: { ...NO_CRITERIA, text: "a", facets: { slot: [] } } } as unknown as ItemPreset;
   assert.equal(activePreset([old], now), "Old");
   assert.deepEqual(normalizePreset(old).criteria.facets, NO_CRITERIA.facets);
+});
+
+test("goals survive normalizing, and Reset leaves them alone", () => {
+  const goals = { hp: { priority: 100 }, mana: { floor: { pct: 95 } } };
+  const o = normalizeBisOptions({ goals, excluded: ["A"] });
+  assert.deepEqual(o.goals, goals);
+  assert.deepEqual(withoutChanges(o).goals, goals);
 });

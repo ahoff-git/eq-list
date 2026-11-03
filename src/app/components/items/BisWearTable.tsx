@@ -4,7 +4,12 @@ import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import ItemLink from "@/app/components/items/ItemLink";
 import { ZoneNames } from "@/app/components/map/ZoneName";
 import { ACTION_COL, GRID_DEFAULTS, GRID_SX_FIT, NUM_COL } from "@/app/components/dataGridDefaults";
+import { AddButton } from "@/app/components/ui";
+import { addByTitle } from "@/lib/items/addToList";
+import { useShoppingList } from "@/lib/hooks";
+import { normalizeItemName } from "@/shared/items/grouping";
 import { WORN_LAYOUT, type BisPick } from "@/shared/items/bis";
+import { statMeta, type StatKey } from "@/shared/items/item-stats";
 import { slotLabel, type BisHunt, type BisPlan, type BisSlotChoice } from "@/shared/items/bis-plan";
 import { withExcluded, withLock, type BisOptions, type BisSlotLock } from "@/shared/items/bis-options";
 import type { ItemRow, StatWeights } from "@/shared/items/item-search";
@@ -112,6 +117,8 @@ export default function BisWearTable({
   onOptions,
   weights = {},
   rates = [],
+  statKeys = [],
+  orderZones = (z) => [...z],
 }: {
   plan: BisPlan;
   options: BisOptions;
@@ -119,8 +126,15 @@ export default function BisWearTable({
   /** Your own weights (unfolded) and your classes' rates — so a row can say what its attributes give you. */
   weights?: StatWeights;
   rates?: readonly DerivedRate[];
+  /** Stats the player has said they care about — each gets a column of what the pick gives (`expectedStats`). */
+  statKeys?: readonly StatKey[];
+  /** A source's zones in the order to show them — the ones you can use under your criteria first (`zonesByReach`). */
+  orderZones?: (zones: readonly string[]) => string[];
 }) {
   const rows = useMemo(() => slotRows(plan, options), [plan, options]);
+  // What's already on the shopping list, so a pick can say so (and a pick to hunt can be added in a click).
+  const list = useShoppingList();
+  const onList = useMemo(() => new Set(list.entries.map((e) => normalizeItemName(e.name))), [list.entries]);
 
   const columns = useMemo<GridColDef<SlotRow>[]>(() => {
     const setLock = (slotIndex: number, lock: BisSlotLock | undefined) => onOptions(withLock(options, slotIndex, lock));
@@ -179,6 +193,11 @@ export default function BisWearTable({
               <>
                 {/* By the graded name, so the hover shows this copy's numbers — the ones it was weighed by. */}
                 <ItemLink title={gradedTitle(r.pick.item.title, r.pick.item.grade)} />
+                <ListMark
+                  listed={onList.has(normalizeItemName(r.pick.item.title))}
+                  hunt={isHunt(r)}
+                  onAdd={() => void addByTitle(r.pick!.item.title, plan.huntFrom[r.pick!.item.title]?.item.wikiPath)}
+                />
                 {r.pinnedFor && (
                   <span className="bis-tag" title="Worn here for an effect you asked for">
                     {r.pinnedFor}
@@ -211,6 +230,17 @@ export default function BisWearTable({
         valueGetter: (_v, row) => row.pick?.value,
         renderCell: (p) => (p.value === undefined ? <span className="muted">—</span> : p.value),
       },
+      ...statKeys.map(
+        (key): GridColDef<SlotRow> => ({
+          field: `stat_${key}`,
+          headerName: statMeta(key).label,
+          description: `${statMeta(key).label} the pick gives, at its grade`,
+          ...NUM_COL,
+          width: 76,
+          valueGetter: (_v, row) => (row.pick ? plan.pickStats[row.slotIndex]?.[key] : undefined),
+          renderCell: (p) => (p.value === undefined ? <span className="muted">—</span> : p.value),
+        }),
+      ),
       {
         field: "where",
         headerName: "Held / get from",
@@ -233,7 +263,7 @@ export default function BisWearTable({
                 <span className="muted">{r.pick.item.heldAt}</span>
               )
             ) : (
-              <HuntSource row={plan.huntFrom[r.pick.item.title]} />
+              <HuntSource row={plan.huntFrom[r.pick.item.title]} orderZones={orderZones} />
             )
           ) : r.hunt ? (
             <>
@@ -284,7 +314,7 @@ export default function BisWearTable({
         },
       },
     ];
-  }, [options, onOptions, plan.huntFrom, plan.pickStats, weights, rates]);
+  }, [options, onOptions, onList, plan.huntFrom, plan.pickStats, weights, rates, statKeys, orderZones]);
 
   return (
     <DataGrid
@@ -307,18 +337,40 @@ function fromText(row: ItemRow | undefined): string {
 }
 
 /** Where a pick to hunt comes from: its zones (or how it's got), and its level. */
-function HuntSource({ row }: { row: ItemRow | undefined }) {
+function HuntSource({ row, orderZones }: { row: ItemRow | undefined; orderZones: (zones: readonly string[]) => string[] }) {
   if (!row) return <span className="bis-tag">hunt</span>;
   const level = row.level ? (row.level.min === row.level.max ? `lv ${row.level.min}` : `lv ${row.level.min}–${row.level.max}`) : undefined;
   return (
     <span>
-      <span className="bis-tag">hunt</span> <ZoneNames zones={row.zones} empty={row.kinds.join(", ") || "—"} className="muted" />
+      <span className="bis-tag">hunt</span> <ZoneNames zones={orderZones(row.zones)} empty={row.kinds.join(", ") || "—"} className="muted" />
       {level && (
         <span className="muted" title={row.level?.why}>
           {" "}
           · {level}
         </span>
       )}
+    </span>
+  );
+}
+
+/**
+ * Whether a pick is on the shopping list: a 📋 when it is, and — for one you'd have to go and get — a
+ * quick + when it isn't. A pick you already hold needs no button; the mark alone says it's listed too.
+ */
+function ListMark({ listed, hunt, onAdd }: { listed: boolean; hunt: boolean; onAdd: () => void }) {
+  if (listed) {
+    return (
+      <span className="bis-tag" title="Already on your shopping list">
+        📋
+      </span>
+    );
+  }
+  if (!hunt) return null;
+  return (
+    <span {...OWN_EVENTS}>
+      <AddButton className="btn ghost sm" title="Put it on the shopping list" onAdd={onAdd}>
+        + list
+      </AddButton>
     </span>
   );
 }

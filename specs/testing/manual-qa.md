@@ -1185,6 +1185,16 @@ features for later in [../ideas.md](../ideas.md).
 - **A loadout slot nothing matches keeps what you wear.** ([ADR 0347](../decisions/0347-a-slot-nothing-matches-keeps-what-you-wear.md).)
   With a fresh inventory dump, set the weights to one stat few items carry: every other slot shows
   your worn piece with "· kept", none blank.
+- **Loadout goals** ([ADR 0353](../decisions/0353-a-loadout-goal-is-a-slider-the-planner-turns-into-weights.md)).
+  Items → loadout builder → Goals, on a real dump and the full catalogue. Tap *Tank, full mana*: the
+  plan shows each goal's "got of possible" and the mana line reads ✓. Drag *At least* on HP to 100%:
+  it plans on release, takes a moment, and the Loadout score is in goal units. Time a release at the
+  full catalogue; if it's over a few seconds, the search wants fewer rounds. Reload: goals persist, and
+  save a preset: they come back with it.
+- **Back returns to where you scrolled.** Scroll partway down a long panel (Items → loadout builder, a
+  zone page), click another tab, then go back (Alt+←, a thumb button, or the breadcrumb): the panel
+  is at the same depth, even when its content takes a moment to appear. A tab click or a link to the
+  same place starts at the top. Wheeling mid-restore takes over.
 - **The search bar and the mob difficulty slider, in the running app.**
   ([ADR 0346](../decisions/0346-search-is-a-bar-in-the-frame.md), [ADR 0348](../decisions/0348-a-mob-card-is-scaled-by-difficulty.md).)
   The bar sits right of the back/forward trail on every screen, Ctrl+K focuses it, its list isn't

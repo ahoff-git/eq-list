@@ -22,8 +22,11 @@ export default function BisEffects({
   wanted,
   plans,
   onWanted,
+  orderZones = (z) => [...z],
 }: {
   rows: readonly ItemRow[];
+  /** A source's zones in the order to show them (`zonesByReach`). */
+  orderZones?: (zones: readonly string[]) => string[];
   wanted: readonly string[];
   plans: readonly BisEffectPlan[];
   onWanted: (next: string[]) => void;
@@ -60,7 +63,7 @@ export default function BisEffects({
                       </span>
                       <span className="muted">
                         {" "}
-                        · <ZoneNames zones={h.row.zones} empty={h.row.kinds.join(", ")} />
+                        · <ZoneNames zones={orderZones(h.row.zones)} empty={h.row.kinds.join(", ")} />
                       </span>{" "}
                       <AddButton className="btn ghost sm" onAdd={() => void addByTitle(h.item.title, h.row.item.wikiPath)} title="Put it on the shopping list">
                         + Add

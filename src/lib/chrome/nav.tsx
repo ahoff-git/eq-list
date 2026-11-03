@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useCallback, useContext, useMemo, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, useRef, type ReactNode } from "react";
 import { createLogger } from "@/shared/logging";
 import {
   canStepBack,
@@ -43,6 +43,8 @@ export interface Nav {
   current: string | null;
   canBack: boolean;
   canForward: boolean;
+  /** How you arrived: a fresh move (`go`), or along the trail you'd already made — back, forward, a crumb. */
+  arrival: "go" | "history";
   /** The way in to where you are, oldest first, and how many older places it leaves out. */
   crumbs: NavCrumb[];
   hiddenCrumbs: number;
@@ -97,8 +99,12 @@ export function NavProvider({ home = HOME_TAB, children }: { home?: string; chil
   // and may be an older build's bare tab name — or nothing.
   const trail = useMemo(() => readTrail(stored, home), [stored, home]);
 
+  // Set before the state changes, so the value built for the new place reads how it was reached.
+  const arrival = useRef<Nav["arrival"]>("go");
+
   const move = useCallback(
     (what: string, step: (t: NavTrail) => NavTrail) => {
+      arrival.current = what === "go" ? "go" : "history";
       setStored((s) => {
         const next = step(readTrail(s, home));
         log.debug(what, "→", here(next), `(${next.at + 1}/${next.places.length})`);
@@ -123,6 +129,7 @@ export function NavProvider({ home = HOME_TAB, children }: { home?: string; chil
       current: at.page ?? null,
       canBack: canStepBack(trail),
       canForward: canStepForward(trail),
+      arrival: arrival.current,
       crumbs,
       hiddenCrumbs: hidden,
       openTab,

@@ -1,0 +1,146 @@
+"use client";
+import { useEffect, useState } from "react";
+import { statMeta } from "@/shared/items/item-stats";
+import { LOADOUT_STATS } from "@/shared/items/loadout-stats";
+import { GOAL_PRESETS, goalCount, withGoal, type BisGoals, type GoalKey, type GoalRow, type StatGoal } from "@/shared/items/bis-goals";
+
+const QUICK: readonly GoalKey[] = ["hp", "mana", "ac", "swing"];
+const labelOf = (key: GoalKey) => (key === "swing" ? "Melee damage" : statMeta(key).label);
+const num = (n: number) => Math.round(n).toLocaleString();
+
+/**
+ * Goals for the loadout, as sliders (ADR 0353): how much a stat drives the plan (priority), and the
+ * least of it you'll accept — in points, or as a share of the most any loadout could give. "2k HP and
+ * 100 AC, then the hardest swing" is two floors and a priority; "as tanky as I can, near max mana" is
+ * a priority and a 95% floor.
+ *
+ * The solver's work lives in `bis-goals.ts`; this only sets goals and shows how each one came out.
+ */
+export default function BisGoals({ goals, rows, onGoals }: { goals: BisGoals; rows: readonly GoalRow[]; onGoals: (next: BisGoals) => void }) {
+  const keys = Object.keys(goals) as GoalKey[];
+  const addable = [...QUICK, ...LOADOUT_STATS.filter((k) => !QUICK.includes(k))].filter((k) => !goals[k]);
+  const rowOf = (key: GoalKey) => rows.find((r) => r.key === key);
+  // A new goal starts as a priority, which is always satisfiable; the floor is the second slider's job.
+  const add = (key: GoalKey) => onGoals(withGoal(goals, key, { priority: 50 }));
+
+  return (
+    <div className="bis-goals">
+      <div className="row wrap">
+        <span className="muted small">Start from</span>
+        {GOAL_PRESETS.map((p) => (
+          <button key={p.id} className="btn sm" title={p.hint} onClick={() => onGoals(p.goals)}>
+            {p.label}
+          </button>
+        ))}
+        {keys.length > 0 && (
+          <button className="btn ghost sm" onClick={() => onGoals({})} title="Drop every goal">
+            Clear {goalCount(goals)}
+          </button>
+        )}
+      </div>
+
+      {keys.map((key) => (
+        <GoalLine key={key} stat={key} goal={goals[key]!} row={rowOf(key)} onChange={(change) => onGoals(withGoal(goals, key, change))} />
+      ))}
+
+      <div className="row wrap">
+        {addable.length > 0 && (
+          <select className="select-sm" value="" aria-label="Add a goal" onChange={(e) => e.target.value && add(e.target.value as GoalKey)}>
+            <option value="">+ Add a goal…</option>
+            {addable.map((k) => (
+              <option key={k} value={k}>
+                {labelOf(k)}
+              </option>
+            ))}
+          </select>
+        )}
+        {QUICK.filter((k) => !goals[k]).map((k) => (
+          <button key={k} className="btn ghost sm" onClick={() => add(k)}>
+            + {labelOf(k)}
+          </button>
+        ))}
+      </div>
+      {keys.length === 0 && (
+        <p className="muted small">
+          Pick what matters and the plan chases it — on top of your value weights, if you set any. A priority pulls a stat up; <i>at least</i> holds it
+          above a floor, however it costs the rest.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function GoalLine({ stat, goal, row, onChange }: { stat: GoalKey; goal: StatGoal; row?: GoalRow; onChange: (change: Partial<StatGoal> | null) => void }) {
+  const max = row?.max ?? 0;
+  const floorPct = !goal.floor ? 0 : "pct" in goal.floor ? goal.floor.pct : max > 0 ? Math.min(100, Math.round((goal.floor.min / max) * 100)) : 0;
+  const floorPoints = !goal.floor ? "" : "min" in goal.floor ? goal.floor.min : Math.round((goal.floor.pct / 100) * max);
+
+  return (
+    <div className="bis-goal">
+      <b className="bis-goal-name">{labelOf(stat)}</b>
+      <Slide label="Priority" value={goal.priority ?? 0} onCommit={(priority) => onChange({ priority })} />
+      {stat !== "swing" && (
+        <>
+          <Slide label="At least" value={floorPct} onCommit={(pct) => onChange({ floor: pct ? { pct } : undefined })} suffix="% of max" />
+          <input
+            className="field sm bis-goal-box"
+            type="number"
+            min={0}
+            placeholder="points"
+            aria-label={`${labelOf(stat)} floor in points`}
+            value={floorPoints}
+            onChange={(e) => onChange({ floor: Number(e.target.value) > 0 ? { min: Number(e.target.value) } : undefined })}
+          />
+        </>
+      )}
+      <button className="btn ghost sm" title="Drop this goal" onClick={() => onChange(null)}>
+        ×
+      </button>
+      {row && <GoalResult stat={stat} row={row} />}
+    </div>
+  );
+}
+
+/** How the goal came out: what the plan reaches against what it could at best, and whether the floor held. */
+function GoalResult({ stat, row }: { stat: GoalKey; row: GoalRow }) {
+  if (stat === "swing") return null;
+  if (row.max <= 0) return <span className="small warn">nothing in the pool gives {labelOf(stat)}</span>;
+  const tone = row.floor === undefined ? "muted" : row.met ? "good" : "warn";
+  return (
+    <span className={`small ${tone}`}>
+      {num(row.got ?? 0)} <span className="muted">of {num(row.max)} possible</span>
+      {row.floor !== undefined && (row.met ? " ✓" : ` — short of ${num(row.floor)}; the other goals leave no room`)}
+      {row.unreachable && " (more than any loadout gives)"}
+    </span>
+  );
+}
+
+/**
+ * A 0–100 slider that plans on release, not on every pixel of the drag — each move is a whole search
+ * for the best loadout, and the number follows the thumb meanwhile.
+ */
+function Slide({ label, value, onCommit, suffix = "%" }: { label: string; value: number; onCommit: (value: number) => void; suffix?: string }) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const commit = () => draft !== value && onCommit(draft);
+  return (
+    <label className="bis-slide">
+      <span className="muted small">{label}</span>
+      <input
+        type="range"
+        min={0}
+        max={100}
+        step={5}
+        value={draft}
+        onChange={(e) => setDraft(Number(e.target.value))}
+        onPointerUp={commit}
+        onKeyUp={commit}
+        onBlur={commit}
+      />
+      <span className="small bis-slide-value">
+        {draft}
+        {suffix}
+      </span>
+    </label>
+  );
+}

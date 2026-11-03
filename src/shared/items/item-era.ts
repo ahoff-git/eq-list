@@ -24,7 +24,7 @@
  *
  * Pure, so the whole judgement is testable against real wiki source rows.
  */
-import { namesAPlace, type ItemRow } from "./item-search";
+import { namesAPlace, zonesInFilterOrder, type ItemRow } from "./item-search";
 import { zoneReadings } from "./lucy-era";
 import { outOfEraWithGmEvents } from "./gm-event-items";
 import type { ItemSource } from "../types";
@@ -51,6 +51,18 @@ export function zoneShut(zone: string | undefined, closed?: ReadonlySet<string>)
     if (shut) return shut;
   }
   return undefined;
+}
+
+/**
+ * A row's zones for a "where to get it" cell: ones the zone filter kept and you can reach first, then
+ * the rest you can reach, then the ones shut this era. The cell leads with its first zone, so it must
+ * lead with a reason the item is offered — not with a zone you unticked or can't go to yet, which made
+ * a correct suggestion read as the filter failing.
+ */
+export function zonesByReach(zones: readonly string[], chosen: readonly string[], closed?: ReadonlySet<string>): string[] {
+  const ordered = zonesInFilterOrder(zones, chosen);
+  const shut = new Set(ordered.filter((z) => zoneShut(z, closed)));
+  return [...ordered.filter((z) => !shut.has(z)), ...ordered.filter((z) => shut.has(z))];
 }
 
 /** One of an item's sources, judged against the era the server is actually running. */

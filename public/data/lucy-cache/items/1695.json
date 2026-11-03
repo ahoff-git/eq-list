@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "fetchedAt": "2026-10-27T05:37:31.830Z",
+  "value": {
+    "id": 1695,
+    "name": "Reddish Crystal",
+    "card": {
+      "title": "Reddish Crystal",
+      "icon": "https://everquest.allakhazam.com/pgfx/item_964.png",
+      "lines": [
+        "Lore Item No Trade Quest Item",
+        "WT: 10.0 Size: MEDIUM",
+        "Class: ALL",
+        "Race: ALL"
+      ]
+    },
+    "sources": [],
+    "sourceRows": 0,
+    "era": "unknown",
+    "eraWhy": "Lucy names no mob or merchant for it, so there are no zones to judge the era by — it may be quest or crafted, or Lucy may simply not know.",
+    "fetchedAt": "2026-10-27T05:37:31.830Z"
+  }
+}

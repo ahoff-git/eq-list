@@ -50,6 +50,7 @@ function gainCol(grade: number, index?: number): GridColDef<Row> {
 export default function BisHuntTable({
   hunt,
   onSkip,
+  orderZones = (z) => [...z],
   weights = {},
   rates = [],
 }: {
@@ -57,6 +58,8 @@ export default function BisHuntTable({
   onSkip: (title: string) => void;
   /** Your own weights (unfolded) and your classes' rates — so a row can say what its attributes give you. */
   weights?: StatWeights;
+  /** A source's zones in the order to show them (`zonesByReach`). */
+  orderZones?: (zones: readonly string[]) => string[];
   rates?: readonly DerivedRate[];
 }) {
   const [slot, setSlot] = useState("");
@@ -126,8 +129,8 @@ export default function BisHuntTable({
         headerName: "From",
         flex: 1.5,
         minWidth: 140,
-        valueGetter: (_v, row) => row.row.zones[0] ?? row.row.kinds.join(", "),
-        renderCell: (p) => <ZoneNames zones={p.row.row.zones} empty={p.row.row.kinds.join(", ")} className="small muted" />,
+        valueGetter: (_v, row) => orderZones(row.row.zones)[0] ?? row.row.kinds.join(", "),
+        renderCell: (p) => <ZoneNames zones={orderZones(p.row.row.zones)} empty={p.row.row.kinds.join(", ")} className="small muted" />,
       },
       {
         field: "actions",
@@ -150,7 +153,7 @@ export default function BisHuntTable({
         ),
       },
     ],
-    [onSkip, weights, rates],
+    [onSkip, weights, rates, orderZones],
   );
 
   return (

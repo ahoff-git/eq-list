@@ -47,6 +47,7 @@ import { useAchievementsRunning, useBuffs, useCapabilities, useGoalsRunning, use
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { NavProvider, useNav } from "@/lib/chrome/nav";
+import { useScrollMemory } from "@/lib/chrome/useScrollMemory";
 import { OwnershipProvider } from "@/lib/exports/ownership";
 import NavBar from "@/app/components/chrome/NavBar";
 import { AREAS, areaOf, sectionToOpen, type AreaKey } from "@/shared/chrome/areas";
@@ -185,6 +186,9 @@ function ControlWindow() {
   // This window scales itself: the scale is a CSS zoom on its own shell div, because Chromium's
   // own zoom is per-origin and every window here shares one (see `useUiScale`).
   const appShellRef = useRef<HTMLDivElement>(null);
+  // Back, forward and breadcrumbs return to where each place was scrolled; a fresh move starts at the top.
+  const panelRef = useRef<HTMLDivElement>(null);
+  useScrollMemory(panelRef, `${nav.tab}|${nav.current ?? ""}`, nav.arrival === "history");
   useUiScale(appShellRef, settings?.overlay.fontScale);
   // The ◐ override: this window at 100% rather than the settings slider. The map window has its own
   // over the same saved value, so flipping one window solid leaves the other as it was.
@@ -346,7 +350,7 @@ function ControlWindow() {
         </div>
 
         {/* The one region click-through hands to the game — see `PASS_THROUGH`. */}
-        <div className="panel" {...PASS_THROUGH}>
+        <div className="panel" ref={panelRef} {...PASS_THROUGH}>
           {tab === "overview" && <NowOverview />}
           {tab === "list" && <ListPanel />}
           {tab === "hunt" && (

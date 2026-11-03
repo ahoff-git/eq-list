@@ -1,22 +1,27 @@
 "use client";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ItemLink from "@/app/components/items/ItemLink";
 import BisWearTable from "@/app/components/items/BisWearTable";
 import BisEffects from "@/app/components/items/BisEffects";
 import BisHuntTable from "@/app/components/items/BisHuntTable";
 import BisStats from "@/app/components/items/BisStats";
 import BisDamage from "@/app/components/items/BisDamage";
+import BisGoals from "@/app/components/items/BisGoals";
 import { Empty, segCls } from "@/app/components/ui";
 import { DumpSection } from "@/app/components/exports/DumpParts";
 import { useInventory, type PeerInventory } from "@/lib/exports/useGameExports";
 import { useSpellCatalog } from "@/lib/hooks";
 import { copyText } from "@/lib/clipboard";
+import { createPlanCache, planKey } from "@/lib/items/plan-cache";
 import { bisPlan, loadoutText, type BisPlan } from "@/shared/items/bis-plan";
 import { HUNT_GRADE_CHOICES, bisOptionCount, lockAll, toggleTitle, withExcluded, withoutChanges, type BisOptions } from "@/shared/items/bis-options";
 import { WORN_LAYOUT } from "@/shared/items/bis";
+import { expectedStats } from "@/shared/items/bis-columns";
+import { effectiveRun, goalCount, solveGoalsAsync, type GoalOutcome } from "@/shared/items/bis-goals";
 import { meleeWeighted } from "@/shared/items/melee";
 import { procSpellIndex } from "@/shared/items/damage-plan";
 import { gradedTitle } from "@/shared/items/item-upgrade";
+import { zonesByReach } from "@/shared/items/item-era";
 import { wikiName } from "@/shared/shown-name";
 import { exportAgeText } from "@/shared/game-exports";
 import { createLogger } from "@/shared/logging";
@@ -25,6 +30,10 @@ import type { ItemCriteria, ItemRow, StatWeights } from "@/shared/items/item-sea
 import type { DerivedRate } from "@/shared/items/derived-stats";
 
 const log = createLogger("bis");
+
+// Kept past this component: leaving the Items tab and coming back finds the plan already made.
+const planCache = createPlanCache<BisPlan>();
+const goalCache = createPlanCache<GoalOutcome>();
 
 const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -78,20 +87,69 @@ export default function BisView({
   const { rows: spells } = useSpellCatalog();
   const procSpells = useMemo(() => procSpellIndex(spells), [spells]);
   // Melee weights rank weapons on their own, so they're a yardstick even with the sheet empty.
-  const ranked = scored || meleeWeighted(options.melee);
-  const plan = useMemo(() => {
-    if (!ranked) return null;
+  const goaled = goalCount(options.goals) > 0;
+  const ranked = scored || meleeWeighted(options.melee) || goaled;
+  const closedKey = closedZones && [...closedZones].sort();
+  // Goals become ordinary weights (ADR 0353): the plan below is planned with what they come to, and
+  // the numbers it shows are on that scale — 10,000 is the best any loadout could do for one thing.
+  // The search takes a dozen plans, so it runs a plan at a time off the render, and a newer ask aborts
+  // the one in flight. Until its answer lands the last one steers, so the page doesn't blank on a drag.
+  const goalKey = goaled ? planKey([rows, items, procSpells], [criteria, weights, options, rates, closedKey]) : "";
+  const [, answered] = useState(0);
+  const lastSteering = useRef<GoalOutcome | null>(null);
+  useEffect(() => {
+    if (!goaled || goalCache.peek(goalKey)) return;
+    const abort = new AbortController();
     const started = performance.now();
-    // No dump is still a plan: everything is to hunt, and nothing is worn now.
-    const p = bisPlan({ rows, inventory: items ?? [], criteria, weights, closedZones, options, procSpells });
-    log.debug("plan", { ms: Math.round(performance.now() - started), picks: p.loadout.picks.length, toHunt: p.toHunt, effects: p.effects.length });
-    return p;
-  }, [items, ranked, rows, criteria, weights, closedZones, options, procSpells]);
+    const run = effectiveRun((w, melee) => {
+      const p = bisPlan({ rows, inventory: items ?? [], criteria, weights: w, closedZones, options: { ...options, melee }, procSpells });
+      return { total: p.loadout.total, stats: p.stats.loadout };
+    }, rates ?? []);
+    void solveGoalsAsync({ goals: options.goals, sheet: weights, melee: options.melee, rates: rates ?? [], run }, abort.signal).then((outcome) => {
+      if (!outcome) return log.debug("goals aborted", Math.round(performance.now() - started), "ms in");
+      log.debug("goals", { ms: Math.round(performance.now() - started), solves: outcome.solves, rows: outcome.rows });
+      goalCache.set(goalKey, outcome);
+      answered((n) => n + 1);
+    });
+    return () => abort.abort();
+    // `goalKey` is everything below by content; only the big inputs are tracked by identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [goalKey, rows, items, procSpells]);
+  const answer = goaled ? goalCache.peek(goalKey) : undefined;
+  if (answer) lastSteering.current = answer;
+  const steering = goaled ? (answer ?? lastSteering.current) : null;
+  const searching = goaled && !answer;
+  // Where to get a pick, led by a zone your criteria and the era actually allow — the reason it's offered.
+  const orderZones = useMemo(() => (zones: readonly string[]) => zonesByReach(zones, criteria.facets.zone, closedZones), [criteria.facets.zone, closedZones]);
+  // Stats you weighted, set a goal on or put a floor under get a column in the loadout grid.
+  const statKeys = useMemo(() => expectedStats(weights, options.goals, criteria.mins), [weights, options.goals, criteria.mins]);
+  const planWeights = steering?.weights ?? weights;
+  const planMelee = steering?.melee ?? options.melee;
+  const plan = useMemo(() => {
+    if (!ranked || (goaled && !steering)) return null;
+    const key = planKey([rows, items, procSpells], [criteria, planWeights, options, planMelee, closedKey]);
+    return planCache.get(key, () => {
+      const started = performance.now();
+      // No dump is still a plan: everything is to hunt, and nothing is worn now.
+      const p = bisPlan({ rows, inventory: items ?? [], criteria, weights: planWeights, closedZones, options: { ...options, melee: planMelee }, procSpells });
+      log.debug("plan", { ms: Math.round(performance.now() - started), picks: p.loadout.picks.length, toHunt: p.toHunt, effects: p.effects.length });
+      return p;
+    });
+  }, [items, ranked, goaled, steering, rows, criteria, planWeights, closedZones, closedKey, options, planMelee, procSpells]);
 
+  if (goaled && !steering) {
+    return (
+      <>
+        <p className="muted small">Planning for your goals…</p>
+        <BisGoals goals={options.goals} rows={[]} onGoals={(goals) => onOptions({ ...options, goals })} />
+      </>
+    );
+  }
   if (!ranked || !plan) {
     return (
       <>
-        <Empty title="Set some value weights first." hint="Open Value weights above and say what a point of each stat is worth to you — the loadout is ranked by your yardstick, not ours." />
+        <Empty title="Set some value weights first." hint="Open Value weights above and say what a point of each stat is worth to you — the loadout is ranked by your yardstick, not ours. Or set a goal below: HP, AC, mana, melee damage." />
+        <BisGoals goals={options.goals} rows={[]} onGoals={(goals) => onOptions({ ...options, goals })} />
         <button
           className="btn sm"
           onClick={() => onOptions({ ...options, melee: { ...options.melee, damage: 1 } })}
@@ -176,15 +234,23 @@ export default function BisView({
       </div>
       {plan.unweighed.length > 0 && <p className="muted small">Not weighed — no item page here yet: {plan.unweighed.join(", ")}.</p>}
 
+      <DumpSection
+        title="Goals"
+        aside={goaled ? `${goalCount(options.goals)} set${searching ? " · searching…" : ""}${steering?.rows.some((r) => !r.met) ? " · not all met" : ""}` : "set a target"}
+        defaultOpen={goaled}
+      >
+        <BisGoals goals={options.goals} rows={steering?.rows ?? []} onGoals={(goals) => onOptions({ ...options, goals })} />
+      </DumpSection>
+
       <BisChoices plan={plan} options={options} onOptions={onOptions} />
-      <BisWearTable plan={plan} options={options} onOptions={onOptions} weights={weights} rates={rates} />
+      <BisWearTable plan={plan} options={options} onOptions={onOptions} weights={planWeights} rates={rates} statKeys={statKeys} orderZones={orderZones} />
 
       <DumpSection
         title="Wanted effects"
         aside={plan.effects.length ? `${met} of ${plan.effects.length} met` : "none asked for"}
         defaultOpen={plan.effects.length > met}
       >
-        <BisEffects rows={rows} wanted={options.wantEffects} plans={plan.effects} onWanted={(wantEffects) => onOptions({ ...options, wantEffects })} />
+        <BisEffects rows={rows} wanted={options.wantEffects} plans={plan.effects} orderZones={orderZones} onWanted={(wantEffects) => onOptions({ ...options, wantEffects })} />
       </DumpSection>
 
       {items && (
@@ -237,7 +303,7 @@ export default function BisView({
             for the card at that grade). Choose <i>Owned + hunt</i> to plan them into the loadout itself.
           </p>
           {plan.hunt.length ? (
-            <BisHuntTable hunt={plan.hunt} onSkip={skip} weights={weights} rates={rates} />
+            <BisHuntTable hunt={plan.hunt} onSkip={skip} orderZones={orderZones} weights={planWeights} rates={rates} />
           ) : (
             <p className="muted small">
               Nothing you could get beats what you&apos;d wear

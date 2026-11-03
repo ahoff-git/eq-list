@@ -13,6 +13,7 @@
  * Pure. Stored by the Items panel, saved into presets (`item-presets.ts`), read by `bis-plan.ts`.
  */
 import { WORN_LAYOUT } from "./bis";
+import { NO_GOALS, normalizeGoals, type BisGoals } from "./bis-goals";
 import { normalizeItemName } from "./grouping";
 import { NO_MELEE_WEIGHTS, normalizeMeleeWeights, type MeleeWeights } from "./melee";
 
@@ -35,12 +36,14 @@ export interface BisOptions {
   huntGrade: number;
   /** What a weapon's damage and procs are worth, by eqlwiki's melee model (`melee.ts`), and the AAs it needs told. */
   melee: MeleeWeights;
+  /** Per-stat priorities and floors ("2k HP, 100 AC, then the hardest swing") — turned into weights by `bis-goals.ts`. */
+  goals: BisGoals;
 }
 
 /** The grades a catalogue item can be weighed at — the Hunt table's columns, and `+0`. */
 export const HUNT_GRADE_CHOICES = [0, 2, 5, 10] as const;
 
-export const NO_BIS_OPTIONS: BisOptions = { locks: {}, wantEffects: [], excluded: [], includeHunt: true, huntGrade: 0, melee: NO_MELEE_WEIGHTS };
+export const NO_BIS_OPTIONS: BisOptions = { locks: {}, wantEffects: [], excluded: [], includeHunt: true, huntGrade: 0, melee: NO_MELEE_WEIGHTS, goals: NO_GOALS };
 
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !!x.trim()) : []);
 
@@ -63,6 +66,7 @@ export function normalizeBisOptions(stored: unknown): BisOptions {
     includeHunt: typeof o.includeHunt === "boolean" ? o.includeHunt : NO_BIS_OPTIONS.includeHunt,
     huntGrade: HUNT_GRADE_CHOICES.find((g) => g === o.huntGrade) ?? 0,
     melee: normalizeMeleeWeights(o.melee),
+    goals: normalizeGoals(o.goals),
   };
 }
 
@@ -80,14 +84,14 @@ function normalizeLocks(stored: unknown): Record<number, BisSlotLock> {
   return locks;
 }
 
-/** How many things the options change — what a "Reset (N)" button counts. The hunt switch, grade and melee weights are settings, not changes. */
+/** How many things the options change — what a "Reset (N)" button counts. The hunt switch, grade, melee weights and goals are settings, not changes. */
 export function bisOptionCount(o: BisOptions): number {
   return Object.keys(o.locks).length + o.wantEffects.length + o.excluded.length;
 }
 
 /** The same settings with every change dropped — what Reset leaves, and where a peer's plan starts from yours. */
 export function withoutChanges(o: BisOptions): BisOptions {
-  return { ...NO_BIS_OPTIONS, includeHunt: o.includeHunt, huntGrade: o.huntGrade, melee: o.melee };
+  return { ...NO_BIS_OPTIONS, includeHunt: o.includeHunt, huntGrade: o.huntGrade, melee: o.melee, goals: o.goals };
 }
 
 /** Add or remove a name from one of the title lists, matching the way item names are matched. */

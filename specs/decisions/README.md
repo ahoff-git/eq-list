@@ -393,6 +393,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0350: An item page says how many you have from your inventory export, per area (bags, bank, Tradeskill depot…), with the export's age; none when the dump lacks it](./0350-an-item-page-says-how-many-you-have.md)
 - [0351: A zone page opens its map and lists its known spawns — the wiki roster joined with kills, nameds (no indefinite article) first, then most killed, each placed one opening the map there](./0351-a-zone-page-opens-the-map-and-lists-its-spawns.md)
 - [0352: A zone link opens its page with a 🗺 beside it for the map, and a zone page lists its items through the Items tab's own query and table](./0352-a-zone-link-opens-its-page-and-a-zone-page-lists-its-items.md)
+- [0353: A loadout goal is a slider the planner turns into weights](./0353-a-loadout-goal-is-a-slider-the-planner-turns-into-weights.md)
 
 ## Open Questions
 

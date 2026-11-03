@@ -13,7 +13,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { eraCorpus, openZones, sourcesByEra, zoneShut } from "../../src/shared/items/item-era";
+import { eraCorpus, openZones, sourcesByEra, zoneShut, zonesByReach } from "../../src/shared/items/item-era";
 import { itemRows } from "../../src/shared/items/item-search";
 import { outOfEraSet } from "../../src/shared/zones/expansions";
 import type { CachedItem, ItemSource } from "../../src/shared/types";
@@ -172,4 +172,20 @@ test("the page's own era flag still stands on its own", () => {
   const rows = itemRows([cached("Tagged", [drop("Lady Vox", "Permafrost")], { outOfEra: true })]);
   assert.equal(eraCorpus(rows, KUNARK_SHUT, false)[0].item.outOfEra, true);
   assert.deepEqual(eraCorpus(rows, KUNARK_SHUT, true), [], "and it is still hidden by the toggle");
+});
+
+test("a source's zones lead with one you ticked and can reach, and end with the shut ones", () => {
+  const closed = outOfEraSet(["Dreadlands", "Emerald Jungle"]);
+  const zones = ["Dreadlands", "Emerald Jungle", "Permafrost", "Lower Guk"];
+  assert.deepEqual(zonesByReach(zones, ["Lower Guk"], closed), ["Lower Guk", "Permafrost", "Dreadlands", "Emerald Jungle"]);
+  assert.deepEqual(zonesByReach(zones, [], closed), ["Permafrost", "Lower Guk", "Dreadlands", "Emerald Jungle"], "nothing ticked: open ones first");
+  // A ticked zone that's shut doesn't lead: it's no reason the item is offered.
+  assert.deepEqual(zonesByReach(["Dreadlands", "Plane of Sky"], ["Dreadlands"], closed), ["Plane of Sky", "Dreadlands"]);
+});
+
+test("a zone the wiki spells differently is still shut — Burning Wood closes Burning Woods", () => {
+  const closed = outOfEraSet(["Burning Wood"]);
+  assert.equal(zoneShut("Burning Woods", closed), "out-of-era");
+  assert.equal(zoneShut("Burning Wood", closed), "out-of-era");
+  assert.equal(zoneShut("Plane of Sky", closed), undefined, "and nothing else");
 });

@@ -120,8 +120,9 @@ export function zoneUnavailable(zone: string, outOfEra?: ReadonlySet<string>): Z
   const { key, found } = look(zone);
   if (found && !found.onServer) return "future";
   // Checked second: an expansion the server doesn't have isn't merely "not open yet", and a zone the
-  // table doesn't know can still be flagged by the wiki, which is the more specific source.
-  if (key && outOfEra?.has(key)) return "out-of-era";
+  // table doesn't know can still be flagged by the wiki, which is the more specific source. The zone the
+  // table resolves it to counts too, so a spelling the wiki doesn't use still finds the wiki's flag.
+  if (outOfEra && ((key && outOfEra.has(key)) || (found && outOfEra.has(zoneKey(found.zone))))) return "out-of-era";
   return undefined;
 }
 
@@ -135,12 +136,20 @@ export function zoneAvailable(zone: string, outOfEra?: ReadonlySet<string>): boo
   return zoneUnavailable(zone, outOfEra) === undefined;
 }
 
-/** The live out-of-era list as a folded set, ready for the functions above. */
+/**
+ * The live out-of-era list as a folded set, ready for the functions above.
+ *
+ * Each title also closes the zone the table knows it as. eqlwiki writes "Burning Wood" where item
+ * sources and fandom write "Burning Woods", and matching the spelling alone read every Burning Woods
+ * drop as reachable while Kunark is shut — loot the loadout then offered to hunt.
+ */
 export function outOfEraSet(zones: Iterable<string>): ReadonlySet<string> {
   const set = new Set<string>();
   for (const zone of zones) {
-    const key = zoneKey(zone);
+    const { key, found } = look(zone);
     if (key) set.add(key);
+    const known = found && zoneKey(found.zone);
+    if (known) set.add(known);
   }
   return set;
 }
@@ -158,8 +167,8 @@ const EXPANSION_LEVEL_CAP: Readonly<Record<string, number>> = {
  * **Most of its zones, not any of them.** This server opens zones out of their fandom expansion: The
  * Hole, Stonebrunt and The Warrens are in era while the rest of Kunark and Velious are shut, so "one
  * zone open" would call both expansions open. A fandom name eqlwiki spells differently ("Burning
- * Woods" for "Burning Wood") reads as open too, which leans the same fail-open way as the rest of this
- * module — and an empty list (the wiki unreachable) opens everything.
+ * Woods" for "Burning Wood") is matched through the table by `outOfEraSet` — and an empty list (the
+ * wiki unreachable) opens everything.
  */
 export function expansionOpen(expansion: string, outOfEra: ReadonlySet<string>): boolean {
   const zones = ZONE_EXPANSIONS.find((e) => e.expansion === expansion)?.zones ?? [];

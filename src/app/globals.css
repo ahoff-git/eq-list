@@ -4227,6 +4227,13 @@ select optgroup {
 .bis-actions .select-sm { max-width: 220px; }
 .bis-tag { margin-left: 6px; padding: 0 6px; border-radius: 8px; font-size: 11px; color: var(--good); border: 1px solid color-mix(in oklab, var(--good) 45%, transparent); }
 .bis-choices { display: flex; flex-direction: column; gap: 4px; }
+.bis-goals { display: flex; flex-direction: column; gap: 8px; }
+.bis-goal { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.bis-goal-name { min-width: 92px; }
+.bis-goal-box { width: 84px; }
+.bis-slide { display: inline-flex; align-items: center; gap: 6px; }
+.bis-slide input[type="range"] { width: 130px; }
+.bis-slide-value { min-width: 5.5em; font-variant-numeric: tabular-nums; }
 .bis-chip { display: inline-flex; align-items: center; gap: 2px; padding: 0 0 0 8px; border-radius: 10px; border: 1px solid var(--border); }
 .bis-effects { display: flex; flex-direction: column; gap: 6px; }
 .bis-effect-mark { display: inline-block; width: 1.2em; text-align: center; }

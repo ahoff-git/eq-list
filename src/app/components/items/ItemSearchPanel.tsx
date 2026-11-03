@@ -20,6 +20,7 @@ import { exportAgeText } from "@/shared/game-exports";
 import { ownedText } from "@/shared/game-export-dumps";
 import { gradedItemStats } from "@/shared/items/item-upgrade";
 import { normalizeItemName } from "@/shared/items/grouping";
+import { useSettled } from "@/lib/useSettled";
 import { derivedRates, foldDerivedWeights } from "@/shared/items/derived-stats";
 import { normalizeBisOptions, type BisOptions } from "@/shared/items/bis-options";
 import { normalizePreset, type ItemPreset } from "@/shared/items/item-presets";
@@ -178,7 +179,13 @@ export default function ItemSearchPanel() {
     );
   }, [dump, rows]);
   // One ticked race is yours, the way the ticked classes are; none, or several, says nothing about it.
-  const race = active.facets.race.length === 1 ? active.facets.race[0] : undefined;
+  // The controls follow the hand; the work they steer (filtering eleven thousand rows, planning a
+  // loadout) waits for them to hold still. `settling` is the gap between the two.
+  const live = useMemo(() => ({ criteria: active, weights }), [active, weights]);
+  const settled = useSettled(live);
+  const settling = settled !== live;
+  const queried = settled.criteria;
+  const race = queried.facets.race.length === 1 ? queried.facets.race[0] : undefined;
 
   /**
    * The sheet both Search and the loadout builder score by: yours, with HP, mana and AC folded into the stats
@@ -187,13 +194,13 @@ export default function ItemSearchPanel() {
    * an INT point differently.
    */
   const rates = useMemo(
-    () => derivedRates({ classes: active.facets.class, level: active.levelMax ?? MAX_PLAYER_LEVEL, race, worn }),
-    [active.facets.class, active.levelMax, race, worn],
+    () => derivedRates({ classes: queried.facets.class, level: queried.levelMax ?? MAX_PLAYER_LEVEL, race, worn }),
+    [queried.facets.class, queried.levelMax, race, worn],
   );
-  const scoring = useMemo(() => foldDerivedWeights(weights, rates), [weights, rates]);
+  const scoring = useMemo(() => foldDerivedWeights(settled.weights, rates), [settled.weights, rates]);
   const yourWeights = weightedStats(weights);
 
-  const { options, counts, found, columns, scored, unplaced } = useItemQuery(searched, active, scoring, sort, closedZones, owned ? where : undefined);
+  const { options, counts, found, columns, scored, unplaced } = useItemQuery(searched, queried, scoring, sort, closedZones, owned ? where : undefined);
   const conditions = activeCriteria(active);
   const shown = useMemo(() => found.slice(0, MAX_ROWS), [found]);
 
@@ -269,6 +276,7 @@ export default function ItemSearchPanel() {
         </button>
         <span className="muted small">
           {loading ? "Reading the item cache…" : countOf(found.length, searched.length, "item")}
+          {settling && " · updating…"}
           {uncatalogued > 0 && ` · ${count(uncatalogued, "thing")} you own has no item page here yet`}
         </span>
       </div>
@@ -285,7 +293,7 @@ export default function ItemSearchPanel() {
       {mode === "bis" && (
         <BisFor
           rows={rows}
-          criteria={active}
+          criteria={queried}
           weights={scoring}
           closedZones={closedZones}
           scored={!!scored.length}
