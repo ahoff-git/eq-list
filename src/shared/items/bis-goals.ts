@@ -242,9 +242,10 @@ function* goalSearch(input: GoalInputs): Generator<void, GoalOutcome> {
     result = yield* blend(boost);
   }
 
-  const rows: GoalRow[] = (Object.keys(goals) as GoalKey[]).flatMap((key) => {
+  const rows: GoalRow[] = (Object.keys(goals) as GoalKey[]).flatMap((key): GoalRow[] => {
     const c = components.get(key);
-    if (!c) return [];
+    // Nothing in the pool gives it: still a row, so the goal can say so instead of sitting silent.
+    if (!c) return key === "swing" ? [] : [{ key, max: 0, got: 0, met: !goals[key]?.floor, unreachable: !!goals[key]?.floor }];
     const f = floors.get(key);
     const got = key === "swing" ? undefined : total(result, key);
     return [{ key, max: c.max, floor: f?.want, got, met: !f || got! >= f.want - 0.5, unreachable: f?.unreachable ?? false }];

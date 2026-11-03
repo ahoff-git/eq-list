@@ -75,6 +75,12 @@ test("a floor above the max is held to the max and says so", () => {
   assert.equal(plan(out).mana, 2000);
 });
 
+test("a goal on a stat nothing gives still reports, so it can say so", () => {
+  const out = solve({ hp: { priority: 100 }, ac: { floor: { min: 50 } } });
+  assert.deepEqual(out.rows.find((r) => r.key === "ac"), { key: "ac", max: 0, got: 0, met: false, unreachable: true });
+  assert.equal(plan(out).hp, 3000);
+});
+
 test("melee damage as a priority sets the swing weight", () => {
   const out = solve({ swing: { priority: 100 } });
   assert.ok(out.melee.damage > 0);

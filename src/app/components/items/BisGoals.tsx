@@ -82,15 +82,7 @@ function GoalLine({ stat, goal, row, onChange }: { stat: GoalKey; goal: StatGoal
       {stat !== "swing" && (
         <>
           <Slide label="At least" value={floorPct} onCommit={(pct) => onChange({ floor: pct ? { pct } : undefined })} suffix="% of max" />
-          <input
-            className="field sm bis-goal-box"
-            type="number"
-            min={0}
-            placeholder="points"
-            aria-label={`${labelOf(stat)} floor in points`}
-            value={floorPoints}
-            onChange={(e) => onChange({ floor: Number(e.target.value) > 0 ? { min: Number(e.target.value) } : undefined })}
-          />
+          <Points label={`${labelOf(stat)} floor in points`} value={floorPoints} onCommit={(min) => onChange({ floor: min > 0 ? { min } : undefined })} />
         </>
       )}
       <button className="btn ghost sm" title="Drop this goal" onClick={() => onChange(null)}>
@@ -112,6 +104,30 @@ function GoalResult({ stat, row }: { stat: GoalKey; row: GoalRow }) {
       {row.floor !== undefined && (row.met ? " ✓" : ` — short of ${num(row.floor)}; the other goals leave no room`)}
       {row.unreachable && " (more than any loadout gives)"}
     </span>
+  );
+}
+
+/**
+ * The floor as a number, committed on Enter or leaving the box. Committing each keystroke planned
+ * for every prefix of "2000" — and clearing the box to retype dropped the floor, which removed a
+ * floor-only goal from under the cursor.
+ */
+function Points({ label, value, onCommit }: { label: string; value: number | ""; onCommit: (value: number) => void }) {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => setDraft(String(value)), [value]);
+  const commit = () => draft !== String(value) && onCommit(Number(draft) || 0);
+  return (
+    <input
+      className="field sm bis-goal-box"
+      type="number"
+      min={0}
+      placeholder="points"
+      aria-label={label}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => e.key === "Enter" && commit()}
+    />
   );
 }
 
