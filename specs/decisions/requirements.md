@@ -697,6 +697,8 @@ reading like a measurement, and they are shared code
   line and recent picks when empty. ([0349](./0349-the-search-bar-autocompletes.md))
 - **An item page says how many you have**, per area of the inventory export, with the export's age;
   "none" when a dump lacks it, nothing with no dump. ([0350](./0350-an-item-page-says-how-many-you-have.md))
+- **An item page says which sharing peers have it**, each with a count, most first; opening the page
+  asks them for their inventories. ([0354](./0354-an-item-page-says-which-peers-have-it.md))
 - **A zone page opens its map and lists its known spawns**: the wiki roster joined with kills,
   nameds first by the roster's missing article, then most killed. ([0351](./0351-a-zone-page-opens-the-map-and-lists-its-spawns.md))
 - **A zone name opens its page, with a 🗺 beside it for the map**, and the page lists the items

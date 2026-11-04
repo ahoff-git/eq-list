@@ -13,7 +13,7 @@ test("stored options are made whole, and a lock on a slot the layout doesn't hav
   assert.deepEqual(normalizeBisOptions(undefined), NO_BIS_OPTIONS);
   assert.deepEqual(
     normalizeBisOptions({ locks: { 3: { title: "Cap" }, 4: { empty: true }, 99: { title: "Nowhere" }, x: { title: "Bad" } }, excluded: ["A", 7, ""] }),
-    { locks: { 3: { title: "Cap" }, 4: { empty: true } }, wantEffects: [], excluded: ["A"], includeHunt: true, huntGrade: 0, melee: NO_MELEE_WEIGHTS, goals: {} },
+    { locks: { 3: { title: "Cap" }, 4: { empty: true } }, wantEffects: [], excluded: ["A"], includeOwned: true, includeHunt: true, huntGrade: 0, melee: NO_MELEE_WEIGHTS, goals: {} },
   );
   // An older build's two lists of things ruled out are one list now; a name in both is kept once.
   assert.deepEqual(normalizeBisOptions({ benched: ["Iron Ring"], skipHunt: ["Cap", "iron ring"] }).excluded, ["Iron Ring", "Cap"]);

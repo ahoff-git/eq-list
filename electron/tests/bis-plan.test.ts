@@ -463,3 +463,13 @@ test("a stone moves into any item of its slot the loadout already wears — what
   assert.match(effect.stone?.where ?? "", /^take it out of Moonstone Ring \+1/);
   assert.ok(!plan.loadout.picks.some((p) => p.item.title === "Moonstone Ring"), "the weaker ring stays in the bank");
 });
+
+test("leaving your own gear out plans from the catalogue alone, at the hunt grade", () => {
+  const inventory = parseInventoryDump(dump);
+  const criteria = { ...wizard, facets: { ...wizard.facets, class: ["Wizard"] } };
+  const withOwned = bisPlan({ rows, inventory, criteria, weights: { mana: 1 }, options: { ...NO_BIS_OPTIONS, includeHunt: false } });
+  const without = bisPlan({ rows, inventory, criteria, weights: { mana: 1 }, options: { ...NO_BIS_OPTIONS, includeOwned: false, includeHunt: false } });
+  assert.ok(withOwned.loadout.picks.some((p) => p.item.heldAt), "your gear is worn when it counts");
+  assert.ok(without.loadout.picks.length > 0, "hunting is forced on, so there is still a plan");
+  assert.ok(without.loadout.picks.every((p) => !p.item.heldAt && p.item.grade === 0), "nothing held, nothing upgraded");
+});

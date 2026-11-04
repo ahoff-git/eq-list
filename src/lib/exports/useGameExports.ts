@@ -10,6 +10,7 @@ import type { InventoryShareRow } from "@/shared/peers/peer-share";
 import { inventoryAsksDue } from "@/shared/peers/inventory-asks";
 import { peerInventoryItems } from "@/shared/peers/peer-inventory";
 import { normalizeItemName } from "@/shared/items/grouping";
+import { peerHoldersOf, type PeerHolder } from "@/shared/items/ownership-notes";
 import type { GameExportDump } from "@/shared/types";
 
 /**
@@ -125,6 +126,20 @@ export function useHoldings(): Holdings | null {
     if (!items && !peers.length) return null;
     return holdingsOf(items ? inventoryTotals(items) : [], peers);
   }, [items, received]);
+}
+
+/**
+ * Which sharing peers hold an item, for its page (`peerHoldersOf`), and how many peers' inventories
+ * it was looked for in — so "none of them" can be told from "nobody has shared". Asks for them, too
+ * (`useAskedInventories`): opening an item's page is asking who has it.
+ */
+export function usePeersHolding(name: string): { holders: PeerHolder[]; sharing: number } {
+  const { received } = useAskedInventories();
+  const rows = useMemo(() => rowsOf<InventoryShareRow>(received, "inventory"), [received]);
+  return useMemo(
+    () => ({ holders: peerHoldersOf(rows, name), sharing: new Set(rows.map((r) => r.peerId)).size }),
+    [rows, name],
+  );
 }
 
 /** One person sharing their inventory with you: who, and what it reads as — null until it arrives. */

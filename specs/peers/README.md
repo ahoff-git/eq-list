@@ -232,7 +232,8 @@ travels peer-to-peer, on request, over that peer's own connection.
 - **`inventory`** is the newest live kind ([ADR 0309](../decisions/0309-an-inventory-is-shared-live-and-judged-by-the-receiver.md)):
   one row per item a character holds, totalled across bags, bank, depot, hoard and Storage, from
   their newest `/outputfile inventory` dump and dated by it. It is searched on the Peers tab
-  (`PeerInventories`, "Who has it") rather than listed in the tray. **What can't be traded is
+  (`PeerInventories`, "Who has it") rather than listed in the tray, and an item's page lists who holds
+  it ([ADR 0354](../decisions/0354-an-item-page-says-which-peers-have-it.md)). **What can't be traded is
   flagged by the receiver**, from its own catalogue's `NO DROP` / `NO TRADE`; rows carry no trade
   flag at all, so a sender can't claim otherwise. Each row also tells apart the copies a loadout
   needs (`gear`: worn and where, graded, socketed), so the loadout builder can plan for anyone

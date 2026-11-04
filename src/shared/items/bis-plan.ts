@@ -387,7 +387,11 @@ export function resolveLocks(candidates: readonly BisCandidate[], specs: LockSpe
   return { locks, stale };
 }
 
-export function bisPlan({ rows, inventory, criteria, weights, closedZones, options = NO_BIS_OPTIONS, procSpells }: BisInputs): BisPlan {
+export function bisPlan({ rows, inventory: dump, criteria, weights, closedZones, options: asked = NO_BIS_OPTIONS, procSpells }: BisInputs): BisPlan {
+  // Without your own gear the plan is as if there were no dump (everything to hunt, nothing worn now),
+  // so what you've upgraded can't tilt it. Hunting is then the only source left.
+  const inventory = asked.includeOwned ? dump : [];
+  const options = asked.includeOwned ? asked : { ...asked, includeHunt: true };
   const byTitle = new Map(rows.map((r) => [normalizeItemName(r.item.title), r]));
   const rowOf = (name: string) => byTitle.get(normalizeItemName(name));
   const excludedKeys = new Set(options.excluded.map(normalizeItemName));

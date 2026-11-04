@@ -148,7 +148,7 @@ export default function BisView({
     return (
       <>
         <p className="muted small">Planning for your goals…</p>
-        <BisGoals goals={options.goals} rows={[]} onGoals={(goals) => onOptions({ ...options, goals })} />
+        <BisGoals goals={options.goals} rows={[]} rates={rates} onGoals={(goals) => onOptions({ ...options, goals })} />
       </>
     );
   }
@@ -156,7 +156,7 @@ export default function BisView({
     return (
       <>
         <Empty title="Set some value weights first." hint="Open Value weights above and say what a point of each stat is worth to you — the loadout is ranked by your yardstick, not ours. Or set a goal below: HP, AC, mana, melee damage." />
-        <BisGoals goals={options.goals} rows={[]} onGoals={(goals) => onOptions({ ...options, goals })} />
+        <BisGoals goals={options.goals} rows={[]} rates={rates} onGoals={(goals) => onOptions({ ...options, goals })} />
         <button
           className="btn sm"
           onClick={() => onOptions({ ...options, melee: { ...options.melee, damage: 1 } })}
@@ -186,6 +186,10 @@ export default function BisView({
       </p>
 
       <div className="row wrap bis-steer">
+        <label className="muted small" title="Off: plan from the catalogue alone, every item as it drops (+0 unless you set a grade) — the best unupgraded gear, ignoring what you hold and how far you've merged it">
+          <input type="checkbox" checked={options.includeOwned} onChange={(e) => onOptions({ ...options, includeOwned: e.target.checked, includeHunt: e.target.checked ? options.includeHunt : true })} /> include what I own
+        </label>
+        {options.includeOwned && (
         <div className="segmented" role="group" aria-label="Plan from">
           <button
             className={segCls(!options.includeHunt)}
@@ -202,6 +206,7 @@ export default function BisView({
             Owned + hunt
           </button>
         </div>
+        )}
         {options.includeHunt && (
           <label className="muted small" title="Each item to hunt weighed as if merged up to this grade">
             weighed at{" "}
@@ -246,7 +251,7 @@ export default function BisView({
         aside={goaled ? `${goalCount(options.goals)} set${searching ? " · searching…" : ""}${steering?.rows.some((r) => !r.met) ? " · not all met" : ""}` : "set a target"}
         defaultOpen={goaled}
       >
-        <BisGoals goals={options.goals} rows={steering?.rows ?? []} onGoals={(goals) => onOptions({ ...options, goals })} />
+        <BisGoals goals={options.goals} rows={steering?.rows ?? []} rates={rates} onGoals={(goals) => onOptions({ ...options, goals })} />
       </DumpSection>
 
       <BisChoices plan={plan} options={options} onOptions={onOptions} />

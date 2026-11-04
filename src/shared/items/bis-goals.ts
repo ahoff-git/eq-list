@@ -74,6 +74,15 @@ export function withGoal(goals: BisGoals, key: GoalKey, change: Partial<StatGoal
   return next;
 }
 
+/**
+ * Goals whose stat is partly made of attributes (HP from STA, mana from INT/WIS) but that have no rate
+ * to fold — no class is ticked, so nothing says which attributes feed the pool. The plan still runs, on
+ * the printed HP/mana alone, which is why the page says so rather than letting it look complete.
+ */
+export function goalsWithoutPools(goals: BisGoals, rates: readonly DerivedRate[]): GoalKey[] {
+  return (["hp", "mana"] as const).filter((key) => goals[key] && !rates.some((r) => r.to === key));
+}
+
 /** One-tap starting points. Each *replaces* the goals — the sliders refine from there. */
 export interface GoalPreset {
   id: string;

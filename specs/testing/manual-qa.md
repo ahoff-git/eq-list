@@ -1169,6 +1169,10 @@ features for later in [../ideas.md](../ideas.md).
   Take `/outputfile inventory`, open a page for something in your bags and the depot: the line under
   the card counts each area and the export's age; a page for something you don't hold says none;
   clicking the age opens Exports.
+- **An item page's peers line.** ([ADR 0354](../decisions/0354-an-item-page-says-which-peers-have-it.md).)
+  With a second client sharing its inventory, open a page for an item it holds: the line under your
+  count names that peer and their count, and hovering it gives their areas and export age. A page for
+  something they lack says none of the sharing inventories hold it.
 - **A zone page's map button and spawns, with real kills.** ([ADR 0351](../decisions/0351-a-zone-page-opens-the-map-and-lists-its-spawns.md).)
   Open a zone you've hunted: the button opens the map window on it; mobs you've killed show counts
   and a coordinate that opens the map at the spot; a kill the wiki doesn't list says so.

@@ -262,7 +262,8 @@ list, hunt, search, damage, session, peers, settings.
   per running board, each opening its section. The status bar carries the **stale-export reminder**
   (`exports/StaleExportChip.tsx`), and an item's hover card says **who has it** (`lib/exports/ownership.tsx`).
   An item's **page** says how many you have per area of the export (`items/HeldOnPage.tsx`,
-  [ADR 0350](../decisions/0350-an-item-page-says-how-many-you-have.md)). A **zone** page opens its
+  [ADR 0350](../decisions/0350-an-item-page-says-how-many-you-have.md)), and under it which sharing peers
+  hold it and how many (`items/PeersHoldOnPage.tsx`, [ADR 0354](../decisions/0354-an-item-page-says-which-peers-have-it.md)). A **zone** page opens its
   map and lists its known spawns (`mob/ZoneSpawns.tsx`,
   [ADR 0351](../decisions/0351-a-zone-page-opens-the-map-and-lists-its-spawns.md)), then the items
   found there through the Items tab's own table (`items/ZoneItems.tsx`). A zone name elsewhere opens

@@ -30,6 +30,11 @@ export interface BisOptions {
    * a stone's source: a quest piece kept for another role, no-drop raid loot, a camp you won't do.
    */
   excluded: string[];
+  /**
+   * May the loadout wear what you hold, at the grades you've merged it to? Off plans from the catalogue
+   * alone, every item as it drops — "the best unupgraded gear", with your own upgrades out of the sum.
+   */
+  includeOwned: boolean;
   /** May the loadout include catalogue items you'd have to go and get, beside what you hold? */
   includeHunt: boolean;
   /** The grade a catalogue item is weighed at: as it drops, or a farm's worth of merging. */
@@ -43,7 +48,7 @@ export interface BisOptions {
 /** The grades a catalogue item can be weighed at — the Hunt table's columns, and `+0`. */
 export const HUNT_GRADE_CHOICES = [0, 2, 5, 10] as const;
 
-export const NO_BIS_OPTIONS: BisOptions = { locks: {}, wantEffects: [], excluded: [], includeHunt: true, huntGrade: 0, melee: NO_MELEE_WEIGHTS, goals: NO_GOALS };
+export const NO_BIS_OPTIONS: BisOptions = { locks: {}, wantEffects: [], excluded: [], includeOwned: true, includeHunt: true, huntGrade: 0, melee: NO_MELEE_WEIGHTS, goals: NO_GOALS };
 
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !!x.trim()) : []);
 
@@ -59,11 +64,14 @@ export function normalizeBisOptions(stored: unknown): BisOptions {
   for (const t of [...strings(o.excluded), ...strings(o.benched), ...strings(o.skipHunt)]) {
     if (!excluded.some((e) => normalizeItemName(e) === normalizeItemName(t))) excluded.push(t);
   }
+  const includeOwned = typeof o.includeOwned === "boolean" ? o.includeOwned : NO_BIS_OPTIONS.includeOwned;
   return {
     locks: normalizeLocks(o.locks),
     wantEffects: strings(o.wantEffects),
     excluded,
-    includeHunt: typeof o.includeHunt === "boolean" ? o.includeHunt : NO_BIS_OPTIONS.includeHunt,
+    includeOwned,
+    // Neither owned nor hunted would plan from nothing, so leaving your own gear out means hunting.
+    includeHunt: !includeOwned || (typeof o.includeHunt === "boolean" ? o.includeHunt : NO_BIS_OPTIONS.includeHunt),
     huntGrade: HUNT_GRADE_CHOICES.find((g) => g === o.huntGrade) ?? 0,
     melee: normalizeMeleeWeights(o.melee),
     goals: normalizeGoals(o.goals),
@@ -84,14 +92,14 @@ function normalizeLocks(stored: unknown): Record<number, BisSlotLock> {
   return locks;
 }
 
-/** How many things the options change — what a "Reset (N)" button counts. The hunt switch, grade, melee weights and goals are settings, not changes. */
+/** How many things the options change — what a "Reset (N)" button counts. The owned/hunt switches, grade, melee weights and goals are settings, not changes. */
 export function bisOptionCount(o: BisOptions): number {
   return Object.keys(o.locks).length + o.wantEffects.length + o.excluded.length;
 }
 
 /** The same settings with every change dropped — what Reset leaves, and where a peer's plan starts from yours. */
 export function withoutChanges(o: BisOptions): BisOptions {
-  return { ...NO_BIS_OPTIONS, includeHunt: o.includeHunt, huntGrade: o.huntGrade, melee: o.melee, goals: o.goals };
+  return { ...NO_BIS_OPTIONS, includeOwned: o.includeOwned, includeHunt: o.includeHunt, huntGrade: o.huntGrade, melee: o.melee, goals: o.goals };
 }
 
 /** Add or remove a name from one of the title lists, matching the way item names are matched. */

@@ -2,7 +2,8 @@
 import { useEffect, useState } from "react";
 import { statMeta } from "@/shared/items/item-stats";
 import { LOADOUT_STATS } from "@/shared/items/loadout-stats";
-import { GOAL_PRESETS, goalCount, withGoal, type BisGoals, type GoalKey, type GoalRow, type StatGoal } from "@/shared/items/bis-goals";
+import type { DerivedRate } from "@/shared/items/derived-stats";
+import { GOAL_PRESETS, goalCount, goalsWithoutPools, withGoal, type BisGoals, type GoalKey, type GoalRow, type StatGoal } from "@/shared/items/bis-goals";
 
 const QUICK: readonly GoalKey[] = ["hp", "mana", "ac", "swing"];
 const labelOf = (key: GoalKey) => (key === "swing" ? "Melee damage" : statMeta(key).label);
@@ -16,8 +17,9 @@ const num = (n: number) => Math.round(n).toLocaleString();
  *
  * The solver's work lives in `bis-goals.ts`; this only sets goals and shows how each one came out.
  */
-export default function BisGoals({ goals, rows, onGoals }: { goals: BisGoals; rows: readonly GoalRow[]; onGoals: (next: BisGoals) => void }) {
+export default function BisGoals({ goals, rows, rates = [], onGoals }: { goals: BisGoals; rows: readonly GoalRow[]; rates?: readonly DerivedRate[]; onGoals: (next: BisGoals) => void }) {
   const keys = Object.keys(goals) as GoalKey[];
+  const poolless = goalsWithoutPools(goals, rates);
   const addable = [...QUICK, ...LOADOUT_STATS.filter((k) => !QUICK.includes(k))].filter((k) => !goals[k]);
   const rowOf = (key: GoalKey) => rows.find((r) => r.key === key);
   // A new goal starts as a priority, which is always satisfiable; the floor is the second slider's job.
@@ -43,6 +45,11 @@ export default function BisGoals({ goals, rows, onGoals }: { goals: BisGoals; ro
         <GoalLine key={key} stat={key} goal={goals[key]!} row={rowOf(key)} onChange={(change) => onGoals(withGoal(goals, key, change))} />
       ))}
 
+      {poolless.length > 0 && (
+        <p className="small warn">
+          Tick your class(es) in the Class picker: {poolless.map(labelOf).join(" and ")} also come from {poolless.map((k) => (k === "hp" ? "STA" : "INT/WIS")).join(" and ")}, and the plan only counts that once it knows your classes.
+        </p>
+      )}
       <div className="row wrap">
         {addable.length > 0 && (
           <select className="select-sm" value="" aria-label="Add a goal" onChange={(e) => e.target.value && add(e.target.value as GoalKey)}>

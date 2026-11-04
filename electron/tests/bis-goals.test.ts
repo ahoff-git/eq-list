@@ -6,12 +6,13 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { GOAL_PRESETS, normalizeGoals, solveGoals, solveGoalsAsync, withGoal, type RunPlan } from "../../src/shared/items/bis-goals";
+import { GOAL_PRESETS, goalsWithoutPools, normalizeGoals, solveGoals, solveGoalsAsync, withGoal, type RunPlan } from "../../src/shared/items/bis-goals";
 import { expectedStats } from "../../src/shared/items/bis-columns";
 import { bisPlan } from "../../src/shared/items/bis-plan";
 import { NO_BIS_OPTIONS } from "../../src/shared/items/bis-options";
 import { itemRows, NO_CRITERIA, type StatWeights } from "../../src/shared/items/item-search";
 import type { CachedItem } from "../../src/shared/types";
+import { derivedRates } from "../../src/shared/items/derived-stats";
 import { NO_MELEE_WEIGHTS } from "../../src/shared/items/melee";
 
 // A strictly concave HP/mana frontier — a linear solver (weights in, loadout out) can only find hull
@@ -168,4 +169,10 @@ test("the async search agrees with the sync one, and stops when aborted", async 
   abort.abort();
   assert.equal(await stopped, undefined);
   assert.ok(plans <= 2, `stopped after ${plans} plans`);
+});
+
+test("a mana or HP goal with no class ticked is flagged, and not once classes give rates", () => {
+  const goals = normalizeGoals({ mana: { floor: { min: 5000 } }, hp: { priority: 50 }, ac: { priority: 50 } });
+  assert.deepEqual(goalsWithoutPools(goals, derivedRates({ classes: [], level: 50 })), ["hp", "mana"]);
+  assert.deepEqual(goalsWithoutPools(goals, derivedRates({ classes: ["Wizard"], level: 50 })), []);
 });

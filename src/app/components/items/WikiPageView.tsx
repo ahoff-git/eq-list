@@ -26,6 +26,7 @@ import { cardAtLevel, ladderOf, levelledTitle } from "@/shared/upgrade-view";
 import UpgradeSlider from "@/app/components/items/UpgradeSlider";
 import LevelledText from "@/app/components/items/LevelledText";
 import HeldOnPage from "@/app/components/items/HeldOnPage";
+import PeersHoldOnPage from "@/app/components/items/PeersHoldOnPage";
 import DifficultySlider from "@/app/components/mob/DifficultySlider";
 import { mobLinesAtDifficulty, WIKI_STATED, type DifficultySetting } from "@/shared/mob/difficulty-scaling";
 import { usePersistentShape } from "@/lib/usePersistentState";
@@ -276,8 +277,14 @@ export default function WikiPageView({
         </div>
       )}
 
-      {/* How many you have, per area of your inventory export (ADR 0350) — an item, or a recipe's crafted item. */}
-      {(page.kind === "item" || page.kind === "recipe") && <HeldOnPage title={page.card?.title ?? page.title} />}
+      {/* How many you have, per area of your inventory export (ADR 0350), and which sharing peers hold
+          it (ADR 0354) — an item, or a recipe's crafted item. */}
+      {(page.kind === "item" || page.kind === "recipe") && (
+        <>
+          <HeldOnPage title={page.card?.title ?? page.title} />
+          <PeersHoldOnPage title={page.card?.title ?? page.title} />
+        </>
+      )}
 
       {/* A long quest with a bundled plan shows the plan — stages, places, progress (ADR 0300). Any
           other quest's walkthrough step by step, before the flat turn-in list: a chain quest's turn-ins

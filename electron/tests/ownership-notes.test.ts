@@ -4,7 +4,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { heldOnPageText, ownershipNotes } from "../../src/shared/items/ownership-notes";
+import { heldOnPageText, ownershipNotes, peerHolderText, peerHoldersOf } from "../../src/shared/items/ownership-notes";
 
 const place = (text: string, count = 1, exaltation = false) => ({ text, count, exaltation });
 
@@ -40,3 +40,30 @@ test("an item page's line: the total, best grade, and a count per area in the du
   assert.equal(heldOnPageText({ count: 1, bestGrade: 3, places: [{ label: "Worn", slots: ["Fingers"], count: 1 }] }), "1 (best +3) — Worn 1");
 });
 
+test("an item page's peers: one entry per peer, most first, grades folded and names matched loosely", () => {
+  const row = (item: string, count: number, grade = 0, asOf = "2026-11-01T00:00:00Z") => ({
+    item,
+    count,
+    grade,
+    places: [{ label: "Bags", slots: ["1"], count }],
+    asOf,
+  });
+  const rows = [
+    { by: "Ann", row: row("Ruby", 2) },
+    { by: "BunnySlayer", row: row("Ruby", 8) },
+    { by: "Ann", row: row("ruby", 1, 3, "2026-11-02T00:00:00Z") },
+    { by: "Cal", row: row("Sapphire", 5) },
+  ];
+  const holders = peerHoldersOf(rows, "Ruby");
+  assert.deepEqual(
+    holders.map((h) => [h.by, h.count, h.grade, h.asOf]),
+    [
+      ["BunnySlayer", 8, 0, "2026-11-01T00:00:00Z"],
+      ["Ann", 3, 3, "2026-11-02T00:00:00Z"],
+    ],
+  );
+  assert.equal(holders[1].where, "Bags 3");
+  assert.equal(peerHolderText(holders[0]), "BunnySlayer 8");
+  assert.equal(peerHolderText(holders[1]), "Ann 3 (best +3)");
+  assert.deepEqual(peerHoldersOf(rows, "Emerald"), []);
+});
