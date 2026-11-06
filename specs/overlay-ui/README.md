@@ -594,7 +594,9 @@ list, hunt, search, damage, session, peers, settings.
       above it drive both modes. From your inventory dump it shows four things. **Wear** is the
       optimal loadout from everything you hold, wherever it is, against what you're wearing now.
       **Merge** feeds spare copies into the one worn. **Exaltations** lists each socket the
-      loadout's grades open, with stones that fit. **Hunt** is what to go and get, by gain at `+0`
+      loadout's grades open, with stones that fit — judged together, since a stone's classes and slots narrow
+      the item it goes into ([ADR 0358](../decisions/0358-a-stone-narrows-the-item-it-goes-into.md)); each
+      option says what it costs ("not BRD ROG, Primary only"). **Hunt** is what to go and get, by gain at `+0`
       and at `+1/+2/+3`, with level and where it drops. Rules and reasoning:
       [ADR 0310](../decisions/0310-best-in-slot-is-an-exact-assignment-by-your-weights.md);
       `src/shared/items/bis.ts`, `bis-plan.ts`, `exaltations.ts`.

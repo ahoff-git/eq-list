@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { openSockets, socketName, socketPlan, stoneFits, type Stone } from "../../src/shared/items/exaltations";
+import { narrowing, openSockets, socketName, socketPlan, stoneFits, withStone, type ExaltationCard, type Stone } from "../../src/shared/items/exaltations";
 import { bisPlan, candidateOf, loadoutText } from "../../src/shared/items/bis-plan";
 import { bestLoadout, WORN_LAYOUT } from "../../src/shared/items/bis";
 import { NO_BIS_OPTIONS, withExcluded, withLock } from "../../src/shared/items/bis-options";
@@ -472,4 +472,119 @@ test("leaving your own gear out plans from the catalogue alone, at the hunt grad
   assert.ok(withOwned.loadout.picks.some((p) => p.item.heldAt), "your gear is worn when it counts");
   assert.ok(without.loadout.picks.length > 0, "hunting is forced on, so there is still a plan");
   assert.ok(without.loadout.picks.every((p) => !p.item.heldAt && p.item.grade === 0), "nothing held, nothing upgraded");
+});
+
+// ─── Restrictions compound (https://eqlwiki.com/Exaltations#Restrictions) ───────────────────────────
+
+const card = (classes: string[], slots: string[]): ExaltationCard => ({ classes, slots });
+
+test("a stone narrows its host: the wiki's Earthquake into the Short Sword of the Ykesha", () => {
+  // The page's own example. The sword is WAR/PAL/RNG/SHD/BRD/ROG; Earthshaker's two-hander is WAR/PAL/RNG/SHD,
+  // Primary only. "Rogues and Bards can no longer equip the sword, but the rest can (only in their primary slot)".
+  const sword = card(["Warrior", "Paladin", "Ranger", "Shadow Knight", "Bard", "Rogue"], ["PRIMARY", "SECONDARY"]);
+  const earthshaker = card(["Warrior", "Paladin", "Ranger", "Shadow Knight"], ["PRIMARY"]);
+  assert.deepEqual(withStone(sword, earthshaker), card(["Warrior", "Paladin", "Ranger", "Shadow Knight"], ["PRIMARY"]));
+  assert.equal(stoneFits(earthshaker, sword), true);
+  assert.equal(stoneFits(earthshaker, sword, ["Bard"]), false, "a Bard could wear the sword, but not with that proc in it");
+});
+
+test("a stone that shares no class or no slot with its host can't go in, and nothing narrows to nothing", () => {
+  assert.equal(withStone(card(["Wizard"], ["FINGER"]), card(["Warrior"], ["FINGER"])), undefined, "no class in common");
+  assert.equal(withStone(card(["Wizard"], ["FINGER"]), card(["Wizard"], ["PRIMARY"])), undefined, "no slot in common");
+  // A silent card restricts nothing — but a card that spoke never reads as silent for having been emptied.
+  assert.deepEqual(withStone(card([], []), card(["Bard"], ["FINGER"])), card(["Bard"], ["FINGER"]));
+  assert.deepEqual(withStone(card(["Bard"], ["FINGER"]), card([], [])), card(["Bard"], ["FINGER"]));
+});
+
+test("two stones that each fit a host alone can be impossible together — the host is narrowed by the first", () => {
+  const sword = card(["Warrior", "Paladin", "Bard"], ["PRIMARY", "SECONDARY"]);
+  const twoHander = card(["Warrior", "Paladin"], ["PRIMARY"]);
+  const shield = card(["Bard", "Cleric"], ["SECONDARY"]);
+  assert.equal(stoneFits(twoHander, sword), true);
+  assert.equal(stoneFits(shield, sword), true);
+  const withFirst = withStone(sword, twoHander)!;
+  assert.equal(stoneFits(shield, withFirst), false, "no class and no slot left in common");
+  // Whichever went in first: an intersection is the same both ways round.
+  assert.equal(stoneFits(twoHander, withStone(sword, shield)!), false);
+});
+
+test("socket plans judge each socket against the host its other sockets leave", () => {
+  const host = { held: "Plain Blade +2", grade: 2, card: card([], ["PRIMARY", "SECONDARY"]), filled: new Map() };
+  const stones: Stone[] = [
+    { from: "Two-Hander", kind: "focus", effect: "Alpha Focus", where: "Storage: Exaltation", card: card([], ["PRIMARY"]) },
+    { from: "Shield", kind: "click", effect: "Beta Click", where: "Storage: Exaltation", card: card([], ["SECONDARY"]) },
+    { from: "Dirk", kind: "click", effect: "Gamma Click", where: "Storage: Exaltation", card: card([], ["PRIMARY", "SECONDARY"]) },
+  ];
+  // Alpha is the wanted one, so it is decided first and narrows the host to Primary: Beta, which was
+  // offered when each socket was judged alone, is no longer a stone this blade can take.
+  const plans = socketPlan([host], stones, new Set(["Alpha Focus"]));
+  const [focus, click] = plans;
+  assert.deepEqual(focus.options.map((o) => o.effect), ["Alpha Focus"]);
+  assert.deepEqual(click.options.map((o) => o.effect), ["Gamma Click"], "Beta Click would leave a blade nobody can wear");
+  assert.deepEqual(click.base.slots, ["PRIMARY"], "the host as the focus socket leaves it");
+  assert.deepEqual(click.options[0].result.slots, ["PRIMARY"], "and what it reads as with the click in");
+  // Wanting Beta instead turns it round: Beta narrows to Secondary and Alpha is the one left out.
+  const [focus2, click2] = socketPlan([host], stones, new Set(["Beta Click"]));
+  assert.deepEqual([focus2.options, click2.options.map((o) => o.effect)], [[], ["Beta Click", "Gamma Click"]]);
+});
+
+test("a stone already in another socket narrows the host; the one being replaced does not", () => {
+  const host = {
+    held: "Plain Blade +2",
+    grade: 2,
+    card: card([], ["PRIMARY", "SECONDARY"]),
+    filled: new Map([["focus" as const, "Two-Hander (Exaltation)"]]),
+    filledCards: new Map([["focus" as const, card([], ["PRIMARY"])]]),
+  };
+  const stones: Stone[] = [
+    { from: "Shield", kind: "click", effect: "Beta Click", where: "Storage: Exaltation", card: card([], ["SECONDARY"]) },
+    { from: "Sword", kind: "click", effect: "Delta Click", where: "Storage: Exaltation", card: card([], ["PRIMARY"]) },
+    { from: "Wand", kind: "focus", effect: "Epsilon Focus", where: "Storage: Exaltation", card: card([], ["SECONDARY"]) },
+  ];
+  const [focus, click] = socketPlan([host], stones, new Set());
+  assert.deepEqual(click.options.map((o) => o.effect), ["Delta Click"], "the Two-Hander in the focus socket already made the blade Primary-only");
+  assert.deepEqual(focus.options.map((o) => o.effect), ["Epsilon Focus"], "a stone replacing it is judged without it");
+
+  // Wanting that replacement is a commitment, and the Two-Hander stops narrowing: the click socket is then
+  // judged against the blade as the Epsilon leaves it — Secondary only, so Beta is the one that fits.
+  const [, clickAfter] = socketPlan([host], stones, new Set(["Epsilon Focus"]));
+  assert.deepEqual(clickAfter.options.map((o) => o.effect), ["Beta Click"]);
+});
+
+test("a suggestion nobody asked for narrows nothing, so the other sockets keep every pairing that works", () => {
+  const host = { held: "Plain Blade +2", grade: 2, card: card([], ["PRIMARY", "SECONDARY"]), filled: new Map() };
+  const stones: Stone[] = [
+    { from: "Two-Hander", kind: "focus", effect: "Alpha Focus", where: "Storage: Exaltation", card: card([], ["PRIMARY"]) },
+    { from: "Shield", kind: "click", effect: "Beta Click", where: "Storage: Exaltation", card: card([], ["SECONDARY"]) },
+  ];
+  const [focus, click] = socketPlan([host], stones, new Set());
+  assert.deepEqual([focus.options.length, click.options.length], [1, 1], "each is a fine choice for its socket; the player hasn't chosen yet");
+});
+
+test("the planner won't socket two wanted stones into one host that they leave unwearable", () => {
+  const gear = itemRows([
+    page("Plain Blade", ["Slot: PRIMARY SECONDARY", "MANA: +10", "Class: ALL", "Race: ALL"]),
+    page("Two-Hander", ["Slot: PRIMARY", "Class: ALL", "Race: ALL", "Focus Effect: Alpha Focus"]),
+    page("Shield of Click", ["Slot: SECONDARY", "Class: ALL", "Race: ALL", "Effect: Beta Click (Must Equip, Casting Time: 1.0 seconds)"]),
+  ]);
+  const inventory = parseInventoryDump(
+    tsvDump(
+      ["Primary", "Plain Blade +2", "1", "1", "11"],
+      ["Bank1", "Backpack", "17005", "1", "8"],
+      ["Bank1-Slot1", "Two-Hander (Exaltation)", "2", "1", "11"],
+      ["Bank1-Slot2", "Shield of Click (Exaltation)", "3", "1", "11"],
+    ),
+  );
+  const plan = bisPlan({ rows: gear, inventory, criteria: wizard, weights: { mana: 1 }, options: { ...OWNED, locks: {}, wantEffects: ["Alpha Focus", "Beta Click"] } });
+  assert.deepEqual(plan.effects.map((e) => [e.effect, e.how]), [["Alpha Focus", "socket"], ["Beta Click", "missing"]], "the first claim narrows the blade to Primary");
+  assert.deepEqual(plan.socketClaims.map((c) => [c.host, c.kind]), [["Plain Blade +2", "focus"]]);
+});
+
+test("what a stone costs its host is said in the wiki's own terms: who can't wear it, and where it is confined", () => {
+  const sword = card(["Warrior", "Paladin", "Ranger", "Shadow Knight", "Bard", "Rogue"], ["PRIMARY", "SECONDARY"]);
+  const result = withStone(sword, card(["Warrior", "Paladin", "Ranger", "Shadow Knight"], ["PRIMARY"]))!;
+  assert.equal(narrowing(sword, result), "not BRD ROG, Primary only", "Rogues and Bards can no longer equip it, and only in the primary slot");
+  assert.equal(narrowing(sword, sword), undefined, "a stone that changes nothing costs nothing");
+  assert.equal(narrowing(card([], ["FINGER"]), card(["Wizard", "Magician"], ["FINGER"])), "only WIZ MAG", "an item anyone could wear is now two classes'");
+  assert.equal(narrowing(card([], []), card([], [])), undefined);
 });

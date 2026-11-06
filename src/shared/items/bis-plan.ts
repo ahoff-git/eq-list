@@ -47,7 +47,7 @@ import {
 } from "./bis";
 import { damageModel, damageReport, withHasteWorth, withProcDex, type DamageReport, type ProcSpells } from "./damage-plan";
 import { MAX_PLAYER_LEVEL } from "./item-levels";
-import { openSockets, extractableAt, EXALTATION_SOCKETS, socketPlan, stoneFits, type SocketPlan, type Stone } from "./exaltations";
+import { openSockets, extractableAt, EXALTATION_SOCKETS, socketPlan, stoneFits, withStone, type ExaltationCard, type SocketPlan, type Stone } from "./exaltations";
 import { eraCorpus } from "./item-era";
 import { matchesFacet, matchesItem, scorer, type ItemCriteria, type ItemRow, type StatWeights } from "./item-search";
 import { normalizeItemName } from "./grouping";
@@ -488,6 +488,31 @@ export function bisPlan({ rows, inventory: dump, criteria, weights, closedZones,
   const kindOf = new Map(effectIndex(rows).map((e) => [e.name.toLowerCase(), e.kind]));
   const socketClaims: BisPlan["socketClaims"] = [];
   const claimed = new Set<string>(); // `${candidate id}|${kind}`
+  /**
+   * What each host holds, by socket: the stones already in it, then the ones this plan claims for it.
+   * Every stone narrows the host it goes into ([exaltations.ts](./exaltations.ts)), so the next one has
+   * to fit the host as these leave it — two stones that each fit a sword alone can be impossible
+   * together. Seeded from the dump's sockets the first time a host is asked about.
+   */
+  const socketHolds = new Map<string, Map<EffectKind, ExaltationCard>>();
+  const holdsOf = (hostId: string, sockets: readonly { socket: number; name: string }[]) => {
+    let holds = socketHolds.get(hostId);
+    if (!holds) {
+      holds = new Map();
+      for (const socketed of sockets) {
+        const kind = kindOfSocket(socketed.socket);
+        const card = kind && rowOf(heldName(socketed.name).title)?.stats;
+        if (kind && card) holds.set(kind, card);
+      }
+      socketHolds.set(hostId, holds);
+    }
+    return holds;
+  };
+  /** The host as its sockets leave it, bar the one a stone of `kind` would take the place of. */
+  const hostCardWithout = (hostId: string, row: ItemRow, sockets: readonly { socket: number; name: string }[], kind: EffectKind) =>
+    [...holdsOf(hostId, sockets)]
+      .filter(([k]) => k !== kind)
+      .reduce<ExaltationCard>((card, [, held]) => withStone(card, held) ?? card, row.stats);
   let wanted = [...new Set(options.wantEffects)];
   /** Does this candidate carry the effect — a held copy by what it really carries now, one to hunt by its card? */
   const carries = (c: BisCandidate, effect: string) => {
@@ -528,7 +553,7 @@ export function bisPlan({ rows, inventory: dump, criteria, weights, closedZones,
       const open = new Set(socketsOf(pick.item.grade));
       for (const s of stones) {
         if (!open.has(s.stone.kind) || claimed.has(`${pick.item.id}|${s.stone.kind}`)) continue;
-        if (!stoneFits(s.stone.card, host.row.stats, yourClasses)) continue;
+        if (!stoneFits(s.stone.card, hostCardWithout(pick.item.id, host.row, host.sockets, s.stone.kind), yourClasses)) continue;
         const replaces = host.sockets.find((x) => kindOfSocket(x.socket) === s.stone.kind)?.name;
         // An empty socket beats a filled one; a loose stone beats taking one out; certainty beats a guess.
         const rank = (replaces ? 4 : 0) + (s.sourceId ? 2 : 0) + (s.stone.uncertain ? 1 : 0);
@@ -537,6 +562,7 @@ export function bisPlan({ rows, inventory: dump, criteria, weights, closedZones,
     }
     if (!best) return true;
     claimed.add(`${best.hostId}|${best.stone.stone.kind}`);
+    holdsOf(best.hostId, best.host.sockets).set(best.stone.stone.kind, best.stone.stone.card);
     if (best.stone.sourceId) reserved.add(best.stone.sourceId);
     pin(best.slotIndex, best.host.row.item.title, effect);
     socketClaims.push({ host: best.host.name, kind: best.stone.stone.kind, stone: best.stone.stone });
@@ -570,7 +596,10 @@ export function bisPlan({ rows, inventory: dump, criteria, weights, closedZones,
       const row = rowOfCandidate(c);
       if (!row) return undefined;
       const open = new Set(socketsOf(c.grade));
-      return stones.find((s) => open.has(s.stone.kind) && s.sourceId !== c.id && stoneFits(s.stone.card, row.stats, yourClasses));
+      const sockets = heldById.get(c.id)?.item.sockets ?? [];
+      return stones.find(
+        (s) => open.has(s.stone.kind) && s.sourceId !== c.id && stoneFits(s.stone.card, hostCardWithout(c.id, row, sockets, s.stone.kind), yourClasses),
+      );
     };
     const carriers = usableCandidates().filter((c) => carries(c, effect));
     const hosts = usableCandidates().filter((c) => !carries(c, effect) && !!stoneFor(c));
@@ -608,6 +637,7 @@ export function bisPlan({ rows, inventory: dump, criteria, weights, closedZones,
       // Worn for its socket: the stone moves in, out of wherever it is now.
       const stone = best.stone;
       claimed.add(`${pick.item.id}|${stone.stone.kind}`);
+      holdsOf(pick.item.id, host.sockets).set(stone.stone.kind, stone.stone.card);
       if (stone.sourceId) reserved.add(stone.sourceId);
       pin(best.slotIndex, best.title, effect);
       socketClaims.push({ host: host.name, kind: stone.stone.kind, stone: stone.stone });
@@ -705,7 +735,7 @@ export function bisPlan({ rows, inventory: dump, criteria, weights, closedZones,
         const kind = kindOfSocket(s.socket);
         if (kind) filled.set(kind, s.name);
       }
-      return [{ held: host.name, grade: Math.max(p.item.grade, ASSUMED_SOCKET_GRADE), card: host.row.stats, filled }];
+      return [{ held: host.name, grade: Math.max(p.item.grade, ASSUMED_SOCKET_GRADE), card: host.row.stats, filled, filledCards: holdsOf(p.item.id, host.sockets) }];
     });
   const sockets = socketPlan(hosts, stonesNow().map((s) => s.stone), wantedNames, yourClasses);
 

@@ -26,7 +26,7 @@ import { zonesByReach } from "@/shared/items/item-era";
 import { wikiName } from "@/shared/shown-name";
 import { exportAgeText } from "@/shared/game-exports";
 import { createLogger } from "@/shared/logging";
-import type { SocketPlan } from "@/shared/items/exaltations";
+import { narrowing, type ExaltationCard, type SocketPlan } from "@/shared/items/exaltations";
 import type { ItemCriteria, ItemRow, StatWeights } from "@/shared/items/item-search";
 import type { DerivedRate } from "@/shared/items/derived-stats";
 
@@ -417,6 +417,18 @@ function TitleChips({ titles, onRemove }: { titles: readonly string[]; onRemove:
   );
 }
 
+/** What a stone's restrictions take from its host — they come with it (eqlwiki's Exaltations, Restrictions). */
+function StoneCost({ base, result }: { base: ExaltationCard; result: ExaltationCard }) {
+  const cost = narrowing(base, result);
+  if (!cost) return null;
+  return (
+    <span className="warn" title="An exaltation's class and slot restrictions are applied to the item it goes into">
+      {" "}
+      · {cost}
+    </span>
+  );
+}
+
 function SocketRow({ plan, claim }: { plan: SocketPlan; claim?: BisPlan["socketClaims"][number] }) {
   return (
     <div className={`bis-socket${claim ? " claimed" : ""}`}>
@@ -438,6 +450,7 @@ function SocketRow({ plan, claim }: { plan: SocketPlan; claim?: BisPlan["socketC
               <span className="muted">
                 · from <ItemLink title={wikiName(o.from)} /> · {o.where}
               </span>
+              <StoneCost base={plan.base} result={o.result} />
             </li>
           ))}
         </ul>

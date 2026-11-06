@@ -398,6 +398,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0355: The loadout can leave your own gear out, to find the best unupgraded items](./0355-the-loadout-can-leave-your-own-gear-out.md)
 - [0356: The spawn board learns from the whole kill history](./0356-the-spawn-board-learns-from-the-whole-kill-history.md)
 - [0357: What a boss kills is a person, unless a person killed it too](./0357-what-a-boss-kills-is-a-person.md)
+- [0358: A stone narrows the item it goes into, so sockets are judged together](./0358-a-stone-narrows-the-item-it-goes-into.md)
 
 ## Open Questions
 
