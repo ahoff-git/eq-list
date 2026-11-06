@@ -2,11 +2,12 @@
 import { useEffect, useState } from "react";
 import { statMeta } from "@/shared/items/item-stats";
 import { LOADOUT_STATS } from "@/shared/items/loadout-stats";
+import { CheckField } from "@/app/components/ui";
 import type { DerivedRate } from "@/shared/items/derived-stats";
-import { GOAL_PRESETS, goalCount, goalsWithoutPools, withGoal, type BisGoals, type GoalKey, type GoalRow, type StatGoal } from "@/shared/items/bis-goals";
+import { GOAL_PRESETS, goalCount, goalsWithoutPools, priorityOnly, withGoal, type BisGoals, type GoalKey, type GoalRow, type StatGoal } from "@/shared/items/bis-goals";
 
-const QUICK: readonly GoalKey[] = ["hp", "mana", "ac", "swing"];
-const labelOf = (key: GoalKey) => (key === "swing" ? "Melee damage" : statMeta(key).label);
+const QUICK: readonly GoalKey[] = ["hp", "mana", "ac", "swing", "rest"];
+const labelOf = (key: GoalKey) => (key === "swing" ? "Melee damage" : key === "rest" ? "Everything else" : statMeta(key).label);
 const num = (n: number) => Math.round(n).toLocaleString();
 
 /**
@@ -17,7 +18,20 @@ const num = (n: number) => Math.round(n).toLocaleString();
  *
  * The solver's work lives in `bis-goals.ts`; this only sets goals and shows how each one came out.
  */
-export default function BisGoals({ goals, rows, rates = [], onGoals }: { goals: BisGoals; rows: readonly GoalRow[]; rates?: readonly DerivedRate[]; onGoals: (next: BisGoals) => void }) {
+export default function BisGoals({
+  goals,
+  rows,
+  rates = [],
+  driven = true,
+  onGoals,
+}: {
+  goals: BisGoals;
+  rows: readonly GoalRow[];
+  rates?: readonly DerivedRate[];
+  /** Whether anything but floors steers the plan (`GoalOutcome.driven`); false says what's left is arbitrary. */
+  driven?: boolean;
+  onGoals: (next: BisGoals) => void;
+}) {
   const keys = Object.keys(goals) as GoalKey[];
   const poolless = goalsWithoutPools(goals, rates);
   const addable = [...QUICK, ...LOADOUT_STATS.filter((k) => !QUICK.includes(k))].filter((k) => !goals[k]);
@@ -45,6 +59,15 @@ export default function BisGoals({ goals, rows, rates = [], onGoals }: { goals: 
         <GoalLine key={key} stat={key} goal={goals[key]!} row={rowOf(key)} onChange={(change) => onGoals(withGoal(goals, key, change))} />
       ))}
 
+      {!driven && (
+        <p className="small warn">
+          Only floors are set, so they are met and everything past them is arbitrary.{" "}
+          <button className="btn sm" onClick={() => add("rest")} title="Spread what the floors leave over HP, AC, regen and resists — whichever you haven't set a goal on">
+            Maximise everything else
+          </button>{" "}
+          or add a priority or value weights.
+        </p>
+      )}
       {poolless.length > 0 && (
         <p className="small warn">
           Tick your class(es) in the Class picker: {poolless.map(labelOf).join(" and ")} also come from {poolless.map((k) => (k === "hp" ? "STA" : "INT/WIS")).join(" and ")}, and the plan only counts that once it knows your classes.
@@ -85,11 +108,21 @@ function GoalLine({ stat, goal, row, onChange }: { stat: GoalKey; goal: StatGoal
   return (
     <div className="bis-goal">
       <b className="bis-goal-name">{labelOf(stat)}</b>
-      <Slide label="Priority" value={goal.priority ?? 0} onCommit={(priority) => onChange({ priority })} />
-      {stat !== "swing" && (
+      {/* Past an "enough" floor the stat counts for nothing, so there is no priority left to set. */}
+      {!goal.enough && <Slide label="Priority" value={goal.priority ?? 0} onCommit={(priority) => onChange({ priority })} />}
+      {!priorityOnly(stat) && (
         <>
           <Slide label="At least" value={floorPct} onCommit={(pct) => onChange({ floor: pct ? { pct } : undefined })} suffix="% of max" />
           <Points label={`${labelOf(stat)} floor in points`} value={floorPoints} onCommit={(min) => onChange({ floor: min > 0 ? { min } : undefined })} />
+          {goal.floor && (
+            <CheckField
+              label="Stop at floor"
+              className="small"
+              checked={!!goal.enough}
+              onChange={(enough) => onChange({ enough: enough || undefined })}
+              title="Once the floor is met, this stat stops counting — neither its priority nor its weight on your sheet — so the plan maximises everything else instead of more of it"
+            />
+          )}
         </>
       )}
       <button className="btn ghost sm" title="Drop this goal" onClick={() => onChange(null)}>
@@ -102,7 +135,7 @@ function GoalLine({ stat, goal, row, onChange }: { stat: GoalKey; goal: StatGoal
 
 /** How the goal came out: what the plan reaches against what it could at best, and whether the floor held. */
 function GoalResult({ stat, row }: { stat: GoalKey; row: GoalRow }) {
-  if (stat === "swing") return null;
+  if (priorityOnly(stat)) return null;
   if (row.max <= 0) return <span className="small warn">nothing in the pool gives {labelOf(stat)}</span>;
   const tone = row.floor === undefined ? "muted" : row.met ? "good" : "warn";
   return (

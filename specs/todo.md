@@ -67,6 +67,12 @@ lines; the reasoning lives in the ADR it links. Everything else has a neighbour:
 
 ## Blocked on evidence
 
+- **Endurance per STA is one measurement** ([ADR 0360](./decisions/0360-endurance-follows-stamina-at-one-measured-rate.md)):
+  16 STA → 38 endurance at level 50 on a melee trio. Needs a second and third (a caster, level 60, STA
+  above 255) to say whether it varies by class, level or band, and whether STR feeds it as eqlwiki says.
+  The same eqltools-companion comment says STA's HP **halves above 255 STA** in EQL (a player
+  confirmation), which [ADR 0331](./decisions/0331-a-stat-s-worth-depends-on-where-your-totals-sit.md)
+  lists as unmodelled — worth adding to the HP curve.
 - **A consider's level.** The model exists ([ADR 0121](./decisions/0121-a-mob-is-a-range-of-levels.md));
   it needs one real consider line from a log to see where the level is written.
 - **Three pet/group-mate deciders from eql-meter v0.1.28** (`My leader is <Player>.`, `I am unable to

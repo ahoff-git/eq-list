@@ -251,7 +251,7 @@ export default function BisView({
         aside={goaled ? `${goalCount(options.goals)} set${searching ? " · searching…" : ""}${steering?.rows.some((r) => !r.met) ? " · not all met" : ""}` : "set a target"}
         defaultOpen={goaled}
       >
-        <BisGoals goals={options.goals} rows={steering?.rows ?? []} rates={rates} onGoals={(goals) => onOptions({ ...options, goals })} />
+        <BisGoals goals={options.goals} rows={steering?.rows ?? []} rates={rates} driven={steering?.driven} onGoals={(goals) => onOptions({ ...options, goals })} />
       </DumpSection>
 
       <BisChoices plan={plan} options={options} onOptions={onOptions} />

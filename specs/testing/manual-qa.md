@@ -1195,6 +1195,18 @@ features for later in [../ideas.md](../ideas.md).
   it plans on release, takes a moment, and the Loadout score is in goal units. Time a release at the
   full catalogue; if it's over a few seconds, the search wants fewer rounds. Reload: goals persist, and
   save a preset: they come back with it.
+- **A floor that is enough, and everything else** ([ADR 0359](../decisions/0359-a-floor-can-be-enough-and-the-rest-is-maximised.md)).
+  Tick one casting class and add Mana with *At least* 4,000 points and HP at 100%. Note the mana line,
+  then tick *Stop at floor*: the Priority slider on Mana goes away, mana drops to just over 4,000, and
+  HP rises. Clear HP: a "Only floors are set" notice appears; its *Maximise everything else* button adds
+  the goal, the notice goes, and HP/AC/resists come up while mana stays at its floor. Set value weights
+  on INT and mana first and repeat: with *Stop at floor* on, the sheet no longer drags mana past it.
+- **Endurance follows STA** ([ADR 0360](../decisions/0360-endurance-follows-stamina-at-one-measured-rate.md)).
+  Items → loadout builder, add an Endurance goal: the Stats section's Endurance total reads a number well
+  above what the worn pieces print, with "(N from attributes)" beside it; hovering says STA → HP and
+  endurance. In Value weights, weight Endurance and the fold note shows `1 STA = 2.38 Endurance`. Compare a
+  character's real max endurance before and after swapping a piece that changes only STA — if 2.38 a point
+  is wrong, `END_PER_STA` is the one number to change.
 - **Back returns to where you scrolled.** Scroll partway down a long panel (Items → loadout builder, a
   zone page), click another tab, then go back (Alt+←, a thumb button, or the breadcrumb): the panel
   is at the same depth, even when its content takes a moment to appear. A tab click or a link to the

@@ -22,6 +22,8 @@
  *   (eqltools.com, gear-score.js comments). Hybrids pool at the same rate as full casters.
  * - **Best two of three.** A trio's HP and mana are the sum of its two biggest pools, so a third
  *   class adds nothing (eqltools.com "The trio system" — player consensus, not a developer statement).
+ * - **STA → endurance.** About 2.4 a point, from a single player measurement (16 STA → 38 endurance at
+ *   level 50) — no published formula exists. Every class, every level; see `END_PER_STA` and ADR 0360.
  * - **AGI → AC.** About a third of an AC per point above 75 (eqlwiki Statistics: 76→85 AGI gave a
  *   level-60 Shadow Knight 3 AC). The softest number here. Below 75 the loss is far steeper, but no
  *   geared character is down there.
@@ -72,6 +74,14 @@ const COUNTED_POOLS = 2;
 
 /** A stat between 101 and 200 converts at 2.5 points per point; see the module note. */
 const MID_BAND_CONVERSION = 2.5;
+
+/**
+ * Endurance per STA: "16 STA bought 38 endurance on a level-50 melee trio" (a player's measurement,
+ * theory-crafting 2026-08-26, quoted in eqltools-companion's gear-score.js). The only number there is —
+ * eqlwiki's Statistics page says STA and STR feed endurance and gives no rate. One measurement, so it is
+ * taken as flat: no class or level term, no bands, linear to the attribute cap. STR is not modelled.
+ */
+const END_PER_STA = 38 / 16;
 
 /** AC per AGI above 75; see the module note. */
 const AC_PER_AGI = 1 / 3;
@@ -175,8 +185,8 @@ function countedManaPools(classes: readonly string[]): { klass: string; stat: "i
 }
 
 /**
- * What one point of each primary stat is worth in HP, mana and AC, for these classes at this level.
- * No class ticked means no pools to speak of, so only AGI → AC is offered.
+ * What one point of each primary stat is worth in HP, mana, endurance and AC, for these classes at this
+ * level. No class ticked means no pools to speak of, so only STA → endurance and AGI → AC are offered.
  */
 export function derivedRates({ classes, level, race, worn }: CharacterBasis): DerivedRate[] {
   const rates: DerivedRate[] = [];
@@ -205,6 +215,8 @@ export function derivedRates({ classes, level, race, worn }: CharacterBasis): De
     rates.push(rate(stat, "mana", pools, (t) => convertedWisInt(t) * perConverted, MID_BAND_CONVERSION * perConverted));
   }
 
+  // No class changes it (as with AGI → AC), so it is offered with none ticked.
+  rates.push(rate("sta", "end", [], (t) => capped(t) * END_PER_STA, END_PER_STA));
   rates.push(rate("agi", "ac", [], acFromAgi, AC_PER_AGI));
   return rates;
 }
@@ -222,6 +234,31 @@ export function foldDerivedWeights(weights: StatWeights, rates: readonly Derived
     const total = round2((out[rate.from] ?? 0) + via * rate.perPoint);
     if (total === 0) delete out[rate.from];
     else out[rate.from] = total;
+  }
+  return out;
+}
+
+/**
+ * A folded sheet with one stat's worth taken back out: its own weight, and what `foldDerivedWeights`
+ * added to the attributes that make it. "Mana counts for nothing" has to remove the INT and WIS weight
+ * mana put there too, or the plan keeps chasing mana through them. An attribute weight you set yourself
+ * stays — only what the fold added goes.
+ */
+export function withoutDerivedWeight(folded: StatWeights, stat: StatKey, rates: readonly DerivedRate[]): StatWeights {
+  const via = folded[stat];
+  const out: StatWeights = { ...folded };
+  delete out[stat];
+  if (!via) return out;
+  for (const rate of rates) {
+    if (rate.to !== stat) continue;
+    const held = out[rate.from] ?? 0;
+    const added = via * rate.perPoint;
+    // The fold rounded `weight + added` to two places. Subtracting `added` lands a hundredth off whenever
+    // that rounding was a tie (half a hundredth), so take the two-decimal weight that folds back to `held`.
+    const near = round2(held - added);
+    const weight = [near, round2(near - 0.01), round2(near + 0.01)].find((w) => round2(w + added) === held) ?? near;
+    if (weight === 0) delete out[rate.from];
+    else out[rate.from] = weight;
   }
   return out;
 }

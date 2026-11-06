@@ -52,7 +52,7 @@ const COLUMNS: GridColDef<Row>[] = [
 function Total({ value, fromAttributes }: { value?: number; fromAttributes?: number }) {
   if (value === undefined) return <span className="muted">—</span>;
   return (
-    <span title={fromAttributes ? `${value - fromAttributes} from gear + ${fromAttributes} from attributes (STA → HP, INT/WIS → mana, AGI → AC, for your classes and level)` : undefined}>
+    <span title={fromAttributes ? `${value - fromAttributes} from gear + ${fromAttributes} from attributes (STA → HP and endurance, INT/WIS → mana, AGI → AC, for your classes and level)` : undefined}>
       {value}
       {fromAttributes ? <span className="muted small"> ({fromAttributes} from attributes)</span> : null}
     </span>

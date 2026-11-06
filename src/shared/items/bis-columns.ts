@@ -7,13 +7,13 @@
  */
 import { STATS, type StatKey } from "./item-stats";
 import { weightedStats, type StatWeights } from "./item-search";
-import type { BisGoals } from "./bis-goals";
+import { priorityOnly, type BisGoals, type GoalKey } from "./bis-goals";
 
-/** The stats worth a column, in card order. Melee swing is a goal but not a stat on a card, so it has none. */
+/** The stats worth a column, in card order. Melee swing and "everything else" are goals but not stats on a card, so they have none. */
 export function expectedStats(weights: StatWeights, goals: BisGoals, mins: Partial<Record<StatKey, number>> = {}): StatKey[] {
   const wanted = new Set<StatKey>([
     ...weightedStats(weights),
-    ...(Object.keys(goals) as (StatKey | "swing")[]).filter((k): k is StatKey => k !== "swing"),
+    ...(Object.keys(goals) as GoalKey[]).filter((k): k is StatKey => !priorityOnly(k)),
     ...(Object.keys(mins) as StatKey[]),
   ]);
   return STATS.filter((s) => wanted.has(s.key)).map((s) => s.key);

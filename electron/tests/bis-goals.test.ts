@@ -88,6 +88,94 @@ test("melee damage as a priority sets the swing weight", () => {
   assert.equal(toy(out.weights, out.melee).total > 0, true);
 });
 
+// ─── A floor that is enough ─────────────────────────────────────────────────
+
+test("a floor chased past its floor still pulls the stat up; held 'enough' it does not", () => {
+  // Hp and mana at equal priority tie between the 1200 and 1600 mana loadouts, so mana overshoots 800 for HP.
+  const chased = plan(solve({ hp: { priority: 100 }, mana: { priority: 100, floor: { min: 800 } } }));
+  assert.equal(chased.mana, 1200);
+  // Enough: mana's priority is gone, so it is the tankiest loadout that reaches 800 — and not a point more.
+  const held = solve({ hp: { priority: 100 }, mana: { priority: 100, floor: { min: 800 }, enough: true } });
+  assert.deepEqual(plan(held), { hp: 2600, mana: 800 });
+  assert.ok(held.rows.find((r) => r.key === "mana")?.met);
+});
+
+test("an enough floor drops the stat's weight on your own sheet too", () => {
+  const goals = { hp: { priority: 100 }, mana: { floor: { min: 800 } } };
+  const input = { sheet: { mana: 1 }, melee: NO_MELEE_WEIGHTS, rates: [], run: toy };
+  const chasing = solveGoals({ ...input, goals: normalizeGoals(goals) });
+  assert.equal(toy(chasing.weights, chasing.melee).stats.mana, 1200, "the sheet keeps pulling mana past the floor");
+  const held = solveGoals({ ...input, goals: normalizeGoals({ ...goals, mana: { ...goals.mana, enough: true } }) });
+  assert.deepEqual(toy(held.weights, held.melee).stats, { hp: 2600, mana: 800 });
+});
+
+test("with rates, 'enough' also takes out what the stat's weight put on its attributes", () => {
+  // A mana weight folded into INT: the toy reads only hp and mana, so what matters is that the sheet
+  // component is empty once mana is held — nothing of it is left to steer, and the plan is hp-led.
+  const rates = derivedRates({ classes: ["Wizard"], level: 50 });
+  const sheet = { mana: 1, int: 11.25 };
+  const held = solveGoals({ goals: normalizeGoals({ hp: { priority: 100 }, mana: { floor: { min: 800 }, enough: true } }), sheet, melee: NO_MELEE_WEIGHTS, rates, run: toy });
+  assert.deepEqual(toy(held.weights, held.melee).stats, { hp: 2600, mana: 800 });
+});
+
+test("it says when nothing but floors steers the plan", () => {
+  const floorsOnly = solve({ mana: { floor: { min: 800 }, enough: true } });
+  assert.equal(floorsOnly.driven, false);
+  assert.equal((plan(floorsOnly).mana ?? 0) >= 800, true, "the floor is still met");
+  // A priority is something to maximise; so is a sheet or melee damage.
+  assert.equal(solve({ mana: { floor: { min: 800 } }, hp: { priority: 40 } }).driven, true);
+  assert.equal(solveGoals({ goals: normalizeGoals({ mana: { floor: { min: 800 } } }), sheet: { hp: 1 }, melee: NO_MELEE_WEIGHTS, rates: [], run: toy }).driven, true);
+  assert.equal(solve({ mana: { floor: { min: 800 } }, swing: { priority: 100 } }).driven, true);
+  // A stat held enough no longer counts as steering, whatever priority it has stored.
+  assert.equal(solve({ hp: { priority: 100, floor: { min: 1000 }, enough: true } }).driven, false);
+});
+
+// ─── Everything else ────────────────────────────────────────────────────────
+
+const wizard = derivedRates({ classes: ["Wizard"], level: 50 });
+const solveAs = (rates: typeof wizard, goals: Parameters<typeof normalizeGoals>[0]) => solveGoals({ goals: normalizeGoals(goals), sheet: {}, melee: NO_MELEE_WEIGHTS, rates, run: toy });
+
+test("'everything else' spends what the floors leave, so a floor alone no longer runs to the stat's maximum", () => {
+  const floorOnly = solveAs(wizard, { mana: { floor: { min: 800 }, enough: true } });
+  assert.equal(floorOnly.driven, false);
+  const rest = solveAs(wizard, { mana: { floor: { min: 800 }, enough: true }, rest: { priority: 100 } });
+  assert.equal(rest.driven, true);
+  // Mana is held at its floor, and the rest of the plan goes to HP, the other survival stat the toy knows.
+  assert.deepEqual(plan(rest), { hp: 2600, mana: 800 });
+});
+
+test("'everything else' leaves out a stat that has a goal of its own, and spreads over the rest equally", () => {
+  // HP has its say (a faint one), so what's left to share is mana: mana pulls harder than that HP does.
+  const hpOnly = plan(solveAs(wizard, { hp: { priority: 10 } }));
+  const withRest = plan(solveAs(wizard, { hp: { priority: 10 }, rest: { priority: 100 } }));
+  assert.equal(hpOnly.mana, 0);
+  assert.ok((withRest.mana ?? 0) > 0, "mana was in the share");
+  // Both HP and mana unspoken for: one stat's priority split between them.
+  assert.deepEqual(plan(solveAs(wizard, { rest: { priority: 100 } })), { hp: 2200, mana: 1200 });
+});
+
+test("'everything else' counts mana only for classes that cast", () => {
+  // No class ticked, no mana pool known: the share is HP's alone.
+  assert.deepEqual(plan(solveAs([], { rest: { priority: 100 } })), { hp: 3000, mana: 0 });
+});
+
+test("'everything else' is a priority only", () => {
+  assert.deepEqual(normalizeGoals({ rest: { priority: 40, floor: { min: 5 }, enough: true } }), { rest: { priority: 40 } });
+  assert.deepEqual(withGoal({}, "rest", { priority: 0 }), {});
+});
+
+test("stopping at a floor needs a floor", () => {
+  assert.deepEqual(normalizeGoals({ hp: { priority: 40, enough: true }, mana: { floor: { pct: 80 }, enough: true }, ac: { floor: { min: 5 }, enough: "yes" } }), {
+    hp: { priority: 40 },
+    mana: { floor: { pct: 80 }, enough: true },
+    ac: { floor: { min: 5 } },
+  });
+  // Clearing the floor takes the stop with it, and the stored priority comes back into play.
+  const held = withGoal({}, "hp", { priority: 40, floor: { min: 2000 }, enough: true });
+  assert.deepEqual(withGoal(held, "hp", { floor: undefined }), { hp: { priority: 40 } });
+  assert.deepEqual(withGoal(held, "hp", { enough: undefined }), { hp: { priority: 40, floor: { min: 2000 } } });
+});
+
 test("normalizing keeps what's valid and drops the rest", () => {
   assert.deepEqual(normalizeGoals({ hp: { priority: 150, floor: { pct: 95.4 } }, bogus: { priority: 5 }, mana: { priority: 0 }, swing: { floor: { min: 5 } } }), {
     hp: { priority: 100, floor: { pct: 95 } },
@@ -141,6 +229,25 @@ test("goals steer the real plan: tanky, but keeping most of the mana", () => {
   assert.ok((held.got.mana ?? 0) >= 0.8 * maxMana, "the floor holds");
   assert.ok((held.got.hp ?? 0) >= (mana.got.hp ?? 0), "and it is no less tanky than going all mana");
   assert.ok((held.got.hp ?? 0) < (tank.got.hp ?? 0), "but it costs some HP against going all tank");
+});
+
+test("held enough on the real plan, a stat costs the rest only its floor", () => {
+  const needs = { hp: { priority: 100 }, mana: { floor: { pct: 50 } } };
+  const baseline = stats(needs);
+  const chasing = stats({ hp: { priority: 100 }, mana: { priority: 100, floor: { pct: 50 } } });
+  const enough = stats({ hp: { priority: 100 }, mana: { priority: 100, floor: { pct: 50 }, enough: true } });
+  // Enough is the floor alone: the same plan as never asking for more mana, and no more mana than chasing it.
+  assert.deepEqual(enough.got, baseline.got);
+  assert.ok((enough.got.mana ?? 0) <= (chasing.got.mana ?? 0));
+  assert.ok((enough.got.hp ?? 0) >= (chasing.got.hp ?? 0));
+  assert.ok((enough.got.mana ?? 0) >= 0.5 * enough.out.rows.find((r) => r.key === "mana")!.max, "and the floor holds");
+});
+
+test("on the real plan, a floor with 'everything else' behind it is the floor and then the rest", () => {
+  // Mana held at half the most, HP the only other thing the pool has to give: the same plan as asking for HP.
+  const rest = stats({ mana: { floor: { pct: 50 }, enough: true }, rest: { priority: 100 } });
+  assert.deepEqual(rest.got, stats({ hp: { priority: 100 }, mana: { floor: { pct: 50 } } }).got);
+  assert.equal(rest.out.driven, true);
 });
 
 test("a floor of nothing changes nothing", () => {

@@ -80,13 +80,13 @@ export interface StatComparison {
   after?: number;
   /** `after − before`, a missing side counting as 0. */
   change: number;
-  /** How much of `before` / `after` the attributes gave (HP, mana and AC only). */
+  /** How much of `before` / `after` the attributes gave (HP, mana, endurance and AC only). */
   fromAttributes?: { before?: number; after?: number };
 }
 
 /**
  * The stats either side gives, in card order, with the change from `before` to `after`. With `rates`,
- * HP, mana and AC are the effective totals — attributes included — and each says how much came that way.
+ * HP, mana, endurance and AC are the effective totals — attributes included — and each says how much came that way.
  */
 export function compareLoadoutStats(before: LoadoutStats, after: LoadoutStats, rates: readonly DerivedRate[] = []): StatComparison[] {
   const b = effectiveStats(before, rates);

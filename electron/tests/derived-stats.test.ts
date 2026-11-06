@@ -1,14 +1,14 @@
 /**
- * Black-box tests for derived stats: what a point of STA, INT, WIS or AGI is worth in HP, mana and
- * AC, and how that folds into a weight sheet.
+ * Black-box tests for derived stats: what a point of STA, INT, WIS or AGI is worth in HP, mana,
+ * endurance and AC, and how that folds into a weight sheet.
  *
  * The rates are pinned against the published figures they were checked on, not against the code:
- * eqlwiki's level-50 and level-60 STA-to-HP charts, and the 11.25 / 22.5 mana per point EQL players
- * measured at level 50 (see `derived-stats.ts`).
+ * eqlwiki's level-50 and level-60 STA-to-HP charts, the 11.25 / 22.5 mana per point EQL players
+ * measured at level 50, and the one player measurement of endurance per STA (see `derived-stats.ts`).
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { derivedGains, derivedRates, foldDerivedWeights, ratesInUse } from "../../src/shared/items/derived-stats";
+import { derivedGains, derivedRates, foldDerivedWeights, ratesInUse, withoutDerivedWeight } from "../../src/shared/items/derived-stats";
 import { baseAttributes } from "../../src/shared/items/character-base";
 import { effectiveStats } from "../../src/shared/items/loadout-stats";
 import { itemRows, searchItems, NO_CRITERIA } from "../../src/shared/items/item-search";
@@ -70,9 +70,24 @@ test("mana per point grows with level up to 50, then holds (EQL's measured ~11.2
 test("AGI buys AC whatever the classes, so it is offered with none ticked", () => {
   assert.deepEqual(
     derivedRates({ classes: [], level: 50 }).map((r) => `${r.from}->${r.to}`),
-    ["agi->ac"],
+    ["sta->end", "agi->ac"],
   );
   assert.equal(rate([], 50, "agi"), 0.33);
+});
+
+test("STA buys endurance at one player-measured rate, for any class and level", () => {
+  // "16 STA bought 38 endurance on a level-50 melee trio" — the only number there is (2.375, held to 2.38).
+  const endRate = (classes: string[], level: number) => derivedRates({ classes, level }).find((r) => r.to === "end");
+  assert.equal(endRate(["Warrior", "Rogue", "Monk"], 50)?.perPoint, 2.38);
+  // Nothing says it depends on class or level, so it doesn't.
+  assert.equal(endRate(["Wizard"], 60)?.perPoint, 2.38);
+  assert.equal(endRate([], 20)?.perPoint, 2.38);
+  // The same 16 STA through the rate, rounded as a total.
+  assert.equal(effectiveStats({ sta: 16 }, derivedRates({ classes: ["Warrior"], level: 50 })).fromAttributes.end, 38);
+  // It folds into a sheet like the others: weighting endurance weights STA, and the fold comes back out.
+  const rates = derivedRates({ classes: [], level: 50 });
+  assert.deepEqual(foldDerivedWeights({ end: 1 }, rates), { end: 1, sta: 2.38 });
+  assert.deepEqual(withoutDerivedWeight(foldDerivedWeights({ end: 1, sta: 3 }, rates), "end", rates), { sta: 3 });
 });
 
 test("folding adds the secondary weight times the rate to the primary stat, and nothing else", () => {
@@ -83,6 +98,20 @@ test("folding adds the secondary weight times the rate to the primary stat, and 
   // A sheet that weights no secondary stat comes back as it went in.
   assert.deepEqual(foldDerivedWeights({ str: 1, int: 2 }, rates), { str: 1, int: 2 });
   assert.deepEqual(ratesInUse({ str: 1 }, rates), []);
+});
+
+test("taking a stat's weight back out undoes its fold and leaves your own attribute weights", () => {
+  const rates = derivedRates({ classes: ["Wizard"], level: 50 });
+  // Folded and unfolded, a sheet is what it was before the stat was weighted.
+  assert.deepEqual(withoutDerivedWeight(foldDerivedWeights({ mana: 1 }, rates), "mana", rates), {});
+  assert.deepEqual(withoutDerivedWeight(foldDerivedWeights({ mana: 1, int: 2 }, rates), "mana", rates), { int: 2 });
+  assert.deepEqual(withoutDerivedWeight(foldDerivedWeights({ mana: 0.7, ac: 3, str: 1 }, rates), "mana", rates), { ac: 3, agi: 0.99, str: 1 });
+  // Half a weight folds to a tie at the hundredth (0.5 × 11.25 = 5.625), which a plain subtraction gets wrong.
+  assert.deepEqual(withoutDerivedWeight(foldDerivedWeights({ mana: 0.5 }, rates), "mana", rates), {});
+  assert.deepEqual(withoutDerivedWeight(foldDerivedWeights({ mana: 0.5, int: 1.5 }, rates), "mana", rates), { int: 1.5 });
+  // A stat that carried no weight changes nothing, and with no rates only its own weight goes.
+  assert.deepEqual(withoutDerivedWeight({ str: 1 }, "mana", rates), { str: 1 });
+  assert.deepEqual(withoutDerivedWeight({ mana: 1, int: 5 }, "mana", []), { int: 5 });
 });
 
 test("a search for mana ranks an INT ring for a wizard, and not for a warrior", () => {
