@@ -396,6 +396,8 @@ finished, so a number is claimed before a second author can reach for it.
 - [0353: A loadout goal is a slider the planner turns into weights](./0353-a-loadout-goal-is-a-slider-the-planner-turns-into-weights.md)
 - [0354: An item page says which peers have it](./0354-an-item-page-says-which-peers-have-it.md)
 - [0355: The loadout can leave your own gear out, to find the best unupgraded items](./0355-the-loadout-can-leave-your-own-gear-out.md)
+- [0356: The spawn board learns from the whole kill history](./0356-the-spawn-board-learns-from-the-whole-kill-history.md)
+- [0357: What a boss kills is a person, unless a person killed it too](./0357-what-a-boss-kills-is-a-person.md)
 
 ## Open Questions
 

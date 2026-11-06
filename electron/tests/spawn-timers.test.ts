@@ -629,6 +629,78 @@ test("a named killed by a person is still exactly what the rule is for", () => {
   assert.ok(proven.has("ghoul lord"));
 });
 
+// ── who is a person, when all the log shows of them is dying ─────────────────
+// A raid-mate who only ever died to the boss never killed anything the log saw, so what they *kill* can't
+// place them. What kills them can: a boss a person killed is a mob, and a mob kills players. Found on a
+// real install, where 18 of 140 "nameds" were raid-mates slain once by Lord Nagafen, Lady Vox and friends.
+
+test("a raid-mate who only ever died to a boss is not a named — the boss's own proof says so", () => {
+  const proven = provenNamed([
+    kill("Lord Nagafen", 0, { killer: "You" }),
+    kill("Xasarer", 100, { killer: "Lord Nagafen" }),
+    kill("Xasarer", 5000, { killer: "Lord Nagafen" }),
+  ]);
+  assert.ok(proven.has("lord nagafen"));
+  assert.ok(!proven.has("xasarer"), "they have never been seen killing anything, and are not a mob");
+});
+
+test("and it holds whichever of the two came first", () => {
+  const proven = provenNamed([
+    kill("Xasarer", 0, { killer: "Lord Nagafen" }),
+    kill("Lord Nagafen", 5000, { killer: "You" }),
+  ]);
+  assert.ok(proven.has("lord nagafen"));
+  assert.ok(!proven.has("xasarer"), "the boss's proof arriving later still reaches the death at the start");
+});
+
+test("a person is known by being killed by a boss, and what they kill is then proven too", () => {
+  // Nagafen kills Bunnyslayer; Bunnyslayer is now a person, so the Ghoul Lord Bunnyslayer kills is a
+  // boss; and the Ghoul Lord's victim Zabaner is a person in turn. Each step rests on the one before.
+  const proven = provenNamed([
+    kill("Lord Nagafen", 0, { killer: "You" }),
+    kill("Bunnyslayer", 100, { killer: "Lord Nagafen" }),
+    kill("Ghoul Lord", 200, { killer: "Bunnyslayer" }),
+    kill("Zabaner", 300, { killer: "Ghoul Lord" }),
+  ]);
+  assert.deepEqual([...proven].sort(), ["ghoul lord", "lord nagafen"]);
+});
+
+test("a boss nobody is known to have killed proves nothing about its victims", () => {
+  // Kainos is never seen killing anything with an article, so the log can't say they are a person, and
+  // so can't say Lord Nagafen is a mob rather than a player who killed one. Nothing changes: both stay.
+  const proven = provenNamed([
+    kill("Lord Nagafen", 0, { killer: "Kainos" }),
+    kill("Xasarer", 100, { killer: "Lord Nagafen" }),
+  ]);
+  assert.ok(proven.has("lord nagafen"));
+  assert.ok(proven.has("xasarer"), "the old behaviour, kept where there is no proof to improve on it");
+});
+
+test("a thing a person killed is a mob, even when another mob killed it too", () => {
+  // Mobs kill each other too (a charmed pet, an orc court that fights itself). Marrowbane and the orc
+  // emissary were "slain by" Bonefire on a real install *and* slain by the player, which is the stronger
+  // evidence: whoever else got to it, a person killed it, so it is a mob.
+  const proven = provenNamed([
+    kill("Bonefire", 0, { killer: "You" }),
+    kill("Marrowbane", 100, { killer: "Bonefire" }),
+    kill("Marrowbane", 200, { killer: "You" }),
+  ]);
+  assert.ok(proven.has("marrowbane"));
+  assert.ok(proven.has("bonefire"));
+});
+
+test("a death whose article was never recorded can't make anyone a person", () => {
+  // `named` absent is unknown, not plain: it was stored before the flag existed, so it is no evidence that
+  // the victim was written bare. A boss killing "Mystery" then says nothing about what Mystery is, and the
+  // stranger's later kill of it still proves it exactly as it did before this rule existed.
+  const proven = provenNamed([
+    kill("Lord Nagafen", 0, { killer: "You" }),
+    kill("Mystery", 100, { named: undefined, killer: "Lord Nagafen" }),
+    kill("Mystery", 200, { killer: "Kainos" }),
+  ]);
+  assert.ok(proven.has("mystery"));
+});
+
 // ── learning one camp is learning that camp ──────────────────────────────────
 
 test("asking for one camp gives the same answer as asking for all of them", () => {

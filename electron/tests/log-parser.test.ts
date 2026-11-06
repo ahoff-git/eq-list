@@ -281,6 +281,23 @@ test("parseXpLine handles solo, party, and percentage variants", () => {
   assert.equal(parseXpLine("[Mon Jul 20 19:03:05 2026] You feel refreshed."), null);
 });
 
+test("parseXpLine reads a gain that carries a bonus note, which is 14% of a real log's XP", () => {
+  // Both shapes are real (eqlog_Kainos_qeynos.txt: 976 and 127 of them). The note sits *before* the "!",
+  // so a pattern that only allows the percentage after it drops the whole line.
+  const solo = parseXpLine("[Mon Jul 20 19:03:05 2026] You gain experience (with a bonus)! (0.769%)");
+  assert.ok(solo, "a bonus gain is still a gain");
+  assert.equal(solo!.party, false);
+  assert.equal(solo!.pct, 0.769);
+
+  const party = parseXpLine("[Mon Jul 20 19:03:05 2026] You gain party experience (with a bonus)! (0.002%)");
+  assert.equal(party!.party, true);
+  assert.equal(party!.pct, 0.002);
+
+  // Not a gain: the note has to be bracketed and sit where the game puts it.
+  assert.equal(parseXpLine("[Mon Jul 20 19:03:05 2026] You gain experience with a bonus! (0.5%)"), null);
+  assert.equal(parseXpLine("[Mon Jul 20 19:03:05 2026] You gain experience (with a bonus) (0.5%)"), null);
+});
+
 test("parseKillLine reads both kill forms, ignores player death", () => {
   const byYou = parseKillLine("[Mon Jul 20 19:03:05 2026] You have slain a large rat!");
   assert.equal(byYou!.target, "large rat");

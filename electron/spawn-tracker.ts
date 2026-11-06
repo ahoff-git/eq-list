@@ -267,7 +267,15 @@ export interface SpawnTrackerDeps {
 }
 
 export interface SpawnTracker {
-  /** A kill landed: start or restart its countdown, if it's a named whose respawn we know. */
+  /**
+   * A kill landed: start or restart its countdown, if it's a named whose respawn we know.
+   *
+   * `named` is evidence the line carries *beyond what the kill log says*, for a caller whose log does
+   * not hold the line yet. **The app passes nothing**: it records the kill first, so the log already
+   * proves what it can (`isNamed`) — and `named` alone would let through exactly what that refuses, a pet,
+   * a group-mate, and a mob the player said is not a named, each of which then armed an alert it would
+   * never use.
+   */
   noteKill(mob: string, zone: string | null, at: string, named?: boolean): void;
   /**
    * You changed zone. Almost always nothing to do — a mob keeps respawning while you're away — but

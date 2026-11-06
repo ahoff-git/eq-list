@@ -44,6 +44,14 @@ export interface KillRow {
   adminAudit: string | null;
 }
 
+/**
+ * The columns that say **who died, who killed it, where and when** — everything a named is proven by
+ * and a respawn is learned from (`provenNamed`/`learnRespawns`), and none of the position, loot or
+ * audit columns that make a full `SELECT *` slow (a JSON parse per row). `rowToRecord` reads a row
+ * of just these as it would a whole one: the columns left out come back `undefined`.
+ */
+export const EVIDENCE_COLUMNS = "id, logId, at, mob, killer, mine, sharedBy, named, killerNamed, zone, confidence";
+
 /** `undefined` for a nullable column an absent `KillRecord` field maps to — never `null`, so a
  *  round trip through `rowToRecord` matches what the original JSON-backed record shaped. */
 const tri = (v: number | null): boolean | undefined => (v === null ? undefined : !!v);

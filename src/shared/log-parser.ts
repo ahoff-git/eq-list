@@ -245,7 +245,12 @@ export function parseZone(line: LogLine): ZoneEvent | null {
 
 // "You gain experience! (0.5%)" (EQL) or "You gain experience!!" (classic) — accept
 // one or more "!" so both work. Party and the percentage are optional.
-const XP_RE = /^You gain (?<party>party )?experience!+(?: \((?<pct>[\d.]+)%\))?$/;
+//
+// And a note in brackets before the "!": EQL writes "You gain experience (with a bonus)! (0.769%)" when
+// a bonus applies, which was 1,103 of the 8,377 gains in one real 87 MB log — about 14% of the XP it
+// shows, silently dropped from the into-level counter and the session's XP rate. The note's wording is
+// the game's, so any is accepted rather than the one seen: the sentence is still an experience gain.
+const XP_RE = /^You gain (?<party>party )?experience(?: \([^)]*\))?!+(?: \((?<pct>[\d.]+)%\))?$/;
 
 export function parseXp(line: LogLine): XpEvent | null {
   const m = line.message.match(XP_RE);

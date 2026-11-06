@@ -163,8 +163,16 @@ const QUEST_PREFIX = /^(?:q|quest|task|mission)\s*[:.-]/i;
 /** Where a zone line, an arrival point or a succor point is. Intra-map links (`to A`, `from 4D`) too. */
 const ZONELINE = /^(?:to|from|zone to|zoneline|zone line|succor|succour|port in|entrance|exit)\b|\bzone (?:in|out)\b/i;
 
-/** The magical and nautical ways out: druid rings, spires, teleporters, portals, boats, docks. */
-const TRANSPORT = /\b(?:druid ring|spires|teleport\w*|portal|translocator|blimp|ferry|boats?|docks?)\b/i;
+/**
+ * The magical and nautical ways out: druid rings, spires, teleporters, portals, boats, docks.
+ *
+ * The plural `druid rings`, the singular `wizard spire` (4 labels: Commonlands, Nektulos, South Karana,
+ * Ethernere…) and a label that is *only* `Druid Port` (3) are all drawn in the zone-line red, and the
+ * bare words can't be loosened to catch them: `Sister of the Spire` is a raid mob, `Druid port spells`
+ * a vendor and `Well Wailet (Druid Ports)` someone selling the trip — so the shapes are stated whole.
+ */
+const TRANSPORT =
+  /\b(?:druid rings?|wizard spires?|spires|teleport\w*|portal|translocator|blimp|ferry|boats?|docks?)\b|^druid ports?$/i;
 
 /** The physical ways between levels. `Up`/`Down` alone is a whole label 125 times over. */
 const PASSAGE =

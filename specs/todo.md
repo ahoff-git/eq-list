@@ -12,25 +12,12 @@ lines; the reasoning lives in the ADR it links. Everything else has a neighbour:
 
 ## Bugs
 
-- **A group-mate killed by a named lands on the spawn board as a named.** `provenNamed` only learns
-  someone is a person when they kill an article mob, so `Bunnyslayer` (slain by Lord Nagafen) passes
-  as a named. Likely tell: the killer is a known named (article proof, or a rare tag per
-  [ADR 0324](./decisions/0324-the-game-saying-rare-is-proof.md)), and a named killing something is a
-  player or pet dying.
-- **Respawn learning reads only your last 200 kills.** `spawn-tracker.ts` calls unscoped
-  `killLog.kills()`, capped by [ADR 0243](./decisions/0243-remove-the-remaining-storage-caps.md). A full
-  read is ~40ms per kill at 10k kills, so it wants a cached read keyed on `killLog.version()`.
-- **"West Cabilis" and "East Cabilis" don't resolve to Cabilis**, so a Cabilis merchant reads as
-  open while Kunark is shut (item "How to get it", Tradeskills hover). Probably one alias in the zone
-  resolver every era check shares — look at what else it would fold.
-- **`poiKind` files `Druid Rings` under "Names & places".** `\bdruid ring\b` misses the plural. Pinned
-  black box with a corpus tally ([ADR 0048](./decisions/0048-a-map-label-is-read-by-its-words.md)), so
-  re-tally rather than patch.
-- **A stale `out/` looks exactly like a broken feature.** `npm run app` rebuilds only a *missing*
-  build, so an old renderer can pair with a new main process. Stamp both halves with one version, or
-  have `launch.mjs` compare mtimes against `src/`.
-- **ADR 0280 says the MCP server registers seven tools; it registers nine** (`item_facet_options`,
-  `list_spell_classes` came later). Record the drift the next time that area is touched.
+- **Lead, not yet checked: coin and XP may be credited to the previous kill.** In one real 87 MB log,
+  6,798 of 6,805 corpse-coin lines are followed by a kill line within 3 s, and only 168 had a kill in the
+  2 s before them, so this server writes a kill's coin before its "You have slain" line (as
+  `faction-cause.ts` already notes). `combat-stats.ts`'s `recordCoin`/`recordXp` credit "the most recent
+  kill", and `kill-log.ts`'s `noteCoin` attaches by corpse and time — confirm whether the per-mob coin and
+  XP on the Session tab land on the right mob before touching it.
 
 ## Maps, zones and travel
 

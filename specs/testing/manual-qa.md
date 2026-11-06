@@ -1536,6 +1536,10 @@ lifecycle, so none of it is unit-tested; the two pure rules under it are pinned 
 - **`ELECTRON_RUN_AS_NODE` in the environment.** `set ELECTRON_RUN_AS_NODE=1` then `npm run app`: it must
   still launch. Unstripped it starts Electron as bare Node and dies on
   `registerSchemesAsPrivileged`, which is the version of this bug that produces no window at all.
+- **A stale build.** `touch src/app/page.tsx`, then `npm run app`: it must print
+  `[launch] rebuilding the renderer — src\app\page.tsx changed after it was built…`, build, and start. Run
+  it again straight away: no rebuild. Touch a file under `electron/` instead and only the main process
+  rebuilds. (An old `out/` paired with a new main process reads as a broken feature, not a stale one.)
 - **A saved opacity of 0.** Put `"opacity": 0` in `settings.json` under `overlay` and launch: the window
   must open at the 20% floor and be *visible*, and the Settings slider must read the clamped value.
 

@@ -148,12 +148,12 @@ export function transportCrossing(label: string): TravelCrossing | undefined {
 /**
  * The kinds a conveyance vocabulary is allowed to overrule.
  *
- * `poiKind` files "Druid Rings" under **names & places**, because its transport vocabulary spells the
- * ring singular (`\bdruid ring\b` can't reach the plural) — so a graph that only trusted its verdict
- * would miss the druid network on every pack that writes it that way. Rather than widening the shared
- * classifier from here (it's a pinned black box, and its own filter has an opinion about where those
- * labels belong), a label it left in one of its two **fallback** kinds is re-read with the vocabulary
- * this module cares about.
+ * `poiKind`'s transport vocabulary is the map filter's, and it states its shapes whole to stay clear of
+ * NPCs (`Sister of the Spire`) — so a graph that only trusted its verdict would miss a conveyance the
+ * filter has no reason to catch (it once read "Druid Rings" as a plain name). Rather than widening the
+ * shared classifier from here (it's a pinned black box, and its own filter has an opinion about where
+ * those labels belong), a label it left in one of its two **fallback** kinds is re-read with the
+ * vocabulary this module cares about.
  *
  * Only the fallbacks, which is what keeps it safe: `a dock worker` is a `mob` and `Dock Merchant` is
  * a `merchant`, so neither is offered here, and neither becomes a boat.

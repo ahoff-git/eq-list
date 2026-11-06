@@ -427,7 +427,9 @@ shopping list.
     `appDataDirs()` finds first — mainly what makes the above test hermetic (a temp fixture rather than
     this machine's real cache), operationally useful for the same reason any of this app's other
     multi-profile support is.
-  See [ADR 0280](../decisions/0280-an-mcp-server-exposes-the-wiki-cache-read-only.md).
+  See [ADR 0280](../decisions/0280-an-mcp-server-exposes-the-wiki-cache-read-only.md), which counts
+  **seven** tools; the server registers **nine** (`scripts/mcp-server.mjs`) — `item_facet_options` and
+  `list_spell_classes` came after it, and are described above.
 - **Out-of-era flagging** — `fetchOutEraCategorySet` reads `Template:PageEra` (with a
   fallback era list) to learn which era categories aren't live. `getPage` flags the
   opened page (`WikiPage.outOfEra`), and search/quest results are flagged too:

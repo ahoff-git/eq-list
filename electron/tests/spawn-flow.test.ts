@@ -65,7 +65,7 @@ function app(startMs: number) {
 
   const spawns: SpawnTracker = createSpawnTracker({
     userDataDir: dir,
-    kills: () => killLog.kills(),
+    kills: () => killLog.evidence(),
     getSettings: () => ({ enabled: true }) as CastAlertSettings,
     raise: (a) => raised.push(a),
     now: () => nowMs,
@@ -108,7 +108,7 @@ function app(startMs: number) {
       if (event.kind === "kill") {
         // Main's order, and it is load-bearing: record first, then tell the tracker.
         if (killLog.record(event.target, event.killer, currentZone, event.at, event.logId, event.named, event.killerNamed)) {
-          spawns.noteKill(event.target, currentZone, event.at, event.named);
+          spawns.noteKill(event.target, currentZone, event.at);
         }
       }
     }
@@ -680,4 +680,90 @@ test("flow: a bystander killing a named still teaches, since only the victim is 
     ].join("\n"),
   );
   assert.equal(rowFor(a.view(), "Frenzied Ghoul")?.respawn?.seconds, 20 * 60);
+});
+
+// ── Use case 5: the camp you stopped visiting ─────────────────────────────────
+// Found by replaying a real install's kill log (11k kills): the board knew 17 camps, and 145 once it
+// was handed the whole history. Learning only from the last `DEFAULT_LIMIT` kills means a named
+// vanishes from the board once you have killed ~200 things since, however well it was learned.
+
+test("flow: a named you learned last week is still on the board after a night of trash", () => {
+  const a = app(T0);
+  a.feed(
+    [
+      entered(T0, "Lower Guk"),
+      slain(T0 + 2 * MIN, "Ghoul Lord"),
+      slain(T0 + 22 * MIN, "Ghoul Lord"),
+    ].join("\n"),
+  );
+  const learned = rowFor(a.view(), "Ghoul Lord")?.respawn?.seconds;
+  assert.equal(learned, 20 * 60, "learned while it was recent");
+
+  const THE_NIGHT = T0 + 7 * 24 * 60 * MIN;
+  const trash = Array.from({ length: 300 }, (_, i) => slain(THE_NIGHT + i * 1000, "a froglok tad"));
+  a.feed([entered(THE_NIGHT - MIN, "Upper Guk"), ...trash].join("\n"));
+
+  const row = rowFor(a.view(), "Ghoul Lord");
+  assert.ok(row, "300 later kills must not push it off the board");
+  assert.equal(row.respawn?.seconds, learned, "or cost it what it learned");
+  assert.equal(rowFor(a.view(), "a froglok tad"), undefined, "and the trash still never arrives");
+});
+
+// ── Use case 6: the raid-mate who only ever died ──────────────────────────────
+// Found on a real install, where 18 of 140 "nameds" were raid-mates slain once by the boss. The people
+// rule can't place them — it knows a person by what they kill, and these never killed anything the log
+// saw. What killed them can: a boss you killed is a mob, and a mob kills players.
+
+test("flow: a raid-mate who only ever died to the boss is not a named, however often they die", () => {
+  const a = app(T0);
+  a.feed(
+    [
+      entered(T0, "Lower Guk"),
+      slain(T0 + 2 * MIN, "Ghoul Lord"),
+      slainBy(T0 + 5 * MIN, "Xasarer", "Ghoul Lord"),
+      slainBy(T0 + 25 * MIN, "Xasarer", "Ghoul Lord"),
+    ].join("\n"),
+  );
+  const view = a.view();
+  assert.deepEqual(
+    view.known.map((k) => k.mob),
+    ["Ghoul Lord"],
+    "one row, and it is the mob you actually killed",
+  );
+  assert.equal(view.running.length, 0, "and the raid-mate's deaths twenty minutes apart are not a respawn");
+});
+
+// ── Use case 7: the deaths that must not arm anything ─────────────────────────
+// Found in a real `spawn-timers.json`: alerts auto-armed for `bunnyslayer|lower guk`, a group-mate, and
+// for `lady vox pet|permafrost keep`. `main.ts` handed the tracker the line's article test alone, which
+// waves a pet or a group-mate dying through — the very thing the log's proof exists to refuse — and two
+// of them in a sitting arm the camp. Nothing shows it (they are not rows), until somebody marks the mob
+// "named" by hand and finds an alert already armed for a camp they never sat at.
+
+test("flow: a pet's or a group-mate's deaths at a camp arm nothing", () => {
+  for (const victim of ["Kainos`s warder", "Bunnyslayer"]) {
+    const a = app(T0);
+    a.feed(
+      [
+        entered(T0, "Lower Guk"),
+        slain(T0 + 2 * MIN, "Ghoul Lord"),
+        slainBy(T0 + 5 * MIN, victim, "Ghoul Lord"),
+        slainBy(T0 + 25 * MIN, victim, "Ghoul Lord"),
+      ].join("\n"),
+    );
+    a.spawns.markNamed(victim, true); // brings the camp's state onto the board, where it can be seen
+    const row = rowFor(a.view(), victim);
+    assert.ok(row, `${victim} is on the board once somebody says it is a named`);
+    assert.equal(row.armed, false, `${victim}: nobody camped it, so the app armed nothing`);
+    assert.equal(row.notify, false);
+  }
+});
+
+test("flow: a mob you said is not a named is not camped either, however often it dies", () => {
+  const a = app(T0);
+  a.feed([entered(T0, "Lower Guk"), slain(T0 + 2 * MIN, "Ghoul Lord")].join("\n"));
+  a.spawns.markNamed("Ghoul Lord", false);
+  a.feed([slain(T0 + 22 * MIN, "Ghoul Lord"), slain(T0 + 42 * MIN, "Ghoul Lord")].join("\n"));
+  a.spawns.markNamed("Ghoul Lord", true); // changed their mind: the history comes back, unarmed
+  assert.equal(rowFor(a.view(), "Ghoul Lord")?.armed, false, "the dismissal outranks what the line looks like");
 });

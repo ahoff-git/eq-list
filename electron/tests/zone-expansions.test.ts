@@ -77,6 +77,18 @@ test("the live era list is what makes Kunark closed today and open later", () =>
   assert.equal(zoneAvailable("Timorous Deep", outOfEraSet([])), true);
 });
 
+test("a Cabilis district is shut with Cabilis, whichever way round it is written", () => {
+  // eqlwiki's era list names the city once ("Cabilis"); a vendor row and a map name the district you
+  // stand in. If the district doesn't resolve to the city, a Cabilis merchant reads as open while
+  // Kunark is shut — the source "How to get it" and the Tradeskills hover both judge by this answer.
+  const closed = outOfEraSet(["Cabilis"]);
+  for (const zone of ["East Cabilis", "West Cabilis", "Cabilis East", "Cabilis West", "Cabilis"]) {
+    assert.equal(zoneExpansion(zone)?.zone, "Cabilis", `${zone} is part of Cabilis`);
+    assert.equal(zoneUnavailable(zone, closed), "out-of-era", `${zone} is shut while Cabilis is`);
+  }
+  assert.equal(zoneAvailable("East Cabilis", outOfEraSet([])), true, "and opens with it");
+});
+
 test("a permanent refusal outranks a temporary one", () => {
   // If both applied, "not on this server" is the truer thing to say: an era opening won't help.
   const closed = outOfEraSet(["Argath, Bastion of Illdaera"]);

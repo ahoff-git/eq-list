@@ -487,8 +487,14 @@ reading like a measurement, and they are shared code
 - **A named is recognised by its article, and only when the killer's name lacks one too.** Named-ness
   is a property of the mob, learned once, and it makes every kill already on file evidence. Absent is
   unknown, not plain. ([0092](./0092-a-named-s-respawn-is-learned-from-your-own-kills.md))
+- **A person is never a named — known by what they kill, and by what kills them.** What a boss a person
+  killed goes on to kill is a person, unless a person killed *that* too; you are one from the start, and
+  an unrecorded article is no evidence either way. ([0138](./0138-a-replayed-log-narrows-what-a-kill-proves.md), [0357](./0357-what-a-boss-kills-is-a-person.md))
 - **The game calling a mob rare is proof too.** A consider tagged `- a rare creature -` makes its mob
   timed like a named, by name and for good; a player's "not a named" outranks it. ([0324](./0324-the-game-saying-rare-is-proof.md))
+- **The board learns from every kill on file, not the recent window.** A named is proven by a kill of
+  any age and a respawn is a gap between two, so it reads `evidence()`, never the 200-kill window
+  `kills()` gives a display. ([0356](./0356-the-spawn-board-learns-from-the-whole-kill-history.md))
 - **The interval is the shortest gap ever seen, never the average.** Every observed gap is an upper
   bound; an average describes your evening. ([0092](./0092-a-named-s-respawn-is-learned-from-your-own-kills.md))
 - **A gap that spans a difficulty change is thrown out**, compared on the raw zone name — the one

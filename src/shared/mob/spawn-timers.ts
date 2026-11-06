@@ -61,7 +61,7 @@ import {
   type Confidence,
   type SampleScale,
 } from "../estimates";
-import { isPetName } from "../combat/combat-parser";
+import { isPetName, SELF } from "../combat/combat-parser";
 import { formatDuration, parseDuration, UNIT_SECONDS } from "../duration";
 import { placeKey, placeName } from "../zones/place";
 import type { KillRecord } from "../types";
@@ -437,39 +437,84 @@ export interface LearnOptions {
  * `named: false` is a real answer and is simply not proof of the thing we're collecting.
  */
 export function provenNamed(kills: KillRecord[]): Set<string> {
-  // **Who in this log is a person.** Anyone the log shows killing something *with an article* has
-  // killed a mob, and a thing that kills mobs is a player or a pet — never the named we are trying
-  // to recognise. Read from the same records, because it is the log that says so and nothing else
-  // has to be injected for it to.
+  const people = knownPeople(kills);
+  const named = new Set<string>();
+  for (const k of kills) if (provesNamed(k, people)) named.add(mobKey(k.mob));
+  return named;
+}
+
+/** Does this one kill prove its victim is a named, given who is already known to be a person? */
+function provesNamed(k: KillRecord, people: ReadonlySet<string>): boolean {
+  if (!k.named) return false;
+  // A pet says so in its own name, whoever killed it, so this needs no registry and works for a
+  // stranger's pet too. **Both** ways the log says it: the possessive `<Owner>`s warder`, and the
+  // plain `<Owner> pet`, which has no punctuation to give it away and was letting six pets onto the
+  // board of a real log (ADR 0269).
+  if (isPetName(k.mob)) return false;
+  if (people.has(mobKey(k.mob))) return false;
+  // **The victim's name is only half the answer.** The log reports every death in earshot, and a
+  // player, a pet and a boss are all written without an article — so "Bunnyslayer has been slain
+  // by a froglok shaman!" reads exactly like a named dying. What separates them is who did the
+  // killing: a *person* kills a named, a *mob* kills a player or a pet. Without this a busy
+  // dungeon fills the board with every death that happened near you.
   //
-  // This is the hole the killer test left, and it is not a rare one: `named` + `killerNamed` was
-  // meant to read "a person killed a named", but a **named killing your pet or your group-mate**
-  // fits it exactly — a named has no article either. Replaying a real camp put `Kainos`s warder`
-  // and a group-mate on the board with a learned twenty-minute respawn.
-  const people = new Set<string>();
+  // Absent is unknown and starts nothing, for the same reason `named` absent does: one more kill
+  // settles it, and a clean list is worth more than a row we can't justify.
+  return !!k.killerNamed;
+}
+
+/**
+ * **Who in this log is a person** — never the named we are trying to recognise. Read from the same
+ * records, because it is the log that says so and nothing else has to be injected for it to.
+ *
+ * This is the hole the killer test left, and it is not a rare one: `named` + `killerNamed` was meant
+ * to read "a person killed a named", but a **named killing your pet or your group-mate** fits it
+ * exactly — a named has no article either. Two things in the log show who is a person, and the second
+ * reaches what the first can't:
+ *
+ *  - **What they kill.** Anyone the log shows killing something *with an article* has killed a mob,
+ *    and a thing that kills mobs is a player or a pet. Replaying a real camp put `Kainos`s warder` and
+ *    a group-mate on the board with a learned twenty-minute respawn. (You count from the start: you
+ *    are a person whether or not the log has shown you killing a mob yet.)
+ *  - **What kills them.** A boss a *person* is known to have killed is a mob, and a mob kills a player
+ *    or a pet — so what that boss killed is a person. That is how a raid-mate who only ever died to
+ *    Lord Nagafen (`Xasarer`, slain once, by him) stops passing as a named: the first rule never saw
+ *    them kill anything. It rests on the boss's own proof, not on the victim's name, so it can't be
+ *    argued into by a name that merely looks like a player's.
+ *
+ *    **Unless a person killed the victim too.** Mobs kill each other as well (a charmed pet, an orc
+ *    that fights its own court), and a real install has named orcs "slain by" other named orcs that
+ *    the player also killed. A thing a person has killed is a mob, whoever else got to it, and that
+ *    is the stronger evidence — so it is never made a person by a boss's kill.
+ *
+ * The second rule feeds the first (a person's kill can prove a boss, whose victims are people, whose
+ * kills prove further bosses), so it runs until nothing new turns up. Each pass can only add a name
+ * and names are finite, so it ends.
+ */
+function knownPeople(kills: KillRecord[]): Set<string> {
+  const people = new Set<string>([mobKey(SELF)]);
   for (const k of kills) if (k.killer && k.named === false) people.add(mobKey(k.killer));
 
-  const named = new Set<string>();
-  for (const k of kills) {
-    if (!k.named) continue;
-    // A pet says so in its own name, whoever killed it, so this needs no registry and works for a
-    // stranger's pet too. **Both** ways the log says it: the possessive `<Owner>`s warder`, and the
-    // plain `<Owner> pet`, which has no punctuation to give it away and was letting six pets onto the
-    // board of a real log (ADR 0269).
-    if (isPetName(k.mob)) continue;
-    if (people.has(mobKey(k.mob))) continue;
-    // **The victim's name is only half the answer.** The log reports every death in earshot, and a
-    // player, a pet and a boss are all written without an article — so "Bunnyslayer has been slain
-    // by a froglok shaman!" reads exactly like a named dying. What separates them is who did the
-    // killing: a *person* kills a named, a *mob* kills a player or a pet. Without this a busy
-    // dungeon fills the board with every death that happened near you.
-    //
-    // Absent is unknown and starts nothing, for the same reason `named` absent does: one more kill
-    // settles it, and a clean list is worth more than a row we can't justify.
-    if (!k.killerNamed) continue;
-    named.add(mobKey(k.mob));
-  }
-  return named;
+  let grew: boolean;
+  do {
+    grew = false;
+    // The mobs a known person has killed — bosses, and mobs for certain. Only a kill written without
+    // an article can name a person or a boss, which is a small slice of the log: checking that first
+    // is what keeps asking this of ten thousand kills cheap, once per pass.
+    const bosses = new Set<string>();
+    for (const k of kills) {
+      if (!k.named || !k.killerNamed || !k.killer) continue;
+      if (people.has(mobKey(k.killer)) && provesNamed(k, people)) bosses.add(mobKey(k.mob));
+    }
+    for (const k of kills) {
+      if (!k.named || !k.killer || !bosses.has(mobKey(k.killer))) continue;
+      const victim = mobKey(k.mob);
+      if (people.has(victim) || bosses.has(victim)) continue;
+      people.add(victim);
+      grew = true;
+    }
+  } while (grew);
+  return people;
 }
 
 /**

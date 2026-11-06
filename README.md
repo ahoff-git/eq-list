@@ -48,8 +48,9 @@ tick up. Use `npm run sim -- --loop --loot-only` for a continuous stream.
 ## Launching
 
 - **Develop** with hot reload: `npm run dev`.
-- **Run locally** (no dev server): `npm run app` — builds once if needed, then starts
-  the app. On Windows you can just double-click **`EQ-List.cmd`**.
+- **Run locally** (no dev server): `npm run app` — rebuilds whichever half (renderer or main
+  process) is missing or older than its source, then starts the app. On Windows you can just
+  double-click **`EQ-List.cmd`**.
 - **Install it**: `npm run dist` builds a distributable (electron-builder / NSIS). The
   installed app gets a normal shortcut and registers the **`eqlist://`** URL scheme, so
   a link like `<a href="eqlist://open">Launch EQ List</a>` on any page (including a
@@ -69,7 +70,7 @@ host it (e.g. GitHub Releases), and point the landing page's Download link at it
 | `npm run dev` | Next dev server + Electron (hot reload). |
 | `npm run build` | Build the renderer (`out/`) and the Electron main (`dist-electron/`). |
 | `npm start` | Build, then run the packaged production path. |
-| `npm run app` | Build if needed, then launch (also via double-click `EQ-List.cmd`). |
+| `npm run app` | Rebuild what's stale, then launch (also via double-click `EQ-List.cmd`). |
 | `npm test` | Compile + run the parser/fuzzy/grouping/watcher/stats tests (`node --test`). |
 | `npm run sim` | Replay a sample log into a watched file to test the loot pipeline without playing. |
 | `npm run typecheck` | Typecheck both the renderer and the Electron sides. |

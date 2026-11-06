@@ -320,6 +320,130 @@ test("setting a never-determined boolean field to 'false' via admin doesn't read
   assert.equal(k.kills()[0].killerNamed, false);
 });
 
+// ── the evidence the spawn board learns from ──
+
+/** `evidence()` as a plain list of what a reader sees, so two reads can be compared. */
+const seen = (k: KillLog) => k.evidence().map((r) => `${r.mob}|${r.killer}|${r.zone}|${r.named}|${r.killerNamed}`);
+
+test("evidence() is every kill ever recorded, where kills() is only the recent window", () => {
+  // A named is proven by *any* kill of it, and a respawn is a gap between two. The window `kills()`
+  // answers an unscoped call with forgot every camp not killed in the last 200 pulls — all but 17 of
+  // 145 on a real install — so the spawn board needs the history, not the evening.
+  const k = freshKillLog();
+  kill(k, "Lord Nagafen", 0);
+  for (let i = 1; i <= 250; i++) kill(k, "a coyote", i);
+
+  assert.equal(k.kills().length, 200, "the display window stops at DEFAULT_LIMIT");
+  const all = k.evidence();
+  assert.equal(all.length, 251, "the evidence does not");
+  assert.equal(all[all.length - 1].mob, "Lord Nagafen", "newest first, so the oldest kill is last");
+  assert.equal(all[0].mob, "a coyote");
+});
+
+test("evidence() carries who died, who killed it, where and when — and nothing heavy", () => {
+  const k = freshKillLog();
+  k.noteLoc(loc(100, 200, 10), ZONE);
+  k.record("Lord Nagafen", "Kainos", ZONE, stamp(20), 7, true, true);
+  k.noteLoot(looted("Dragon Scale", "Lord Nagafen", 25));
+
+  const [only] = k.evidence();
+  assert.deepEqual(
+    { mob: only.mob, killer: only.killer, zone: only.zone, at: only.at, named: only.named, killerNamed: only.killerNamed },
+    { mob: "Lord Nagafen", killer: "Kainos", zone: ZONE, at: stamp(20), named: true, killerNamed: true },
+  );
+  assert.equal(only.y, undefined, "no position: that is what makes it cheap to hold");
+  assert.equal(only.drops, undefined, "and no drops");
+  assert.equal(k.kills()[0].y, 100, "while the full read still has both");
+});
+
+test("evidence() keeps up with new kills without being asked to rebuild", () => {
+  const k = freshKillLog();
+  kill(k, "a coyote", 1);
+  assert.equal(k.evidence().length, 1); // loaded: from here on it is a mirror, not a query
+
+  k.record("Lord Nagafen", "Kainos", ZONE, stamp(30), 2, true, true);
+  kill(k, "a jackal", 40);
+  assert.deepEqual(
+    k.evidence().map((r) => r.mob),
+    ["a jackal", "Lord Nagafen", "a coyote"],
+    "newest first, the same order a fresh read gives",
+  );
+  // The proof that an append is exact: a log opened over the same file reads the very same thing.
+  const dir = tempDir();
+  const a = freshKillLog(dir);
+  kill(a, "a coyote", 1);
+  a.evidence();
+  a.record("Lord Nagafen", "Kainos", ZONE, stamp(30), 2, true, true);
+  kill(a, "a jackal", 40);
+  assert.deepEqual(seen(a), seen(freshKillLog(dir)));
+});
+
+test("a duplicate line, which records nothing, leaves the evidence alone", () => {
+  const k = freshKillLog();
+  k.startReplay();
+  kill(k, "a coyote", 5);
+  assert.equal(k.evidence().length, 1);
+  k.startReplay(); // the same log read a second time
+  kill(k, "a coyote", 5);
+  assert.equal(k.evidence().length, 1);
+});
+
+test("evidence() is rebuilt after an admin edit or removal, which an append can't express", () => {
+  const k = freshKillLog();
+  k.record("Ghoul Lord", "You", ZONE, stamp(10), 1, true, true);
+  k.record("a coyote", "You", ZONE, stamp(20), 2, false, true);
+  assert.equal(k.evidence()[1].named, true); // loaded
+
+  const ghoul = k.admin.list().find((r) => r.summary.startsWith("Ghoul Lord"))!;
+  assert.deepEqual(k.admin.patch(ghoul.id, "named", "false"), { ok: true });
+  assert.equal(k.evidence()[1].named, false, "the edit is seen");
+
+  assert.deepEqual(k.admin.patch(ghoul.id, "zone", "Upper Guk"), { ok: true });
+  assert.equal(k.evidence()[1].zone, "Upper Guk");
+
+  assert.deepEqual(k.admin.remove(ghoul.id), { ok: true });
+  assert.deepEqual(
+    k.evidence().map((r) => r.mob),
+    ["a coyote"],
+    "and so is the removal",
+  );
+});
+
+test("evidence() forgets what clear() forgets, and what learning your name drops", () => {
+  const k = freshKillLog();
+  k.record("Kainos`s warder", "a kobold", ZONE, stamp(10), 1); // before the player is known
+  kill(k, "a kobold", 20);
+  assert.equal(k.evidence().length, 2);
+
+  k.setPlayer("Kainos"); // your own deaths go
+  assert.deepEqual(
+    k.evidence().map((r) => r.mob),
+    ["a kobold"],
+  );
+
+  k.clear();
+  assert.deepEqual(k.evidence(), []);
+  kill(k, "a coyote", 40);
+  assert.deepEqual(
+    k.evidence().map((r) => r.mob),
+    ["a coyote"],
+    "and it fills again from there",
+  );
+});
+
+test("evidence() hands out a fresh array, so a caller sorting or trimming it can't corrupt the next read", () => {
+  const k = freshKillLog();
+  kill(k, "a coyote", 1);
+  kill(k, "a jackal", 2);
+  const first = k.evidence();
+  first.reverse();
+  first.length = 0;
+  assert.deepEqual(
+    k.evidence().map((r) => r.mob),
+    ["a jackal", "a coyote"],
+  );
+});
+
 // ── whose kill was it ──
 
 test("your own pet dying is not a kill", () => {

@@ -98,6 +98,7 @@ import { coerceBooleanAdminPatch, createSqlAdminStore, triNull, type AdminStore 
 import { createBackgroundCache } from "./background-cache";
 import {
   computeObservations,
+  EVIDENCE_COLUMNS,
   rowToFrozenObservation,
   rowToRecord,
   type FrozenObservationRow,
@@ -256,10 +257,23 @@ export interface KillLog {
    * Kill records, newest first. Given a `zone`, every one this place has ever recorded — narrowed
    * server-side to every raw spelling that folds to it (ADR 0083/0075), matching what a heatmap
    * wants: complete detail for the one camp it's drawing. With none, a bounded recent window instead
-   * (`DEFAULT_LIMIT`) — the one caller that asks unscoped only wants "recently", not "ever"
-   * (ADR 0243). `observations()` is what covers everything ever killed, at every camp, regardless.
+   * (`DEFAULT_LIMIT`) — the one *display* that asks unscoped only wants "recently", not "ever"
+   * (ADR 0243); a reader that needs the history asks `evidence()`. `observations()` is what covers
+   * everything ever killed, at every camp, regardless.
    */
   kills(zone?: string): KillRecord[];
+  /**
+   * **Every kill ever recorded, newest first — unbounded, and lean.** Who died, who killed it, where
+   * and when; no position, drops or coin. What the spawn board learns from: a named is proven by *any*
+   * kill of it and a respawn is a gap between two, so the `DEFAULT_LIMIT` window `kills()` answers an
+   * unscoped call with forgets every camp you have not killed in your last couple of hundred pulls —
+   * which on one real install left the board knowing 17 of its 145 camps.
+   *
+   * Held in memory and kept current as kills are recorded, so asking again is a copy, not a query —
+   * the board asks on every kill, and a replayed evening is thousands of them. A fresh array each call
+   * (the records in it are shared, and are never edited in place).
+   */
+  evidence(): KillRecord[];
   /**
    * Every kill with a position, ever, newest first — **unbounded**, unlike unscoped `kills()`. For the
    * share hub: what peers are handed is the whole history, not the last evening's `DEFAULT_LIMIT`
@@ -439,6 +453,8 @@ export function createKillLog(db: Database, userDataDir: string): KillLog {
   const selectPlacedKills = db.prepare(
     `SELECT * FROM kill_records WHERE y IS NOT NULL AND x IS NOT NULL ORDER BY rowid DESC`,
   );
+  const selectEvidence = db.prepare(`SELECT ${EVIDENCE_COLUMNS} FROM kill_records ORDER BY rowid DESC`);
+  const selectEvidenceById = db.prepare(`SELECT ${EVIDENCE_COLUMNS} FROM kill_records WHERE id = ?`);
   const selectDistinctKillZones = db.prepare(`SELECT DISTINCT zone FROM kill_records WHERE zone IS NOT NULL`);
   // ORDER BY matters here (see `createNameRegistry`'s first-seen-wins rule below): without it,
   // SQLite's own DISTINCT row order is implementation-defined rather than newest-first, and which
@@ -558,6 +574,29 @@ export function createKillLog(db: Database, userDataDir: string): KillLog {
     bump();
   }
 
+  /**
+   * The evidence mirror behind `evidence()`: every kill's lean record, newest first, or `null` before
+   * the first ask (and after anything that edits or removes a row — see `forgetEvidence`).
+   *
+   * Kept rather than re-queried because the board asks on **every kill**, and a replayed evening is
+   * thousands of kills against a table of tens of thousands of rows. Appending is exact — a new kill
+   * is the newest row — so `record` extends it in place; the loot and coin lines that make up most of
+   * what bumps `version` change no evidence column, so they leave it alone.
+   */
+  let evidenceMirror: KillRecord[] | null = null;
+
+  const evidenceRecord = (row: unknown): KillRecord => rowToRecord(row as KillRow);
+
+  function evidence(): KillRecord[] {
+    evidenceMirror ??= (selectEvidence.all() as unknown[]).map(evidenceRecord);
+    return evidenceMirror.slice();
+  }
+
+  /** A row was edited or removed, which an append can't express: rebuild from the table on the next ask. */
+  function forgetEvidence(): void {
+    evidenceMirror = null;
+  }
+
   let player = "";
   /** The last two position fixes, newest first, each tagged with the zone it was taken in —
    *  a fix from the zone you just left says nothing about where you are now. */
@@ -638,6 +677,7 @@ export function createKillLog(db: Database, userDataDir: string): KillLog {
       lastLooted = null; // it may point at one of the records just dropped
       // Their keys stay — see the module doc. `isMine(mob)` below refuses the same line again
       // regardless, once `player` is set, so nothing is lost by no longer forgetting them.
+      forgetEvidence();
       bump();
     },
 
@@ -747,6 +787,9 @@ export function createKillLog(db: Database, userDataDir: string): KillLog {
         insertKillSeen.run(key, base);
       });
       insert();
+      // Read back what was stored, rather than shaping `record` a second way: the mirror then holds
+      // exactly what a rebuild from the table would, whichever way a row got there.
+      evidenceMirror?.unshift(evidenceRecord(selectEvidenceById.get(record.id)));
       touch(record.id);
       return true;
     },
@@ -855,6 +898,8 @@ export function createKillLog(db: Database, userDataDir: string): KillLog {
       return (selectPlacedKills.all() as KillRow[]).map(rowToRecord);
     },
 
+    evidence,
+
     kills(zone) {
       if (!zone) return (selectRecentKills.all(DEFAULT_LIMIT) as KillRow[]).map(rowToRecord);
       const rawZones = (selectDistinctKillZones.all() as { zone: string }[])
@@ -932,6 +977,7 @@ export function createKillLog(db: Database, userDataDir: string): KillLog {
       // next kill using evidence the player just asked us to forget.
       fixes = [];
       lastLooted = null; // it points at a record that no longer exists
+      forgetEvidence();
       bump();
       saver.flush();
     },
@@ -965,7 +1011,12 @@ export function createKillLog(db: Database, userDataDir: string): KillLog {
       // `clear`'s own comment above) — a deleted row staying deduped means replaying the same log
       // can't quietly bring it back.
       removeRow: (id) => deleteKillById.run(id),
-      onChanged: bump,
+      // An edit may change `named`/`killerNamed`/`zone`, and a removal takes a row out — either way
+      // the evidence mirror no longer matches the table.
+      onChanged: () => {
+        forgetEvidence();
+        bump();
+      },
       // `stores()` (`electron/admin.ts`) calls this on every admin-panel open *and* every
       // `app.onDataChanged` broadcast the admin window is listening for while it's open — a
       // `list()`-based count would mean a full-table scan on both, and `kill_records` has had no cap

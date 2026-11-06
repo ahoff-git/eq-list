@@ -379,9 +379,11 @@ if (!app.requestSingleInstanceLock()) {
   // interval is derived, and only the due times are its own state (ADR 0092). Its pop goes down
   // the same `raiseAlert` as every other alert, so it wears the alert styling without knowing it.
   // (`raiseAlert` is a declaration below, hoisted — this is built here because the IPC needs it.)
+  // The **whole** history, not `kills()`'s recent window: a named is proven by any kill of it, and a
+  // camp not killed in your last couple of hundred pulls would otherwise drop off the board.
   const spawns = createSpawnTracker({
     userDataDir: userData,
-    kills: () => killLog.kills(),
+    kills: () => killLog.evidence(),
     peerRespawns: () => peerRespawns.all(),
     getSettings: () => store.getSettings().castAlerts,
     raise: raiseAlert,
@@ -711,8 +713,10 @@ if (!app.requestSingleInstanceLock()) {
     if (killLog.record(event.target, event.killer, currentZone, event.at, event.logId, event.named, event.killerNamed)) {
       killsChanged();
       // After the record, never before: the tracker learns from the kill log, so the kill that
-      // starts a countdown has to already be in it for the second kill of a named to time it.
-      spawns.noteKill(event.target, currentZone, event.at, event.named);
+      // starts a countdown has to already be in it for the second kill of a named to time it. And with
+      // no `named` of our own: the line's article alone can't tell a boss from a pet or a group-mate
+      // dying, and would bypass the person rule and the player's "not a named" — the log can.
+      spawns.noteKill(event.target, currentZone, event.at);
     }
     // Your kill streak counts what *you* killed, so it asks the meter's own gate rather than a
     // looser one of its own: the log reports every death in earshot, and a stranger's kill at a busy

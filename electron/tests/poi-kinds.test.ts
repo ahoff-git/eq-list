@@ -44,7 +44,11 @@ test("how you work a zone line doesn't stop it being one", () => {
 test("the magical and nautical ways out are transport, not zone lines", () => {
   for (const label of [
     "Druid Ring",
+    "Druid Rings", // no pack writes the plural yet, but "Druid Ring" is the same thing said twice
+    "Druid Port", // 3 labels, in the zone-line red
     "Wizard Spires",
+    "Wizard Spire", // 3 labels, and "Broken Wizard Spire" once — the singular missed the old `spires`
+    "Broken Wizard Spire",
     "Great Spires",
     "Teleport Pad",
     "Teleporter Down",
@@ -54,6 +58,15 @@ test("the magical and nautical ways out are transport, not zone lines", () => {
     "Portal to Island 2 Azarack (Key of the Misplaced)",
   ])
     assert.equal(poiKind(label), "transport", label);
+});
+
+test("a spire or a port that is somebody, or something they sell, is not transport", () => {
+  // The reason the transport shapes are stated whole rather than as the bare words "spire" and "port".
+  assert.equal(poiKind("Sister of the Spire (Raid)"), "spawn");
+  assert.equal(poiKind("Sister of the Spire"), "named");
+  assert.equal(poiKind("Keepers of South Spire"), "named");
+  assert.equal(poiKind("Druid port spells"), "named");
+  assert.equal(poiKind("Well Wailet (Druid Ports)"), "named");
 });
 
 test("the physical ways between levels are their own kind", () => {
