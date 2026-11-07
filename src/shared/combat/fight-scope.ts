@@ -198,6 +198,7 @@ export function createFightScope({ ours, sidesKnown = () => true }: FightScopeOp
         case "stance":
         case "invocation":
         case "buff-faded":
+        case "out-of-mana":
           // The log only ever writes these about you, so there's nobody else they could belong to.
           return "admit";
       }

@@ -191,7 +191,9 @@ export const DATA_CONCERNS: DataConcern[] = [
     //    sessions() silently forgot it. The log itself is the only place it still exists.
     // 5: the cells gained resists, how a miss was avoided, a spell's damage type and a debuff's
     //    landings (ADRs 0343–0345) — an older fight's drill-down has no resist rate at all.
-    revision: 5,
+    // 6: a fight records the times you ran out of mana inside it (ADR 0363) — an older fight can't say
+    //    whether you did, which is what the mana suggestion is read from.
+    revision: 6,
     // Stamping shipped *with* the bump to 2, so an unstamped file is revision 1 — genuinely out of
     // date, and the only concern here for which that's true.
     unstamped: 1,
@@ -202,7 +204,7 @@ export const DATA_CONCERNS: DataConcern[] = [
     blurb:
       "Every fight the meter has banked — damage, DPS, spells, and the cells every drill-down is rolled up from. A stale one under-reports rather than looking wrong, so nothing about it draws the eye.",
     changed:
-      "Your own damage-over-time ticks are now read (ADR 0095), and a fight now closes when it ends rather than when the next pull starts (ADR 0126) — so an older fight both misses your DoT damage and sweeps up experience and coin from the pull after it. The 1,000-fight cap is also gone (ADR 0243): a fight that had aged past it was gone for good, not just under-reporting, and digesting your logs again is the only way to get it back. Since then the drill-downs also show each spell's resist rate per target, debuffs and their resists, and how your swings were dodged, parried, blocked or riposted — none of which an older fight recorded.",
+      "Your own damage-over-time ticks are now read (ADR 0095), and a fight now closes when it ends rather than when the next pull starts (ADR 0126) — so an older fight both misses your DoT damage and sweeps up experience and coin from the pull after it. The 1,000-fight cap is also gone (ADR 0243): a fight that had aged past it was gone for good, not just under-reporting, and digesting your logs again is the only way to get it back. Since then the drill-downs also show each spell's resist rate per target, debuffs and their resists, and how your swings were dodged, parried, blocked or riposted — none of which an older fight recorded. And it now notes when you ran out of mana mid-fight, which the loadout builder reads to suggest more.",
   },
   {
     id: "high-scores",

@@ -9,6 +9,7 @@ import DamageHistory from "@/app/components/combat/DamageHistory";
 import HighScoreBoard from "@/app/components/combat/HighScoreBoard";
 import LogSearch from "@/app/components/combat/LogSearch";
 import Sparkline from "@/app/components/combat/Sparkline";
+import SurvivalAdvice from "@/app/components/combat/SurvivalAdvice";
 import AskValue from "@/app/components/AskValue";
 import ZoneTag from "@/app/components/map/ZoneTag";
 import { opponentOf } from "@/shared/combat/damage-tree";
@@ -355,6 +356,8 @@ export default function DamagePanel() {
       )}
 
       {window && window.deaths.length > 0 && <Deaths deaths={window.deaths} />}
+      {/* A fight, not a session: "what to change for next time" is about the one you died in. */}
+      {window && window.deaths.length > 0 && (scope === "fight" || scope === "history") && <SurvivalAdvice stats={window} />}
 
       {scope === "history" && !picked && <p className="muted small">Pick a fight above to break it down.</p>}
     </div>

@@ -451,6 +451,14 @@ test("a stance change is the line that names the new stance", () => {
   assert.equal(parse("You begin to change your stance."), null);
 });
 
+test("a cast refused for want of mana is its own event, and names no spell", () => {
+  // Verbatim from a real log: one of 629 in the same sitting, five of them inside one second of key-mashing.
+  assert.equal(parse("Insufficient Mana to cast this spell!")?.kind, "out-of-mana");
+  // Not the other ways a cast fails to land — those name the spell and have outcomes of their own.
+  assert.equal(parse("Your Blast of Cold spell fizzles!")?.kind, "spell-outcome");
+  assert.equal(parse("You can't cast spells while stunned!"), null);
+});
+
 test("an invocation change is the reciting line, which names it", () => {
   const e = parse("You begin reciting the arcane mastery invocation.") as InvocationEvent;
   assert.equal(e.kind, "invocation");

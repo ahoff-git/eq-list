@@ -744,6 +744,15 @@ export interface InvocationEvent extends LogEventBase {
 }
 
 /**
+ * You tried to cast and had no mana for it: `Insufficient Mana to cast this spell!`. It names no spell
+ * and is written once per key press, so a player mashing the button writes a burst of them — the
+ * tracker counts a burst once (`FightStats.outOfMana`, ADR 0363).
+ */
+export interface OutOfManaEvent extends LogEventBase {
+  kind: "out-of-mana";
+}
+
+/**
  * A spell of yours expiring — on you, on your pet, or on something you cast it at. Your own
  * may have just changed your max hit points; the others can't, but a watch can still ask to be
  * told (that's the "re-root it" alert).
@@ -811,6 +820,7 @@ export type CombatEvent =
   | BuffFadedEvent
   | StanceEvent
   | InvocationEvent
+  | OutOfManaEvent
   | PetEngageEvent;
 
 // ─── Damage meter ───────────────────────────────────────────────────────────
@@ -1370,6 +1380,12 @@ export interface FightStats {
    * "1,240 mana over 38 of 41 casts" instead of quietly presenting a short total as the whole.
    */
   manaKnownCasts?: { known: number; total: number };
+  /**
+   * How many times you ran out of mana in this window — a run of failed casts is one, not one per key
+   * press (ADR 0363). For a fight, that is out of mana *mid-fight*, since only a fight's own lines
+   * reach it. Absent on fights stored before it was recorded; **0 is a measurement**, absent is not.
+   */
+  outOfMana?: number;
   /** What you killed here, and what it cost/earned. Best rate first. */
   byMob: MobKillStat[];
   /** Kills and experience credited within the window. */

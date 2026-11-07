@@ -109,6 +109,13 @@ const XP_ATTRIBUTION_MS = 15_000;
  */
 const COIN_ATTRIBUTION_MS = 120_000;
 
+/**
+ * "Insufficient Mana" is written once per key press, so a mashed button writes a burst. Lines this
+ * close to the last one are the same running-dry; a longer silence and a new one is a new time
+ * (ADR 0363). Measured on a real log: 869 lines made 171 runs at this gap.
+ */
+const OUT_OF_MANA_RUN_GAP_MS = 8_000;
+
 /** How much of the run-up to a death the recap covers, and how many deaths to keep. */
 const DEATH_WINDOW_MS = 15_000;
 const MAX_DEATHS = 5;
@@ -541,7 +548,9 @@ function createWindow(canon: (name: string) => string) {
   const recentHits: FightHit[] = [];
   const recentHeals: FightHeal[] = [];
   const deaths: DeathRecap[] = [];
-  const totals = { kills: 0, xpPct: 0, xpGains: 0, soloXp: 0, partyXp: 0, copper: 0, soldCopper: 0 };
+  const totals = { kills: 0, xpPct: 0, xpGains: 0, soloXp: 0, partyXp: 0, copper: 0, soldCopper: 0, outOfMana: 0 };
+  /** When the last "no mana" line landed, so a mashed key's burst is counted once (`ranDry`). */
+  let lastDryAt = 0;
   /** The span of log lines this window was built from (see `FightStats.logIds`). */
   const lines = { from: 0, to: 0 };
 
@@ -606,6 +615,11 @@ function createWindow(canon: (name: string) => string) {
       if (!logId) return;
       if (!lines.from || logId < lines.from) lines.from = logId;
       if (logId > lines.to) lines.to = logId;
+    },
+    /** A cast refused for want of mana. Lines close together are one running-dry, not one per key press. */
+    ranDry(at: number) {
+      if (!lastDryAt || at - lastDryAt > OUT_OF_MANA_RUN_GAP_MS) totals.outOfMana += 1;
+      lastDryAt = Math.max(lastDryAt, at);
     },
     /** Add your damage into the second-bucket it landed in (for the sparkline). */
     bucket(at: number, amount: number) {
@@ -1083,6 +1097,7 @@ export function createCombatStats(
       spanSec: w.span.firstAt ? Math.max(1, Math.round((w.span.lastAt - w.span.firstAt) / 1000)) : 0,
       spells,
       ...manaTotals(spells),
+      outOfMana: w.totals.outOfMana,
       byMob: [...w.mobs.entries()]
         .map(([name, t]) => mobRow(name, t))
         .sort((a, b) => b.xpPerMin - a.xpPerMin || b.kills - a.kills || a.mob.localeCompare(b.mob)),
@@ -1353,6 +1368,11 @@ export function createCombatStats(
         // Your debuff taking hold, which only its own sentence announces (`own-landings.ts`) — filed
         // beside its resists so a slow or a tash has a resist rate per target too (ADR 0345).
         w.damage.record(event);
+        break;
+      case "out-of-mana":
+        // Only reaches a fight's window while that fight is running (see `handleLine`), which is what
+        // makes the count "out of mana *mid-fight*" rather than pre-pull button mashing.
+        w.ranDry(at);
         break;
       case "death":
       case "charm":

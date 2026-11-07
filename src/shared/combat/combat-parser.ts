@@ -53,6 +53,7 @@ import type {
   HealEvent,
   InvocationEvent,
   MissEvent,
+  OutOfManaEvent,
   PetEngageEvent,
   StanceEvent,
   SpellOutcome,
@@ -378,6 +379,12 @@ const STANCE_RE = /^You assume an? (?<stance>.+?) stance\.$/;
 const CHARM_RE = /^(?<target>.+?) has been charmed\.$/;
 const INVOCATION_RE = /^You begin reciting the (?<invocation>.+?) invocation\.$/;
 
+/**
+ * A cast refused for want of mana. The game names no spell here — nothing began casting — and writes a
+ * line per key press, which is why the tracker counts a run of them once (`FightStats.outOfMana`).
+ */
+const OUT_OF_MANA_RE = /^Insufficient Mana to cast this spell!$/;
+
 /** How a cast ended other than landing. Each resolves the cast in flight. */
 const OUTCOME_RES: [outcome: SpellOutcome, re: RegExp][] = [
   ["fizzle", /^Your (?<spell>.+?) spell fizzles!$/],
@@ -563,6 +570,8 @@ export function parseCombat(line: LogLine): CombatEvent | null {
       raw,
     } satisfies InvocationEvent;
   }
+
+  if (OUT_OF_MANA_RE.test(message)) return { kind: "out-of-mana", logId, at, raw } satisfies OutOfManaEvent;
 
   const charm = message.match(CHARM_RE);
   if (charm?.groups) {

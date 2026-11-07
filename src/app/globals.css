@@ -4348,6 +4348,10 @@ select optgroup {
 .across-head { margin-top: 10px; }
 .result.across { flex-direction: column; align-items: flex-start; gap: 2px; }
 
+/* The status bar's resist suggestion (DamageTakenChip): the gold of a "worth a look", and a button. */
+.statusbar .damage-chip { background: transparent; color: var(--accent); border-color: var(--accent-dim); font: inherit; font-size: 11px; cursor: pointer; flex-shrink: 0; }
+.statusbar .damage-chip:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+
 /* A status-bar chip that opens its tab (`StatusLink`): reads as the bar's text until pointed at. */
 .statusbar .status-link { cursor: pointer; border-radius: 4px; padding: 1px 4px; }
 .statusbar .status-link:hover { background: color-mix(in srgb, var(--text-dim) 14%, transparent); color: var(--text); }

@@ -179,6 +179,12 @@ export const STORAGE_KEYS = {
   itemMode: "eqlist.items.mode",
   /** Items tab: narrowed to what your newest inventory dump says you own. */
   itemOwnedOnly: "eqlist.items.ownedOnly",
+  /** Which fights "damage taken" is read over — this zone, this sitting, recent. Shared by the loadout
+   *  builder's section and the status bar's suggestion pill, so the two always agree. */
+  damageWindow: "eqlist.items.damageWindow",
+  /** The AC, health and mana your worn gear gives against what the loadout builder's loadout reaches — written
+   *  by the builder so the status bar's pill can say it without planning anything itself (`headroom.ts`). */
+  itemHeadroom: "eqlist.items.headroom",
   /** Items tab: what you've told best in slot — locks, wanted effects, benched items, skipped hunts. */
   itemBisOptions: "eqlist.items.bisOptions",
   /** Items tab: the same choices for each person sharing their inventory, by name (ADR 0342). */

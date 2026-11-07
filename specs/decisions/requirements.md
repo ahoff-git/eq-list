@@ -718,6 +718,17 @@ reading like a measurement, and they are shared code
   is not 8k at the cost of their HP. ([0359](./0359-a-floor-can-be-enough-and-the-rest-is-maximised.md))
 - **Endurance is weighted through STA like HP and mana**, at the one rate players have measured (16 STA → 38
   endurance), and is part of *Everything else*. ([0360](./0360-endurance-follows-stamina-at-one-measured-rate.md))
+- **The loadout builder shows what is landing on you, over a window you choose** — this zone (the default; zoning
+  empties it), this sitting, or recent fights — and a **status-bar pill** appears, opening that section, when a
+  resist type is a tenth or more of the damage taken, priced by the wiki's 6-points-per-1% rule.
+  ([0361](./0361-damage-taken-is-read-over-a-window-and-priced-by-the-wikis-resist-rule.md)) **When it is mostly
+  melee, the suggestion is AC** — the builder's loadout reaches more than you wear, so AC with your build kept.
+  ([0362](./0362-melee-damage-suggests-the-ac-the-loadout-already-reaches.md)) **Running out of mana in a
+  real share of the fights you cast in suggests mana, and dying suggests health**, each only when the loadout
+  reaches meaningfully more of it. ([0363](./0363-running-dry-and-dying-suggest-mana-and-health.md)) **A fight
+  you died in says, under its deaths in the fight analytics, what to change to survive it** — the same advice
+  asked of that one fight, health said against the burst that killed you.
+  ([0364](./0364-a-fight-you-died-in-says-how-to-survive-the-next.md))
 - **A loadout slot nothing matches keeps what you wear**, marked as kept; locks, exclusions and a
   swung two-hander's off-hand still win. ([0347](./0347-a-slot-nothing-matches-keeps-what-you-wear.md))
 

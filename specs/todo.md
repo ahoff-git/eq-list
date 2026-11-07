@@ -42,6 +42,10 @@ lines; the reasoning lives in the ADR it links. Everything else has a neighbour:
 
 ## Features
 
+- **`SV Void` isn't a stat.** The wiki's Statistics page lists six resist types, Void among them, and
+  five cached item pages carry an `SV Void` line, but `item-stats.ts` has only Fire, Cold, Magic,
+  Disease and Poison, so the line is dropped and Void never counts in a loadout, a goal or a score.
+  Check how many catalogue items have it, then add it like the other resists (including its alias).
 - **Fight trends suggest what to do.** Turn [ADR 0344](./decisions/0344-fight-search-finds-combatants-and-reads-trends.md)'s
   tips into advice: fire resist against a fire-heavy mob, AC against crushing melee, another spell
   against a resist wall.

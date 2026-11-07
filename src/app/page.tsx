@@ -29,6 +29,8 @@ import LootPanel from "@/app/components/items/LootPanel";
 import FactionPanel from "@/app/components/faction/FactionPanel";
 import StatusBar from "@/app/components/chrome/StatusBar";
 import StaleExportChip from "@/app/components/exports/StaleExportChip";
+import DamageTakenChip from "@/app/components/combat/DamageTakenChip";
+import { DEFAULT_DAMAGE_WINDOW, type DamageWindow } from "@/shared/combat/damage-window";
 import PinButton from "@/app/components/chrome/PinButton";
 import OpacityButton from "@/app/components/chrome/OpacityButton";
 import ClickThroughButton from "@/app/components/chrome/ClickThroughButton";
@@ -155,6 +157,20 @@ function ControlWindow() {
   );
   useEffect(() => {
     if (nav.tab !== "exports") setFocusExport(null);
+  }, [nav.tab]);
+  /**
+   * What "damage taken" is read over, owned here so the status bar's pill and the loadout builder's
+   * section read the same window, plus how often the pill has sent us to that section (a count, so a
+   * second click lands again — the same pattern as `focusExport`, on the Items tab).
+   */
+  const [damageWindow, setDamageWindow] = usePersistentState<DamageWindow>(STORAGE_KEYS.damageWindow, DEFAULT_DAMAGE_WINDOW);
+  const [focusDamage, setFocusDamage] = useState(0);
+  const viewDamage = useCallback(() => {
+    setFocusDamage((n) => n + 1);
+    openTab("items");
+  }, [openTab]);
+  useEffect(() => {
+    if (nav.tab !== "items") setFocusDamage(0);
   }, [nav.tab]);
   useEffect(() => {
     const a = api();
@@ -368,7 +384,7 @@ function ControlWindow() {
           {tab === "loot" && <LootPanel />}
           {tab === "faction" && <FactionPanel />}
           {tab === "search" && <SearchPanel prefill={prefill} onPrefillUsed={prefillUsed} />}
-          {tab === "items" && <ItemSearchPanel />}
+          {tab === "items" && <ItemSearchPanel damage={{ window: damageWindow, onWindow: setDamageWindow, focus: focusDamage }} />}
           {tab === "spells" && <SpellSearchPanel />}
           {tab === "stances" && <StancesPanel />}
           {tab === "aa" && <AAPanel />}
@@ -382,7 +398,10 @@ function ControlWindow() {
           {tab === "settings" && <SettingsPanel />}
         </div>
 
-        <StatusBar>{capabilities.log && <StaleExportChip onOpen={viewExport} />}</StatusBar>
+        <StatusBar>
+          {capabilities.log && <DamageTakenChip window={damageWindow} onOpen={viewDamage} />}
+          {capabilities.log && <StaleExportChip onOpen={viewExport} />}
+        </StatusBar>
       </div>
 
       {/* Outside `.app`, which clips its children (`overflow: hidden`): a notice is drawn over the

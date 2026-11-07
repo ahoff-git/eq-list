@@ -1207,6 +1207,36 @@ features for later in [../ideas.md](../ideas.md).
   endurance. In Value weights, weight Endurance and the fold note shows `1 STA = 2.38 Endurance`. Compare a
   character's real max endurance before and after swapping a piece that changes only STA — if 2.38 a point
   is wrong, `END_PER_STA` is the one number to change.
+- **Damage taken, and the status-bar pill** ([ADR 0361](../decisions/0361-damage-taken-is-read-over-a-window-and-priced-by-the-wikis-resist-rule.md)).
+  With some fight history, Items → loadout builder (set a goal so a plan builds): the *Damage taken* section
+  lists Melee and each spell type that has hit you, with your gear's resist points and "+30 cuts". Switch
+  *This zone / This sitting / Recent fights* and the rows change. Fight somewhere heavy in one type (a fire
+  breather, Permafrost's cold) for 30+ hits: the section opens itself, and a 🛡 pill (e.g. *SV Cold 16%*) appears
+  at the bottom of the app; hover for the sentence, click it: the Items tab opens in the builder with the
+  section open and in view. Zone somewhere new: the zone window empties ("No fights recorded in … since you
+  arrived") and the pill goes. Planning for a peer hides the section. The pill uses the same window you picked
+  in the section. Expect it often on at the 10% threshold; if that's too chatty, `FLAG_SHARE` is the number.
+- **Melee suggests AC** ([ADR 0362](../decisions/0362-melee-damage-suggests-the-ac-the-loadout-already-reaches.md)).
+  With an inventory dump and an AC goal in the loadout builder (Stats shows the loadout's AC above what you
+  wear), in a melee-heavy zone the pill reads `🛡 AC +N` and the *Damage taken* Melee row reads `AC worn →
+  reachable`. Hover for the sentence. Re-export the inventory: the AC pill goes until you open the builder
+  again. Clear the AC goal and open the builder: no AC pill.
+- **Running dry suggests mana, dying suggests health** ([ADR 0363](../decisions/0363-running-dry-and-dying-suggest-mana-and-health.md)).
+  After updating, the first start re-reads your logs on its own (about 20 s for ~3,300 fights, off the launch
+  path); each fight then knows whether you ran out of mana in it. In the *Damage taken* section a line under
+  the status reads `Died in N of M fights; ran out of mana in X of the Y you cast in.` Cast hard in a zone until
+  you are empty a few times (15%+ of the fights you cast in, 5+ of them): the pill gains `Mana +N` and the
+  section a sentence; die twice (and in 10%+ of the fights): `HP +N`, last in the list. The pill face is the
+  first suggestion and `· N more` counts the rest. Both need the builder to have planned for this inventory
+  and a goal that reaches more mana or health than you wear. If the pill is too quiet or too chatty,
+  `DRY_FLAG_SHARE`, `DEATH_FLAG_SHARE` and `MIN_DEATHS` in `strain.ts` are the numbers.
+- **A death says how to survive the next** ([ADR 0364](../decisions/0364-a-fight-you-died-in-says-how-to-survive-the-next.md)).
+  History → Combat → *History* scope, pick a fight marked ☠ (or die in a live one and stay on *Last fight*):
+  under the Deaths block a *Next time* list reads armour (if mostly melee), a resist for the spell damage that
+  landed, mana if you ran dry, and health last — `You died in this fight, after 2,270 damage in the last 15s …
+  (+59, about 2.6% of that burst)`. Armour, mana and health need the loadout builder to have planned for this
+  inventory; before that, the resists show and a line says to open the builder. The *Session* scope shows no
+  block. A fight with fewer than 30 landed hits names no resist or armour, whatever killed you.
 - **Back returns to where you scrolled.** Scroll partway down a long panel (Items → loadout builder, a
   zone page), click another tab, then go back (Alt+←, a thumb button, or the breadcrumb): the panel
   is at the same depth, even when its content takes a moment to appear. A tab click or a link to the

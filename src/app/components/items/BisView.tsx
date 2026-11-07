@@ -6,6 +6,7 @@ import BisEffects from "@/app/components/items/BisEffects";
 import BisHuntTable from "@/app/components/items/BisHuntTable";
 import BisStats from "@/app/components/items/BisStats";
 import BisDamage from "@/app/components/items/BisDamage";
+import BisDamageTaken, { type DamageControl } from "@/app/components/items/BisDamageTaken";
 import BisGoals from "@/app/components/items/BisGoals";
 import { Empty, segCls } from "@/app/components/ui";
 import { DumpSection } from "@/app/components/exports/DumpParts";
@@ -18,6 +19,8 @@ import { bisPlan, loadoutText, type BisPlan } from "@/shared/items/bis-plan";
 import { HUNT_GRADE_CHOICES, bisOptionCount, lockAll, toggleTitle, withExcluded, withoutChanges, type BisOptions } from "@/shared/items/bis-options";
 import { WORN_LAYOUT } from "@/shared/items/bis";
 import { expectedStats } from "@/shared/items/bis-columns";
+import { effectiveStats } from "@/shared/items/loadout-stats";
+import { publishHeadroom } from "@/lib/combat/headroom";
 import { effectiveRun, goalCount, solveGoalsAsync, type GoalOutcome } from "@/shared/items/bis-goals";
 import { meleeWeighted } from "@/shared/items/melee";
 import { procSpellIndex } from "@/shared/items/damage-plan";
@@ -66,6 +69,7 @@ export default function BisView({
   onClearName,
   rates,
   holder,
+  damage,
 }: {
   rows: readonly ItemRow[];
   criteria: ItemCriteria;
@@ -81,6 +85,8 @@ export default function BisView({
   rates?: readonly DerivedRate[];
   /** A peer to plan for, in place of you — their shared inventory, null until it arrives. */
   holder?: PeerInventory;
+  /** The window "damage taken" is read over, shared with the status bar's pill. Without it the section isn't drawn. */
+  damage?: DamageControl;
 }) {
   const own = useInventory();
   const { items, at } = holder ?? own;
@@ -143,6 +149,17 @@ export default function BisView({
       return p;
     });
   }, [items, ranked, goaled, steering, rows, criteria, planWeights, closedZones, closedKey, planned, planMelee, procSpells]);
+
+  // The status bar's pill can't plan a loadout, so it borrows this one's answer: the AC, health and mana you
+  // wear against what this loadout reaches, attributes counted. Yours only, and only with a dump to compare
+  // against.
+  useEffect(() => {
+    if (holder || !items || !plan) return;
+    const worn = effectiveStats(plan.stats.wearing, rates ?? []).total;
+    const planned = effectiveStats(plan.stats.loadout, rates ?? []).total;
+    const reach = (stat: "ac" | "hp" | "mana") => ({ wearing: worn[stat] ?? 0, loadout: planned[stat] ?? 0 });
+    publishHeadroom({ ac: reach("ac"), hp: reach("hp"), mana: reach("mana"), at });
+  }, [holder, items, plan, rates, at]);
 
   if (goaled && !steering) {
     return (
@@ -307,6 +324,9 @@ export default function BisView({
       <DumpSection title="Stats" aside={items ? "wearing now → loadout" : "the loadout"} defaultOpen={false}>
         <BisStats wearing={plan.stats.wearing} loadout={plan.stats.loadout} rates={rates} />
       </DumpSection>
+
+      {/* The log is yours and so is the worn gear it's compared with: not offered while planning for a peer. */}
+      {damage && !holder && <BisDamageTaken {...damage} wearing={plan.stats.wearing} />}
 
       {!options.includeHunt && (
         <DumpSection title="Upgrades to hunt" aside={`${plan.hunt.length}`} defaultOpen={false}>

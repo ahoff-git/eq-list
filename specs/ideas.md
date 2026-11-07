@@ -71,6 +71,73 @@ outcome goes in an ADR, a README, or the code — never here).
 
 ## Loot, list and the meter
 
+- **Armour swaps against what is actually hitting you.** Watch what kind of damage you take most and
+  suggest swaps that harden you against it without giving up the build. Most of the pieces exist:
+  - *The damage profile.* Fight cells already keep each source's damage type
+    ([ADR 0344](./decisions/0344-fight-search-finds-combatants-and-reads-trends.md)), and the todo-sized
+    step "fight trends suggest what to do" is the same data. On a real 87 MB log, damage to you was
+    **81% melee, 9% magic, 3% fire, 3% cold**, under 1% disease/poison, and 3% untyped DoT ticks
+    (Venom of the Snake, Heat Blood) — so for this player the honest advice is AC and avoidance far
+    more often than a resist, and only a profile weighted by share says so. The untyped ticks need the
+    spell file's resist-type column, which Live's format has below column 103 and
+    `spell-file.ts` doesn't read yet (check the index before relying on it).
+  - *What a resist point is worth.* The wiki's [Statistics](https://eqlwiki.com/index.php/Statistics)
+    page (Resists) gives the rule, from EQEmu discussions and flagged there as "not necessarily
+    correct for EQL": **every 6 resist points give a 1% greater chance to fully resist a spell**, a
+    level difference moves it (about 12% at 7 levels, 20% at 10, on a curve), and PvE caps it at
+    5%–95%. Consequences for this idea:
+    - Resists act on **spells only**; melee — 81% of the real log — is untouched by any resist, so
+      "hardened against melee" is AC and avoidance alone.
+    - A point is **worth the same on every type** (1/6 % of that type's damage, to first order), so
+      choosing between resists is just choosing the type with the most damage; the gain from +30
+      points is 5% of that type's damage. For the real log that is under 0.5% of everything taken per
+      +30 SV Magic, the biggest spell type — the honest answer for a melee-taken player is "a resist
+      won't help much".
+    - The level difference needs the attacker's level, which the log doesn't carry, so the first
+      version uses the points-only part and says so (the in-game consider is the missing input,
+      see the todo item on a consider's level).
+    - Logged damage is *landed* damage: a fully resisted spell shows as a "You resist …" line, not as
+      damage. To undo the bias, raw ≈ logged ÷ (1 − worn points/600); the resist lines are an
+      empirical rate to check the rule against (the real log has only four, too few for this
+      player).
+    Still no AC model, so spell damage avoided can be priced but not weighed against AC.
+    **Six types, not five**: the page lists **Void** as well as Poison, Magic, Disease, Fire and
+    Cold, and some catalogue items carry `SV Void`, which `item-stats.ts` doesn't read (todo).
+  - *A window on the log, chosen by the player.* What hits you changes with where you are, so the
+    profile is read over a window, not over all time: **this zone** (since you last arrived — the
+    default, and the one that answers "I'm somewhere new"), **this sitting**, **the last N fights or
+    hours**, **all time**. Stored fights already carry what each cut needs: `zone`, `sessionId`
+    ([ADR 0054](./decisions/0054-a-sitting-is-a-login.md)) and their own timestamps. Three things keep
+    it honest:
+    - *Refresh on a trigger, not on a timer*: a zone change (the log says so) or a fight ending, never
+      mid-fight, so the advice doesn't flicker while you are using it.
+    - *Enough evidence or no advice*: a fresh zone's window is empty, so show "12 hits so far" until
+      the new one has a minimum sample. (Built without keeping the previous window's profile on show,
+      labelled as old — see ADR 0361.)
+    - *Hysteresis*: change the headline type only when its lead has really moved, not on a 40/38 wobble.
+    The logged numbers are *after* your resists, so a type you've already hardened reads smaller than
+    it would raw — right for "what still gets through", and worth saying where it's shown.
+    Selecting the window and tallying it are separate pure steps (`windowFights(fights, spec, now,
+    zone)` then `damageProfile(fights)`), so each is a black box with its own tests.
+  - *The build, inferred from what you wear.* Don't guess goals; express them as constraints:
+    take the worn loadout's effective totals, and for each stat measure it against the most the pool
+    could reach (the goal search already computes that), and hold the stats the build is strong in at
+    about what they are now with *Stop at floor*
+    ([ADR 0359](./decisions/0359-a-floor-can-be-enough-and-the-rest-is-maximised.md)). Stats the build
+    is weak in are the ones it doesn't care about and are free to give up.
+  - *A swap list, not a re-plan.* Run the planner with that as goals and a priority on the damage types
+    taken, then show only the slots that changed, with what each costs against the floors.
+  **Built so far** ([ADR 0361](./decisions/0361-damage-taken-is-read-over-a-window-and-priced-by-the-wikis-resist-rule.md),
+  [0362](./decisions/0362-melee-damage-suggests-the-ac-the-loadout-already-reaches.md),
+  [0363](./decisions/0363-running-dry-and-dying-suggest-mana-and-health.md)):
+  the window, the profile, the wiki's resist rule, a *Damage taken* section in the loadout builder, a
+  status-bar pill, an AC suggestion when it is mostly melee (the builder's own loadout against what you
+  wear), mana when you run dry mid-fight, health when you keep dying, and the same advice for the one fight
+  you died in ([0364](./decisions/0364-a-fight-you-died-in-says-how-to-survive-the-next.md)). Still ideas: the inferred build and
+  the swap list below (naming the slots that change), hysteresis on the headline type, an AC model so a
+  resist can be weighed against armour, mana *regeneration* as the other answer to running dry, and an
+  estimate of how much more health would have saved a death (each death recap holds what landed in the
+  15 seconds before it — a rough bound on the pool you died with).
 - **Best in slot could price an effect.** An effect can be required
   ([ADR 0318](./decisions/0318-best-in-slot-takes-your-word.md)) but not weighed: unwanted is worth
   nothing, wanted is kept at any price ([ADR 0310](./decisions/0310-best-in-slot-is-an-exact-assignment-by-your-weights.md)).

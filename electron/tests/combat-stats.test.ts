@@ -1108,6 +1108,48 @@ test("fizzles, interrupts and resists are tallied, and give a resist rate", () =
   assert.equal(s.resistRate, 0.5);
 });
 
+// ── out of mana (ADR 0363): a mashed key is one running-dry, and only a running fight owns it ──
+
+test("a burst of out-of-mana lines mid-fight counts as one running-dry, and a later burst as another", () => {
+  const t = tracker();
+  feed(t, [
+    [1, "You begin casting Blast of Cold."],
+    [3, "You hit a coyote for 10 points of cold damage by Blast of Cold."],
+    // Five key presses inside two seconds: one time you ran out.
+    [5, "Insufficient Mana to cast this spell!"],
+    [5, "Insufficient Mana to cast this spell!"],
+    [6, "Insufficient Mana to cast this spell!"],
+    [6, "Insufficient Mana to cast this spell!"],
+    [7, "Insufficient Mana to cast this spell!"],
+    [8, "A coyote bites YOU for 5 points of damage."],
+    // Quiet for longer than a mash lasts, then dry again.
+    [20, "A coyote bites YOU for 5 points of damage."],
+    [22, "Insufficient Mana to cast this spell!"],
+    [23, "You pierce a coyote for 10 points of damage."],
+  ]);
+  assert.equal(t.snapshot().fight.outOfMana, 2);
+});
+
+test("a fight that never ran dry says 0, which is a measurement and not an absence", () => {
+  const t = tracker();
+  feed(t, [
+    [1, "You begin casting Blast of Cold."],
+    [3, "You hit a coyote for 10 points of cold damage by Blast of Cold."],
+  ]);
+  assert.equal(t.snapshot().fight.outOfMana, 0);
+});
+
+test("mashing a cast key with no fight running isn't a fight's running-dry", () => {
+  const t = tracker();
+  feed(t, [
+    [1, "Insufficient Mana to cast this spell!"],
+    [2, "Insufficient Mana to cast this spell!"],
+    [10, "You pierce a coyote for 10 points of damage."],
+  ]);
+  assert.equal(t.snapshot().fight.outOfMana, 0, "the fight began after the mashing");
+  assert.equal(t.snapshot().session.outOfMana, 1, "the sitting still saw it");
+});
+
 test("a song broken by a missed note doesn't time the next landing of that song", () => {
   const t = tracker();
   feed(t, [

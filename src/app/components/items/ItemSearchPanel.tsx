@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useClosedZones, useCurrentItemCatalog } from "@/lib/hooks";
 import { useItemQuery } from "@/lib/items/useItemQuery";
 import { useHeldGrades, useInventory, useOwnedItems } from "@/lib/exports/useGameExports";
@@ -12,6 +12,7 @@ import ItemLevelBand, { MAX_PLAYER_LEVEL } from "@/app/components/items/ItemLeve
 import ItemTable from "@/app/components/items/ItemTable";
 import ItemWeights from "@/app/components/items/ItemWeights";
 import BisFor from "@/app/components/items/BisFor";
+import type { DamageControl } from "@/app/components/items/BisDamageTaken";
 import ItemPresets from "@/app/components/items/ItemPresets";
 import StatFloors from "@/app/components/items/StatFloors";
 import { CheckField, Empty, TextField, caretGlyph, segCls } from "@/app/components/ui";
@@ -71,7 +72,7 @@ const MAX_ROWS = 300;
  * the two kinds of change — "what does this ask?" and "how is it arranged?" — arrive separately and
  * were previously in the same four hundred lines.
  */
-export default function ItemSearchPanel() {
+export default function ItemSearchPanel({ damage }: { damage?: DamageControl }) {
   // Re-read when a harvest run ends, not as it goes — see `useCurrentItemCatalog`.
   const { rows, loading, harvest } = useCurrentItemCatalog();
 
@@ -88,6 +89,10 @@ export default function ItemSearchPanel() {
   // The same criteria and weights answer two questions: "which items are like this" (Search) and
   // "what should I be wearing, and what next" (the loadout builder, `BisView` — yours or a peer's, `BisFor`).
   const [mode, setMode] = usePersistentState<"search" | "bis">(STORAGE_KEYS.itemMode, "search");
+  // The status bar's resist pill sends you to the builder, wherever the tab was last left.
+  useEffect(() => {
+    if (damage?.focus) setMode("bis");
+  }, [damage?.focus, setMode]);
   // What you've told the loadout builder. Held here rather than in `BisView` so a preset can carry it.
   const [storedBis, setBisOptions] = usePersistentState<BisOptions>(STORAGE_KEYS.itemBisOptions, normalizeBisOptions(undefined));
   const bisOptions = useMemo(() => normalizeBisOptions(storedBis), [storedBis]);
@@ -301,6 +306,7 @@ export default function ItemSearchPanel() {
           onOptions={setBisOptions}
           onClearName={() => set({ text: "" })}
           rates={rates}
+          damage={damage}
         />
       )}
 

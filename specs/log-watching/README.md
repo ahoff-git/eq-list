@@ -100,7 +100,9 @@ as they drop and the damage meter can show how the fight went.
   change your stance." doesn't say which — and the names aren't enumerated, which is how
   "recovery" and "spellblade" showed up in real data without a code change. Modes matter
   because they change multipliers *and* cast times; see
-  [ADR 0020](../decisions/0020-split-by-stance-and-invocation.md).
+  [ADR 0020](../decisions/0020-split-by-stance-and-invocation.md). And `out-of-mana`
+  (`Insufficient Mana to cast this spell!`, which names no spell and is written once per key press — the tracker
+  counts a run of them once, [ADR 0363](../decisions/0363-running-dry-and-dying-suggest-mana-and-health.md)).
   Names are canonicalized so one thing is one row: `You`/`YOU` →
   `You`, articles folded, and a spell's trailing **rank** stripped (`spellName`), because
   EQL casts "Shock of Lightning VI" but damages "by Shock of Lightning". See

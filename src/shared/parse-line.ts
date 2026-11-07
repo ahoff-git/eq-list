@@ -46,6 +46,7 @@ const COMBAT_KINDS: Record<CombatEvent["kind"], true> = {
   "buff-faded": true,
   stance: true,
   invocation: true,
+  "out-of-mana": true,
   "pet-engage": true,
   charm: true,
 };

@@ -401,6 +401,10 @@ finished, so a number is claimed before a second author can reach for it.
 - [0358: A stone narrows the item it goes into, so sockets are judged together](./0358-a-stone-narrows-the-item-it-goes-into.md)
 - [0359: A floor can be enough, and the rest is maximised](./0359-a-floor-can-be-enough-and-the-rest-is-maximised.md)
 - [0360: Endurance follows stamina, at one measured rate](./0360-endurance-follows-stamina-at-one-measured-rate.md)
+- [0361: Damage taken is read over a window, and priced by the wiki's resist rule](./0361-damage-taken-is-read-over-a-window-and-priced-by-the-wikis-resist-rule.md)
+- [0362: Melee damage suggests the AC the loadout already reaches](./0362-melee-damage-suggests-the-ac-the-loadout-already-reaches.md)
+- [0363: Running dry and dying suggest mana and health](./0363-running-dry-and-dying-suggest-mana-and-health.md)
+- [0364: A fight you died in says how to survive the next](./0364-a-fight-you-died-in-says-how-to-survive-the-next.md)
 
 ## Open Questions
 
