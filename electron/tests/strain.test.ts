@@ -13,6 +13,7 @@ import {
   MIN_MANA_GAIN,
   hpSuggestion,
   manaSuggestion,
+  runsDry,
   strain,
 } from "../../src/shared/combat/strain";
 import type { StoredFight } from "../../src/shared/types";
@@ -99,4 +100,13 @@ test("mana is only suggested when the loadout reaches a meaningfully bigger pool
   assert.equal(manaSuggestion(dry, { wearing: 1653, loadout: 991 }), null);
   assert.equal(manaSuggestion(dry, { wearing: 0, loadout: MIN_MANA_GAIN - 1 }), null);
   assert.ok(manaSuggestion(dry, { wearing: 0, loadout: MIN_MANA_GAIN }));
+});
+
+test("running dry is a real share of the fights you cast in, over enough of them", () => {
+  const share = Math.ceil(MIN_FIGHTS * DRY_FLAG_SHARE);
+  assert.equal(runsDry({ fights: 20, died: 0, casting: MIN_FIGHTS, dry: share }), true);
+  assert.equal(runsDry({ fights: 20, died: 0, casting: MIN_FIGHTS, dry: share - 1 }), false);
+  // The same share of too few fights is luck.
+  assert.equal(runsDry({ fights: 20, died: 0, casting: MIN_FIGHTS - 1, dry: MIN_FIGHTS - 1 }), false);
+  assert.equal(runsDry(strain([])), false);
 });

@@ -21,6 +21,7 @@ import { WORN_LAYOUT } from "@/shared/items/bis";
 import { expectedStats } from "@/shared/items/bis-columns";
 import { effectiveStats } from "@/shared/items/loadout-stats";
 import { publishHeadroom } from "@/lib/combat/headroom";
+import { useLeanLoadout } from "@/lib/items/useLeanLoadout";
 import { effectiveRun, goalCount, solveGoalsAsync, type GoalOutcome } from "@/shared/items/bis-goals";
 import { meleeWeighted } from "@/shared/items/melee";
 import { procSpellIndex } from "@/shared/items/damage-plan";
@@ -150,6 +151,9 @@ export default function BisView({
     });
   }, [items, ranked, goaled, steering, rows, criteria, planWeights, closedZones, closedKey, planned, planMelee, procSpells]);
 
+  // The damage-first plan beside this one, for the swing suggestion (ADR 0365). Yours only, like the figures below.
+  const lean = useLeanLoadout(holder || !items || !plan ? null : { rows, inventory: items, criteria, weights, closedZones, procSpells, options: planned, rates: rates ?? [], plan });
+
   // The status bar's pill can't plan a loadout, so it borrows this one's answer: the AC, health and mana you
   // wear against what this loadout reaches, attributes counted. Yours only, and only with a dump to compare
   // against.
@@ -158,8 +162,8 @@ export default function BisView({
     const worn = effectiveStats(plan.stats.wearing, rates ?? []).total;
     const planned = effectiveStats(plan.stats.loadout, rates ?? []).total;
     const reach = (stat: "ac" | "hp" | "mana") => ({ wearing: worn[stat] ?? 0, loadout: planned[stat] ?? 0 });
-    publishHeadroom({ ac: reach("ac"), hp: reach("hp"), mana: reach("mana"), at });
-  }, [holder, items, plan, rates, at]);
+    publishHeadroom({ ac: reach("ac"), hp: reach("hp"), mana: reach("mana"), ...(lean && { lean }), at });
+  }, [holder, items, plan, rates, lean, at]);
 
   if (goaled && !steering) {
     return (

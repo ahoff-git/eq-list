@@ -405,6 +405,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0362: Melee damage suggests the AC the loadout already reaches](./0362-melee-damage-suggests-the-ac-the-loadout-already-reaches.md)
 - [0363: Running dry and dying suggest mana and health](./0363-running-dry-and-dying-suggest-mana-and-health.md)
 - [0364: A fight you died in says how to survive the next](./0364-a-fight-you-died-in-says-how-to-survive-the-next.md)
+- [0365: Winning comfortably suggests trading survivability for damage](./0365-winning-comfortably-suggests-trading-survivability-for-damage.md)
 
 ## Open Questions
 

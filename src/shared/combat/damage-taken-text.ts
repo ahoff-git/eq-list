@@ -6,7 +6,9 @@
  */
 import { statMeta } from "../items/item-stats";
 import { figure, percent } from "../format";
+import { LEAN_PRESET } from "../items/lean-loadout";
 import type { AcSuggestion } from "./ac-headroom";
+import type { Fall, SwingSuggestion } from "./cruising";
 import { DAMAGE_WINDOWS, type DamageWindow } from "./damage-window";
 import type { ResistRow } from "./resist-worth";
 import type { HpSuggestion, ManaSuggestion, Strain } from "./strain";
@@ -55,10 +57,24 @@ export function describeManaSuggestion(s: ManaSuggestion, scope: AdviceScope): s
   return `${ran} Your gear gives ${s.wearing} mana; the loadout the builder planned for your goals reaches ${s.loadout} (+${s.gain}).`;
 }
 
+const POOL_NAMES: Record<Fall["stat"], string> = { ac: "AC", hp: "HP", mana: "mana" };
+
+/**
+ * The swing suggestion as a sentence: you are winning comfortably with your own sword, and the damage-first plan
+ * (the builder's own preset, so it can be tried with a click) swings harder than your goals' — and what that costs.
+ */
+export function describeSwingSuggestion(s: SwingSuggestion, scope: AdviceScope): string {
+  const comfortable = `You didn't die in any of the ${s.fights} fights ${windowPhrase(scope)}, took ${percent(s.takenRatio)} as much damage as you dealt, and ${percent(s.meleeShare)} of what you dealt was melee.`;
+  const cost = s.falls.length ? `, for ${s.falls.map((f) => `${POOL_NAMES[f.stat]} ${f.plan} → ${f.lean}`).join(", ")}` : ", at next to no cost in AC, HP or mana";
+  return `${comfortable} The loadout your goals plan has a swing score of ${s.plan}/s; the "${LEAN_PRESET.label}" preset reaches ${s.lean}/s (+${percent(s.gain / s.plan)})${cost}.`;
+}
+
 /** One suggestion, as the short label the pill and the section's header carry and the sentence behind it. */
 export interface Advice {
   label: string;
   sentence: string;
+  /** The pill's glyph, when it isn't the shield — a swing is an opportunity, not a defence. */
+  icon?: string;
 }
 
 /**
@@ -70,20 +86,27 @@ export interface Found {
   resists: readonly ResistRow[];
   mana: ManaSuggestion | null;
   hp: HpSuggestion | null;
+  /** Only a window of fights can say you are winning comfortably, so a single fight's `Found` has none. */
+  swing?: SwingSuggestion | null;
 }
 
 /**
  * Everything worth saying, in the order it is said: armour (when it applies, melee is most of what you
  * take), the resists, mana — and health last, the one that helps whatever did it. The first is the pill's
  * face, so it is what the player is told first.
+ *
+ * A harder swing is said only when nothing else is: it is an opportunity, and "take more AC" beside
+ * "give some AC up" would be advice that argues with itself.
  */
 export function adviceOf(found: Found, scope: AdviceScope): Advice[] {
-  return [
+  const problems: Advice[] = [
     ...(found.ac ? [{ label: `AC +${found.ac.gain}`, sentence: describeAcSuggestion(found.ac, scope) }] : []),
     ...found.resists.map((r) => ({ label: `${resistLabel(r)} ${percent(r.share)}`, sentence: describeSuggestion(r, scope) })),
     ...(found.mana ? [{ label: `Mana +${found.mana.gain}`, sentence: describeManaSuggestion(found.mana, scope) }] : []),
     ...(found.hp ? [{ label: `HP +${found.hp.gain}`, sentence: describeHpSuggestion(found.hp, scope) }] : []),
   ];
+  if (problems.length || !found.swing) return problems;
+  return [{ label: `Swing +${percent(found.swing.gain / found.swing.plan)}`, sentence: describeSwingSuggestion(found.swing, scope), icon: "⚔" }];
 }
 
 /**

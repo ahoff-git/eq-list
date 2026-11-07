@@ -728,7 +728,10 @@ reading like a measurement, and they are shared code
   reaches meaningfully more of it. ([0363](./0363-running-dry-and-dying-suggest-mana-and-health.md)) **A fight
   you died in says, under its deaths in the fight analytics, what to change to survive it** — the same advice
   asked of that one fight, health said against the burst that killed you.
-  ([0364](./0364-a-fight-you-died-in-says-how-to-survive-the-next.md))
+  ([0364](./0364-a-fight-you-died-in-says-how-to-survive-the-next.md)) **Winning comfortably with your own
+  sword — ten fights, no death, little taken, not running dry, half your damage melee — suggests a harder swing**:
+  the builder's Melee damage preset against the plan for your goals, with the AC, health and mana it costs.
+  ([0365](./0365-winning-comfortably-suggests-trading-survivability-for-damage.md))
 - **A loadout slot nothing matches keeps what you wear**, marked as kept; locks, exclusions and a
   swung two-hander's off-hand still win. ([0347](./0347-a-slot-nothing-matches-keeps-what-you-wear.md))
 

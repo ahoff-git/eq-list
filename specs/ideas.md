@@ -129,11 +129,14 @@ outcome goes in an ADR, a README, or the code — never here).
     taken, then show only the slots that changed, with what each costs against the floors.
   **Built so far** ([ADR 0361](./decisions/0361-damage-taken-is-read-over-a-window-and-priced-by-the-wikis-resist-rule.md),
   [0362](./decisions/0362-melee-damage-suggests-the-ac-the-loadout-already-reaches.md),
-  [0363](./decisions/0363-running-dry-and-dying-suggest-mana-and-health.md)):
+  [0363](./decisions/0363-running-dry-and-dying-suggest-mana-and-health.md),
+  [0365](./decisions/0365-winning-comfortably-suggests-trading-survivability-for-damage.md)):
   the window, the profile, the wiki's resist rule, a *Damage taken* section in the loadout builder, a
   status-bar pill, an AC suggestion when it is mostly melee (the builder's own loadout against what you
   wear), mana when you run dry mid-fight, health when you keep dying, and the same advice for the one fight
-  you died in ([0364](./decisions/0364-a-fight-you-died-in-says-how-to-survive-the-next.md)). Still ideas: the inferred build and
+  you died in ([0364](./decisions/0364-a-fight-you-died-in-says-how-to-survive-the-next.md)), and — when you are winning
+  comfortably with your own sword — a harder swing for some of the survivability you aren't using. Still ideas: applying
+  that preset from the pill in one click, a mana floor taken from what you really spend in a fight, the inferred build and
   the swap list below (naming the slots that change), hysteresis on the headline type, an AC model so a
   resist can be weighed against armour, mana *regeneration* as the other answer to running dry, and an
   estimate of how much more health would have saved a death (each death recap holds what landed in the

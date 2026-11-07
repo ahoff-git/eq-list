@@ -1237,6 +1237,17 @@ features for later in [../ideas.md](../ideas.md).
   (+59, about 2.6% of that burst)`. Armour, mana and health need the loadout builder to have planned for this
   inventory; before that, the resists show and a line says to open the builder. The *Session* scope shows no
   block. A fight with fewer than 30 landed hits names no resist or armour, whatever killed you.
+- **Winning comfortably suggests a harder swing** ([ADR 0365](../decisions/0365-winning-comfortably-suggests-trading-survivability-for-damage.md)).
+  Open Items → the loadout builder once (it plans your goals' loadout, then the Melee damage preset beside it —
+  the pill needs both). Then fight in one zone, mostly with your own melee, for 10+ fights without dying, taking
+  little (under 20% of what you deal) and never running dry: the pill becomes `⚔ Swing +N%` and the *Damage taken*
+  section reads `You didn't die in any of the 12 fights since you arrived here … The loadout your goals plan has a
+  swing score of 6/s; the "Melee damage" preset reaches 20/s (+233%), for mana 4147 → 1809.` It stays quiet if your
+  goals already put the swing first (the two plans swing alike), if you died in the window, if most of your damage
+  is spells or your pet's, or if any other suggestion (AC, a resist, mana, health) is showing — the swing is only
+  ever said alone. If it is too quiet or too chatty, `MIN_CRUISE_FIGHTS`, `CRUISE_TAKEN_RATIO` and
+  `CRUISE_MELEE_SHARE` in `cruising.ts` are the numbers. Smoke-tested 2026-11-07 in an isolated instance on a
+  fabricated window: the pill appeared 5 s after the builder opened, wording as above; not yet seen in live play.
 - **Back returns to where you scrolled.** Scroll partway down a long panel (Items → loadout builder, a
   zone page), click another tab, then go back (Alt+←, a thumb button, or the breadcrumb): the panel
   is at the same depth, even when its content takes a moment to appear. A tab click or a link to the

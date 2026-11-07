@@ -16,7 +16,7 @@
  */
 import { SELF } from "./combat-parser";
 import { ratio } from "../numbers";
-import type { StoredFight } from "../types";
+import type { DamageCell, StoredFight } from "../types";
 
 /** The six resist types the wiki's Statistics page names — a spell's damage type is one of them. */
 export const RESIST_TYPES = ["magic", "fire", "cold", "disease", "poison", "void"] as const;
@@ -47,6 +47,9 @@ export interface DamageProfile {
 
 export const isResistType = (word: string): word is ResistType => (RESIST_TYPES as readonly string[]).includes(word);
 
+/** Whether a cell is damage that landed on *you* from somebody else — what "damage taken" means, everywhere. */
+export const landedOnYou = (c: Pick<DamageCell, "target" | "attacker">): boolean => c.target === SELF && c.attacker !== SELF;
+
 /** Which bucket a cell's damage belongs in. Typed spell hits go by their word; everything else is melee or "other". */
 function kindOfHit(cell: { kind: string; damageType?: string }): DamageKindOfHit {
   if (cell.kind === "Melee") return "melee";
@@ -65,7 +68,7 @@ export function damageProfile(fights: readonly FightStatsHolder[]): DamageProfil
     if (!cells?.length) continue;
     measured++;
     for (const c of cells) {
-      if (c.target !== SELF || c.attacker === SELF) continue;
+      if (!landedOnYou(c)) continue;
       const kind = kindOfHit(c);
       const bucket = sums.get(kind) ?? { damage: 0, hits: 0 };
       bucket.damage += c.damage;

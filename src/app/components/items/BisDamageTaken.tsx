@@ -142,7 +142,7 @@ export default function BisDamageTaken({
   const taken = useDamageTaken(window);
   const rows = useMemo(() => rowsOf(taken, wearing), [taken, wearing]);
   const flagged = useMemo(() => resistRows(taken.profile, wearing).filter((r) => r.flagged), [taken.profile, wearing]);
-  const advice = useMemo(() => adviceOf({ ac: taken.ac, resists: flagged, hp: taken.hp, mana: taken.mana }, window), [taken, flagged, window]);
+  const advice = useMemo(() => adviceOf({ ac: taken.ac, resists: flagged, hp: taken.hp, mana: taken.mana, swing: taken.swing }, window), [taken, flagged, window]);
   const suggested = advice.length > 0;
   const aside = suggested
     ? `${advice[0].label} — worth a look`

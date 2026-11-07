@@ -23,11 +23,32 @@ export interface Reach {
   loadout: number;
 }
 
+/**
+ * One stat, planned for your goals against planned for damage — the trade the builder could make if you
+ * gave up some survivability for a harder swing ([ADR 0365](../../../specs/decisions/0365-winning-comfortably-suggests-trading-survivability-for-damage.md)).
+ * Not "worn": what you wear has no part in it, only the two plans.
+ */
+export interface Swap {
+  plan: number;
+  lean: number;
+}
+
+/** The damage-first plan against the goals' plan: swing, and each pool a harder swing might cost. */
+export interface Lean {
+  /** Swing score per second (`melee.ts`'s yardstick), proc damage included when the player counts it. */
+  swing: Swap;
+  ac: Swap;
+  hp: Swap;
+  mana: Swap;
+}
+
 /** What the builder has planned, for the stats the status bar can suggest, and the inventory dump it was figured from. */
 export interface Headroom {
   ac: Reach;
   hp: Reach;
   mana: Reach;
+  /** Absent until the builder has planned the damage-first loadout too — it follows the main plan, off the render. */
+  lean?: Lean;
   /**
    * The figures are only about *that* inventory dump, so they are dropped when a newer one arrives and
    * the builder hasn't planned again.

@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createDamageCells } from "../../src/shared/combat/damage-tree";
 import { parseCombat } from "../../src/shared/combat/combat-parser";
-import { damageProfile, isResistType } from "../../src/shared/combat/damage-profile";
+import { damageProfile, isResistType, landedOnYou } from "../../src/shared/combat/damage-profile";
 import { splitLine } from "../../src/shared/log-parser";
 import type { DamageEvent, StoredFight } from "../../src/shared/types";
 
@@ -66,4 +66,11 @@ test("the six resist types are the wiki's, and a damage word outside them isn't 
   for (const word of ["magic", "fire", "cold", "disease", "poison", "void"]) assert.ok(isResistType(word), word);
   assert.ok(!isResistType("melee"));
   assert.ok(!isResistType("non-melee"));
+});
+
+test("damage taken is what somebody else landed on you — not your pet's, and not your own", () => {
+  assert.equal(landedOnYou({ attacker: "a gnoll", target: "You" }), true);
+  assert.equal(landedOnYou({ attacker: "a gnoll", target: "Gobart" }), false);
+  assert.equal(landedOnYou({ attacker: "You", target: "You" }), false);
+  assert.equal(landedOnYou({ attacker: "You", target: "a gnoll" }), false);
 });

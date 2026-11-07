@@ -78,9 +78,12 @@ export function hpSuggestion(s: Strain, reach: Reach | undefined): HpSuggestion 
   return gain && { ...gain, died: s.died, fights: s.fights };
 }
 
+/** Whether you run dry in a real share of the fights you cast in — evidence that mana is short, whatever the gear could do about it. */
+export const runsDry = (s: Strain): boolean => s.casting >= MIN_FIGHTS && s.dry / s.casting >= DRY_FLAG_SHARE;
+
 /** More mana, when you run dry in a real share of the fights you cast in and the builder's loadout reaches more. */
 export function manaSuggestion(s: Strain, reach: Reach | undefined): ManaSuggestion | null {
-  if (s.casting < MIN_FIGHTS || s.dry / s.casting < DRY_FLAG_SHARE) return null;
+  if (!runsDry(s)) return null;
   const gain = manaGain(reach);
   return gain && { ...gain, dry: s.dry, casting: s.casting };
 }

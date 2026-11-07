@@ -10,10 +10,12 @@ import {
   describeManaSuggestion,
   describeStrain,
   describeSuggestion,
+  describeSwingSuggestion,
   resistLabel,
 } from "../../src/shared/combat/damage-taken-text";
 import { figure } from "../../src/shared/format";
 import type { ResistRow } from "../../src/shared/combat/resist-worth";
+import type { SwingSuggestion } from "../../src/shared/combat/cruising";
 
 const fire: ResistRow = { type: "fire", stat: "svFire", damage: 530, hits: 80, share: 0.53, saved: 0.027, flagged: true };
 
@@ -87,4 +89,41 @@ test("the advice reads armour, resists, mana, then health — the one that helps
 
 test("nothing found is no advice", () => {
   assert.deepEqual(adviceOf({ ac: null, resists: [], mana: null, hp: null }, "zone"), []);
+});
+
+const swing: SwingSuggestion = {
+  plan: 20,
+  lean: 26,
+  gain: 6,
+  fights: 32,
+  takenRatio: 0.079,
+  meleeShare: 0.53,
+  falls: [
+    { stat: "ac", plan: 180, lean: 140 },
+    { stat: "mana", plan: 1500, lean: 900 },
+  ],
+};
+
+test("the swing suggestion says why you can afford it, what the preset swings, and what it costs", () => {
+  assert.equal(
+    describeSwingSuggestion(swing, "zone"),
+    `You didn't die in any of the 32 fights since you arrived here, took 8% as much damage as you dealt, and 53% of what you dealt was melee. The loadout your goals plan has a swing score of 20/s; the "Melee damage" preset reaches 26/s (+30%), for AC 180 → 140, mana 1500 → 900.`,
+  );
+});
+
+test("a swap that costs nothing worth naming says so instead of listing nothing", () => {
+  const text = describeSwingSuggestion({ ...swing, falls: [] }, "sitting");
+  assert.ok(text.includes("fights this sitting, "), text);
+  assert.ok(text.endsWith("(+30%), at next to no cost in AC, HP or mana."), text);
+});
+
+test("a harder swing is said only when nothing is wrong — it would argue with the advice to take more", () => {
+  const none = { ac: null, resists: [], mana: null, hp: null, swing };
+  const only = adviceOf(none, "zone");
+  assert.deepEqual(only.map((a) => [a.label, a.icon]), [["Swing +30%", "⚔"]]);
+  assert.match(only[0].sentence, /^You didn't die in any of the 32 fights/);
+  const withAc = adviceOf({ ...none, ac: { share: 0.74, wearing: 60, loadout: 125, gain: 65 } }, "zone");
+  assert.deepEqual(withAc.map((a) => a.label), ["AC +65"]);
+  assert.equal(withAc[0].icon, undefined, "the shield is the pill's own glyph");
+  assert.deepEqual(adviceOf({ ...none, swing: null }, "zone"), []);
 });
