@@ -306,6 +306,7 @@ export default function ItemSearchPanel({ damage }: { damage?: DamageControl }) 
           onOptions={setBisOptions}
           onClearName={() => set({ text: "" })}
           rates={rates}
+          worn={worn}
           damage={damage}
         />
       )}

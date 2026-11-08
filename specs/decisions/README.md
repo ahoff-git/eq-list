@@ -406,6 +406,8 @@ finished, so a number is claimed before a second author can reach for it.
 - [0363: Running dry and dying suggest mana and health](./0363-running-dry-and-dying-suggest-mana-and-health.md)
 - [0364: A fight you died in says how to survive the next](./0364-a-fight-you-died-in-says-how-to-survive-the-next.md)
 - [0365: Winning comfortably suggests trading survivability for damage](./0365-winning-comfortably-suggests-trading-survivability-for-damage.md)
+- [0366: A loadout floor is in the game's own numbers — race and class base plus a typed-in calibration count toward it, kept as an offset from what the worn gear gives (extends 0353)](./0366-a-loadout-floor-is-in-the-games-own-numbers.md)
+- [0367: A loadout row says what it changes — each stat column shows the pick as the game counts it (attributes' HP/mana/AC included) and the change from what you wear in that slot](./0367-a-loadout-row-says-what-it-changes.md)
 
 ## Open Questions
 
@@ -751,3 +753,9 @@ and degrading to blank facts when the file isn't there.*
   named pins ([ADR 0265](./0265-named-spawns-mark-themselves-on-the-map.md)) can mark common spawns.
   [ADR 0351](./0351-a-zone-page-opens-the-map-and-lists-its-spawns.md) uses the roster's article
   instead. Open: switch `isNamedMob` to that rule, intersect the two, or find a narrower category.
+- **Should the loadout's HP box start from the log's estimate?** [ADR 0366](./0366-a-loadout-floor-is-in-the-games-own-numbers.md)
+  asks the player to type what the game shows for HP, mana, AC and endurance. `hp-estimate.ts` already
+  bounds HP (1,103–1,306 on the real character) and takes a stated figure for the Damage panel. Open:
+  prefill the box from the estimate, offer its range as a hint, or share the one stated figure with the
+  Damage panel — and whether the planner should use the character's level for its rates rather than the
+  Items tab's level cap.

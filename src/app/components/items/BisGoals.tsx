@@ -4,7 +4,8 @@ import { statMeta } from "@/shared/items/item-stats";
 import { LOADOUT_STATS } from "@/shared/items/loadout-stats";
 import { CheckField } from "@/app/components/ui";
 import type { DerivedRate } from "@/shared/items/derived-stats";
-import { GOAL_PRESETS, goalCount, goalsWithoutPools, priorityOnly, withGoal, type BisGoals, type GoalKey, type GoalRow, type StatGoal } from "@/shared/items/bis-goals";
+import { GOAL_PRESETS, goalCount, goalsWithoutBase, goalsWithoutPools, priorityOnly, withGoal, type BisGoals, type GoalKey, type GoalRow, type StatGoal } from "@/shared/items/bis-goals";
+import { calibrate, isCalibrated, shownNow, type Calibration, type StatTotals } from "@/shared/items/stat-base";
 
 const QUICK: readonly GoalKey[] = ["hp", "mana", "ac", "swing", "rest"];
 const labelOf = (key: GoalKey) => (key === "swing" ? "Melee damage" : key === "rest" ? "Everything else" : statMeta(key).label);
@@ -16,6 +17,10 @@ const num = (n: number) => Math.round(n).toLocaleString();
  * 100 AC, then the hardest swing" is two floors and a priority; "as tanky as I can, near max mana" is
  * a priority and a 95% floor.
  *
+ * Floors are in the game's own numbers (ADR 0366): what the gear gives plus what you have without it. The
+ * race and classes account for some of that; the rest — class HP, AAs, buffs — is what you type from the
+ * game's Inventory window, once, and the planner keeps the difference.
+ *
  * The solver's work lives in `bis-goals.ts`; this only sets goals and shows how each one came out.
  */
 export default function BisGoals({
@@ -23,17 +28,26 @@ export default function BisGoals({
   rows,
   rates = [],
   driven = true,
+  counted,
+  calibration = {},
   onGoals,
+  onCalibration,
 }: {
   goals: BisGoals;
   rows: readonly GoalRow[];
   rates?: readonly DerivedRate[];
   /** Whether anything but floors steers the plan (`GoalOutcome.driven`); false says what's left is arbitrary. */
   driven?: boolean;
+  /** What the model counts for you now — race and class base plus what you wear. Absent (no dump, or planning for a peer) hides the boxes that calibrate it. */
+  counted?: StatTotals;
+  calibration?: Calibration;
   onGoals: (next: BisGoals) => void;
+  onCalibration?: (next: Calibration) => void;
 }) {
   const keys = Object.keys(goals) as GoalKey[];
   const poolless = goalsWithoutPools(goals, rates);
+  const baseless = goalsWithoutBase(goals, rates, calibration);
+  const calibratable = keys.filter(isCalibrated);
   const addable = [...QUICK, ...LOADOUT_STATS.filter((k) => !QUICK.includes(k))].filter((k) => !goals[k]);
   const rowOf = (key: GoalKey) => rows.find((r) => r.key === key);
   // A new goal starts as a priority, which is always satisfiable; the floor is the second slider's job.
@@ -72,6 +86,29 @@ export default function BisGoals({
         <p className="small warn">
           Tick your class(es) in the Class picker: {poolless.map(labelOf).join(" and ")} also come from {poolless.map((k) => (k === "hp" ? "STA" : "INT/WIS")).join(" and ")}, and the plan only counts that once it knows your classes.
         </p>
+      )}
+      {baseless.length > 0 && (
+        <p className="small warn">
+          Tick your race in the Race picker: a floor on {baseless.map(labelOf).join(" and ")} is in the game&apos;s numbers, and the attributes your race and classes start with count toward it only once the plan knows your race. Until then it counts gear alone.
+        </p>
+      )}
+      {counted && onCalibration && calibratable.length > 0 && (
+        <div className="row wrap small bis-calibrate">
+          <span className="muted" title="Floors count the whole character, as the game's Inventory window shows it. The plan knows what your race, classes and gear give; type what the game shows for the rest — class and level HP, AAs, a standing buff — and it keeps the difference, so it stays right when your gear changes. Clear a box to go back to what the plan counts.">
+            The game shows you, in what you wear now:
+          </span>
+          {calibratable.map((key) => (
+            <label key={key} className="row small">
+              <span className="muted">{labelOf(key)}</span>
+              <Points
+                label={`${labelOf(key)} the game shows`}
+                value={calibration[key] ? shownNow(counted, calibration, key) : ""}
+                placeholder={num(counted[key] ?? 0)}
+                onCommit={(shown) => onCalibration(calibrate(calibration, key, shown, counted[key] ?? 0))}
+              />
+            </label>
+          ))}
+        </div>
       )}
       <div className="row wrap">
         {addable.length > 0 && (
@@ -133,13 +170,17 @@ function GoalLine({ stat, goal, row, onChange }: { stat: GoalKey; goal: StatGoal
   );
 }
 
-/** How the goal came out: what the plan reaches against what it could at best, and whether the floor held. */
+/**
+ * How the goal came out: what the plan reaches against what it could at best, and whether the floor held —
+ * in the game's own numbers, the hover saying how much of them is gear.
+ */
 function GoalResult({ stat, row }: { stat: GoalKey; row: GoalRow }) {
   if (priorityOnly(stat)) return null;
   if (row.max <= 0) return <span className="small warn">nothing in the pool gives {labelOf(stat)}</span>;
   const tone = row.floor === undefined ? "muted" : row.met ? "good" : "warn";
+  const own = row.base ? `${num((row.got ?? 0) - row.base)} from gear + ${num(row.base)} you have without it (race and classes, and what you've typed from the game)` : undefined;
   return (
-    <span className={`small ${tone}`}>
+    <span className={`small ${tone}`} title={own}>
       {num(row.got ?? 0)} <span className="muted">of {num(row.max)} possible</span>
       {row.floor !== undefined && (row.met ? " ✓" : ` — short of ${num(row.floor)}; the other goals leave no room`)}
       {row.unreachable && " (more than any loadout gives)"}
@@ -152,7 +193,7 @@ function GoalResult({ stat, row }: { stat: GoalKey; row: GoalRow }) {
  * for every prefix of "2000" — and clearing the box to retype dropped the floor, which removed a
  * floor-only goal from under the cursor.
  */
-function Points({ label, value, onCommit }: { label: string; value: number | ""; onCommit: (value: number) => void }) {
+function Points({ label, value, placeholder = "points", onCommit }: { label: string; value: number | ""; placeholder?: string; onCommit: (value: number) => void }) {
   const [draft, setDraft] = useState(String(value));
   useEffect(() => setDraft(String(value)), [value]);
   const commit = () => draft !== String(value) && onCommit(Number(draft) || 0);
@@ -161,7 +202,7 @@ function Points({ label, value, onCommit }: { label: string; value: number | "";
       className="field sm bis-goal-box"
       type="number"
       min={0}
-      placeholder="points"
+      placeholder={placeholder}
       aria-label={label}
       value={draft}
       onChange={(e) => setDraft(e.target.value)}

@@ -5,13 +5,14 @@ import { segCls } from "@/app/components/ui";
 import { usePeerInventories } from "@/lib/exports/useGameExports";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
-import { normalizeBisOptions, withoutChanges, type BisOptions } from "@/shared/items/bis-options";
+import { normalizeBisOptions, startFromYours, type BisOptions } from "@/shared/items/bis-options";
 
 /**
  * The loadout builder, for you or for anyone sharing their inventory with you (ADR 0342). Picking a
  * person plans from what they hold, with locks, wanted effects and exclusions of their own — kept by
  * name, so trying things on their gear never touches your plan. A person's plan starts from your
- * settings (hunting, grade, melee weights) with none of your changes.
+ * settings (hunting, grade, melee weights) with none of your changes — and none of your calibration, which
+ * is about your own character.
  *
  * Its own component so the peers are only asked for their inventories while the builder is open.
  */
@@ -23,7 +24,7 @@ export default function BisFor({ options, onOptions, ...bis }: ComponentProps<ty
   const holder = people.find((p) => p.name === whose);
   const stored = holder ? peerOptions[holder.name] : undefined;
   const planning = !!holder;
-  const theirs = useMemo(() => (planning ? (stored ? normalizeBisOptions(stored) : withoutChanges(options)) : undefined), [planning, stored, options]);
+  const theirs = useMemo(() => (planning ? (stored ? normalizeBisOptions(stored) : startFromYours(options)) : undefined), [planning, stored, options]);
   const onTheirs = (next: BisOptions) => holder && setPeerOptions({ ...peerOptions, [holder.name]: next });
 
   return (

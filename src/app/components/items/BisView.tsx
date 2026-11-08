@@ -19,7 +19,8 @@ import { bisPlan, loadoutText, type BisPlan } from "@/shared/items/bis-plan";
 import { HUNT_GRADE_CHOICES, bisOptionCount, lockAll, toggleTitle, withExcluded, withoutChanges, type BisOptions } from "@/shared/items/bis-options";
 import { WORN_LAYOUT } from "@/shared/items/bis";
 import { expectedStats } from "@/shared/items/bis-columns";
-import { effectiveStats } from "@/shared/items/loadout-stats";
+import { effectiveStats, type LoadoutStats } from "@/shared/items/loadout-stats";
+import { countedNow, modelledBase, statBase } from "@/shared/items/stat-base";
 import { publishHeadroom } from "@/lib/combat/headroom";
 import { useLeanLoadout } from "@/lib/items/useLeanLoadout";
 import { effectiveRun, goalCount, solveGoalsAsync, type GoalOutcome } from "@/shared/items/bis-goals";
@@ -69,6 +70,7 @@ export default function BisView({
   onOptions,
   onClearName,
   rates,
+  worn,
   holder,
   damage,
 }: {
@@ -84,6 +86,8 @@ export default function BisView({
   onClearName?: () => void;
   /** What attributes add to HP, mana and AC for your classes and level — the totals include them. */
   rates?: readonly DerivedRate[];
+  /** What you wear now, by your newest dump — the gear a typed-in game figure is measured against. Yours only. */
+  worn?: LoadoutStats;
   /** A peer to plan for, in place of you — their shared inventory, null until it arrives. */
   holder?: PeerInventory;
   /** The window "damage taken" is read over, shared with the status bar's pill. Without it the section isn't drawn. */
@@ -105,6 +109,11 @@ export default function BisView({
   // the numbers it shows are on that scale — 10,000 is the best any loadout could do for one thing.
   // The search takes a dozen plans, so it runs a plan at a time off the render, and a newer ask aborts
   // the one in flight. Until its answer lands the last one steers, so the page doesn't blank on a drag.
+  const race = criteria.facets.race.length === 1 ? criteria.facets.race[0] : undefined;
+  const modelled = useMemo(() => modelledBase({ rates: rates ?? [], race, classes: criteria.facets.class }), [rates, race, criteria.facets.class]);
+  const base = useMemo(() => statBase(modelled, planned.calibration), [modelled, planned.calibration]);
+  // What the model counts for you now, to calibrate against what the game shows. A peer's game figures aren't yours to type.
+  const counted = useMemo(() => (worn && !holder ? countedNow(modelled, effectiveStats(worn, rates ?? []).total) : undefined), [worn, holder, modelled, rates]);
   const goalKey = goaled ? planKey([rows, items, procSpells], [criteria, weights, planned, rates, closedKey]) : "";
   const [, answered] = useState(0);
   const lastSteering = useRef<GoalOutcome | null>(null);
@@ -112,11 +121,12 @@ export default function BisView({
     if (!goaled || goalCache.peek(goalKey)) return;
     const abort = new AbortController();
     const started = performance.now();
+    // Floors are in the game's own numbers (ADR 0366): what you have beyond gear counts toward them.
     const run = effectiveRun((w, melee) => {
       const p = bisPlan({ rows, inventory: items ?? [], criteria, weights: w, closedZones, options: { ...planned, melee }, procSpells });
       return { total: p.loadout.total, stats: p.stats.loadout };
     }, rates ?? []);
-    void solveGoalsAsync({ goals: planned.goals, sheet: weights, melee: planned.melee, rates: rates ?? [], run }, abort.signal).then((outcome) => {
+    void solveGoalsAsync({ goals: planned.goals, sheet: weights, melee: planned.melee, rates: rates ?? [], run, base }, abort.signal).then((outcome) => {
       if (!outcome) return log.debug("goals aborted", Math.round(performance.now() - started), "ms in");
       log.debug("goals", { ms: Math.round(performance.now() - started), solves: outcome.solves, rows: outcome.rows });
       goalCache.set(goalKey, outcome);
@@ -135,6 +145,7 @@ export default function BisView({
   const orderZones = useMemo(() => (zones: readonly string[]) => zonesByReach(zones, criteria.facets.zone, closedZones), [criteria.facets.zone, closedZones]);
   // Stats you weighted, set a goal on or put a floor under get a column in the loadout grid.
   const statKeys = useMemo(() => expectedStats(weights, options.goals, criteria.mins), [weights, options.goals, criteria.mins]);
+  const calibrating = { counted, calibration: options.calibration, onCalibration: (calibration: BisOptions["calibration"]) => onOptions({ ...options, calibration }) };
   const planWeights = steering?.weights ?? weights;
   const planMelee = steering?.melee ?? planned.melee;
   const plan = useMemo(() => {
@@ -169,7 +180,7 @@ export default function BisView({
     return (
       <>
         <p className="muted small">Planning for your goals…</p>
-        <BisGoals goals={options.goals} rows={[]} rates={rates} onGoals={(goals) => onOptions({ ...options, goals })} />
+        <BisGoals goals={options.goals} rows={[]} rates={rates} {...calibrating} onGoals={(goals) => onOptions({ ...options, goals })} />
       </>
     );
   }
@@ -177,7 +188,7 @@ export default function BisView({
     return (
       <>
         <Empty title="Set some value weights first." hint="Open Value weights above and say what a point of each stat is worth to you — the loadout is ranked by your yardstick, not ours. Or set a goal below: HP, AC, mana, melee damage." />
-        <BisGoals goals={options.goals} rows={[]} rates={rates} onGoals={(goals) => onOptions({ ...options, goals })} />
+        <BisGoals goals={options.goals} rows={[]} rates={rates} {...calibrating} onGoals={(goals) => onOptions({ ...options, goals })} />
         <button
           className="btn sm"
           onClick={() => onOptions({ ...options, melee: { ...options.melee, damage: 1 } })}
@@ -272,7 +283,7 @@ export default function BisView({
         aside={goaled ? `${goalCount(options.goals)} set${searching ? " · searching…" : ""}${steering?.rows.some((r) => !r.met) ? " · not all met" : ""}` : "set a target"}
         defaultOpen={goaled}
       >
-        <BisGoals goals={options.goals} rows={steering?.rows ?? []} rates={rates} driven={steering?.driven} onGoals={(goals) => onOptions({ ...options, goals })} />
+        <BisGoals goals={options.goals} rows={steering?.rows ?? []} rates={rates} driven={steering?.driven} {...calibrating} onGoals={(goals) => onOptions({ ...options, goals })} />
       </DumpSection>
 
       <BisChoices plan={plan} options={options} onOptions={onOptions} />

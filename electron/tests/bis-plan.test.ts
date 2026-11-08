@@ -113,6 +113,26 @@ test("a slot nothing matches keeps what you wear there, unless you excluded it",
   assert.deepEqual(without.loadout.picks.map((p) => p.item.title), ["Moonstone Ring"]);
 });
 
+test("a pick says what it replaces among what you wear now, and says nothing when nothing is worn", () => {
+  const catalogue = itemRows([
+    page("Old Cap", ["Slot: HEAD", "MANA: +10", "Class: ALL", "Race: ALL"]),
+    page("Cap of Mana", ["Slot: HEAD", "MANA: +40", "Class: ALL", "Race: ALL"]),
+  ]);
+  const wearing = parseInventoryDump(["Location\tName\tID\tCount\tSlots", "Head\tOld Cap\t1\t1\t11"].join("\r\n"));
+  // Any Slot takes anything, so the head is locked to keep the question about the head.
+  const head = WORN_LAYOUT.indexOf("HEAD");
+  const plan = bisPlan({ rows: catalogue, inventory: wearing, criteria: wizard, weights: { mana: 1 }, options: withLock(NO_BIS_OPTIONS, head, { title: "Cap of Mana" }) });
+  assert.equal(plan.loadout.picks.find((p) => p.slotIndex === head)?.item.title, "Cap of Mana");
+  assert.equal(plan.replaces[head]?.title, "Old Cap");
+  assert.equal(plan.replaces[head]?.stats.mana, 10);
+  // Kept on the head, the worn cap replaces nothing.
+  const kept = bisPlan({ rows: catalogue, inventory: wearing, criteria: wizard, weights: { mana: 1 }, options: withLock(OWNED, head, { title: "Old Cap" }) });
+  assert.equal(kept.loadout.picks.find((p) => p.slotIndex === head)?.item.title, "Old Cap");
+  assert.equal(kept.replaces[head], undefined);
+  // With no dump there is nothing to compare with, so no pick claims a gain over an empty body.
+  assert.deepEqual(bisPlan({ rows: catalogue, inventory: [], criteria: wizard, weights: { mana: 1 } }).replaces, {});
+});
+
 test("the Search box's name text narrows what can be hunted, and the plan says how many it left", () => {
   // Respected, not ignored — but the page has to be able to say *why* nothing is suggested, so the
   // count the name left is part of the plan.

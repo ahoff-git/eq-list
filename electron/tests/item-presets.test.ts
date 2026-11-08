@@ -4,7 +4,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { NO_BIS_OPTIONS, bisOptionCount, lockAll, normalizeBisOptions, toggleTitle, withLock, withoutChanges } from "../../src/shared/items/bis-options";
+import { NO_BIS_OPTIONS, bisOptionCount, lockAll, normalizeBisOptions, startFromYours, toggleTitle, withLock, withoutChanges } from "../../src/shared/items/bis-options";
 import { activePreset, normalizePreset, removePreset, savePreset, type ItemPreset } from "../../src/shared/items/item-presets";
 import { NO_CRITERIA } from "../../src/shared/items/item-search";
 import { NO_MELEE_WEIGHTS } from "../../src/shared/items/melee";
@@ -13,7 +13,7 @@ test("stored options are made whole, and a lock on a slot the layout doesn't hav
   assert.deepEqual(normalizeBisOptions(undefined), NO_BIS_OPTIONS);
   assert.deepEqual(
     normalizeBisOptions({ locks: { 3: { title: "Cap" }, 4: { empty: true }, 99: { title: "Nowhere" }, x: { title: "Bad" } }, excluded: ["A", 7, ""] }),
-    { locks: { 3: { title: "Cap" }, 4: { empty: true } }, wantEffects: [], excluded: ["A"], includeOwned: true, includeHunt: true, huntGrade: 0, melee: NO_MELEE_WEIGHTS, goals: {} },
+    { locks: { 3: { title: "Cap" }, 4: { empty: true } }, wantEffects: [], excluded: ["A"], includeOwned: true, includeHunt: true, huntGrade: 0, melee: NO_MELEE_WEIGHTS, goals: {}, calibration: {} },
   );
   // An older build's two lists of things ruled out are one list now; a name in both is kept once.
   assert.deepEqual(normalizeBisOptions({ benched: ["Iron Ring"], skipHunt: ["Cap", "iron ring"] }).excluded, ["Iron Ring", "Cap"]);
@@ -63,4 +63,13 @@ test("goals survive normalizing, and Reset leaves them alone", () => {
   const o = normalizeBisOptions({ goals, excluded: ["A"] });
   assert.deepEqual(o.goals, goals);
   assert.deepEqual(withoutChanges(o).goals, goals);
+});
+
+test("calibration is your character's: it survives Reset, and a peer's plan never starts with it", () => {
+  const o = normalizeBisOptions({ calibration: { hp: 410.4, mana: 0, str: 5, ac: "x" }, goals: { hp: { priority: 100 } } });
+  assert.deepEqual(o.calibration, { hp: 410 }, "only the calibrated stats, as whole non-zero numbers");
+  assert.deepEqual(withoutChanges(o).calibration, { hp: 410 });
+  const theirs = startFromYours(o);
+  assert.deepEqual(theirs.calibration, {});
+  assert.deepEqual(theirs.goals, o.goals, "but your goals and settings carry over");
 });

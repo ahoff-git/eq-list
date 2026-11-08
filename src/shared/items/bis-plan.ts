@@ -56,6 +56,7 @@ import { gradedItemStats, gradedTitle } from "./item-upgrade";
 import { loadoutStats, type LoadoutStats } from "./loadout-stats";
 import { inventoryPlaceText, type InventoryItem } from "../game-export-dumps";
 import { NO_BIS_OPTIONS, type BisOptions } from "./bis-options";
+import { replacements, type Replacement } from "./slot-change";
 import type { EffectKind, StatKey } from "./item-stats";
 
 /** Grades a hunt target is weighed at, beyond `+0`: a couple of merges, a long farm, and the cap — what farming copies buys. */
@@ -159,6 +160,11 @@ export interface BisPlan {
   huntFrom: Record<string, ItemRow>;
   /** Slot index → the pick's numbers at its grade — what its row can explain its value by. */
   pickStats: Record<number, Partial<Record<StatKey, number>>>;
+  /**
+   * Slot index → what the pick takes the place of among what you wear now (`slot-change.ts`). A pick that
+   * is already worn there has no entry, and with nothing worn at all the whole record is empty.
+   */
+  replaces: Record<number, Replacement>;
   /** How many picks you'd have to go and get. */
   toHunt: number;
   /** Catalogue rows the criteria let through — 0 is what to explain when a name filter empties it. */
@@ -401,9 +407,9 @@ export function bisPlan({ rows, inventory: dump, criteria, weights, closedZones,
   // ── Who is swinging ──
   // The melee model needs your DEX and haste now, and the weapons you swing (what haste is measured
   // against), so what you wear is read before anything is weighed.
-  const worn = inventory.flatMap((it) => {
+  const worn = inventory.flatMap((it, i) => {
     const row = it.area === "worn" && !isExaltation(it.name) ? rowOf(it.baseName) : undefined;
-    return row ? [{ slot: it.slot.toUpperCase(), stats: gradedItemStats(row.stats, it.grade) }] : [];
+    return row ? [{ id: `held:${i}`, slot: layoutSlot(it.slot), title: row.item.title, stats: gradedItemStats(row.stats, it.grade) }] : [];
   });
   const wornStats = loadoutStats(worn.map((w) => w.stats));
   const wielded = { primary: worn.find((w) => w.slot === "PRIMARY")?.stats, secondary: worn.find((w) => w.slot === "SECONDARY")?.stats };
@@ -780,6 +786,11 @@ export function bisPlan({ rows, inventory: dump, criteria, weights, closedZones,
     const row = rowOf(p.item.title);
     if (row) pickStats[p.slotIndex] = gradedItemStats(row.stats, p.item.grade, p.item.exp).stats;
   }
+  // What each pick replaces among what's worn now — the pieces as they are, at their own grades.
+  const replaces = replacements(
+    loadout.picks.map((p) => ({ slotIndex: p.slotIndex, id: p.item.id, slot: p.slot })),
+    worn.map((w) => ({ id: w.id, slot: w.slot, title: w.title, stats: w.stats.stats })),
+  );
 
   // The catalogue row behind each pick to hunt — where it comes from, what level it is.
   const huntFrom: Record<string, ItemRow> = {};
@@ -803,6 +814,7 @@ export function bisPlan({ rows, inventory: dump, criteria, weights, closedZones,
     staleLocks: final.stale.map((s) => (!options.includeHunt && !heldCopies.has(rowOf(s.title)?.item.title ?? s.title) ? { ...s, notHeld: true } : s)),
     huntFrom,
     pickStats,
+    replaces,
     toHunt: loadout.picks.filter((p) => !p.item.heldAt).length,
     catalogueMatches: catalogue.length,
     unweighed: [...unweighed].sort(),

@@ -16,12 +16,16 @@
  *
  * It never calls the solver itself: the caller hands in `run`, so this is pure and testable with a toy.
  * Every number it works with is read off the real plan, effective totals included (STA's HP, INT's mana).
+ * A floor and the figures reported against it are in the game's own numbers: given the character's `base`
+ * beyond gear, the gear is only asked for what the base leaves (ADR 0366).
  */
 import { foldDerivedWeights, withoutDerivedWeight, type DerivedRate } from "./derived-stats";
 import { effectiveStats, type LoadoutStats } from "./loadout-stats";
 import { STATS, type StatKey } from "./item-stats";
 import type { StatWeights } from "./item-search";
 import type { MeleeWeights } from "./melee";
+import { ATTRIBUTES } from "./character-base";
+import { isCalibrated, type Calibration, type StatTotals } from "./stat-base";
 
 /**
  * Melee swing damage is a goal too — it isn't a stat on a card, but it's what "max melee damage" means.
@@ -101,6 +105,18 @@ export function goalsWithoutPools(goals: BisGoals, rates: readonly DerivedRate[]
   return (["hp", "mana"] as const).filter((key) => goals[key] && !rates.some((r) => r.to === key));
 }
 
+/**
+ * Floors on a stat the character starts with some of — an attribute, or a pool attributes buy — when no
+ * race is known (no rate has a base). The floor is in the game's numbers, but only gear can be counted
+ * toward it, so the page says to tick a race rather than let a short total pass for the game's. A pool
+ * the player has typed the game's figure for is covered already: that figure holds the base too.
+ */
+export function goalsWithoutBase(goals: BisGoals, rates: readonly DerivedRate[], calibration: Calibration = {}): StatKey[] {
+  if (rates.some((r) => r.base !== undefined)) return [];
+  const starts = (key: StatKey) => (isCalibrated(key) && !calibration[key]) || (ATTRIBUTES as readonly string[]).includes(key);
+  return (Object.keys(goals) as GoalKey[]).filter((key): key is StatKey => !priorityOnly(key) && starts(key) && !!goals[key]?.floor);
+}
+
 /** One-tap starting points. Each *replaces* the goals — the sliders refine from there. */
 export interface GoalPreset {
   id: string;
@@ -134,9 +150,14 @@ export interface GoalInputs {
   melee: MeleeWeights;
   rates: readonly DerivedRate[];
   run: RunPlan;
+  /**
+   * What the character has beyond gear (`stat-base.ts`, ADR 0366). A floor is in the game's own numbers,
+   * so the gear is asked only for what the base leaves — and `GoalRow` reports the whole.
+   */
+  base?: StatTotals;
 }
 
-/** How one stat's goal came out. */
+/** How one stat's goal came out — in the game's own numbers, the base beyond gear included. */
 export interface GoalRow {
   key: GoalKey;
   /** The most any loadout from the pool reaches in this stat — what a percent floor and the slider are measured against. */
@@ -148,6 +169,8 @@ export interface GoalRow {
   met: boolean;
   /** The floor asked for more than any loadout could give, so it was held to the max. */
   unreachable: boolean;
+  /** How much of `max` and `got` is the character's own, not gear's — absent when none is counted. */
+  base?: number;
 }
 
 export interface GoalOutcome {
@@ -169,7 +192,11 @@ const UNIT = 10_000;
 /** The boost a floor first gets, and the most it may reach (past this the stat already outweighs everything). */
 const FIRST_BOOST = 0.25;
 const MAX_BOOST = 1_024;
-const SEARCH_ROUNDS = 14;
+// Generous because a hopeless pair of floors costs only its own time, and a feasible one can need many
+// small steps; the shortfall does not fall steadily, so cutting a stalled search short loses real answers.
+const SEARCH_ROUNDS = 60;
+/** The gentlest raise a floor gets when bigger ones keep breaking another floor. */
+const MIN_STEP = 1.04;
 const REFINE_ROUNDS = 4;
 
 /**
@@ -250,14 +277,20 @@ function* goalSearch(input: GoalInputs): Generator<void, GoalOutcome> {
   const restShare = inRest.size ? (goals.rest?.priority ?? 0) / 100 / inRest.size : 0;
   const priority = (key: SingleGoal) => (enough.has(key) ? 0 : goals[key] ? (goals[key].priority ?? 0) / 100 : inRest.has(key) ? restShare : 0);
 
-  // Floors, in stat points, held to what the pool can give.
-  const floors = new Map<StatKey, { want: number; max: number; unreachable: boolean }>();
+  // Floors, in the game's own numbers (the character's base counts, ADR 0366), held to what the pool can
+  // give. The search works in gear's terms, so each carries `want`: the share the gear has to supply.
+  const beyondGear = (key: StatKey) => input.base?.[key] ?? 0;
+  const floors = new Map<StatKey, { target: number; want: number; max: number; unreachable: boolean }>();
   for (const key of asked) {
     const floor = goals[key]?.floor;
     const c = components.get(key);
     if (!floor || !c || key === "swing") continue;
-    const want = "pct" in floor ? (floor.pct / 100) * c.max : floor.min;
-    if (want > 0) floors.set(key, { want: Math.min(want, c.max), max: c.max, unreachable: want > c.max + 0.5 });
+    const extra = beyondGear(key);
+    const reach = c.max + extra;
+    const raw = "pct" in floor ? (floor.pct / 100) * reach : floor.min;
+    if (raw <= 0) continue;
+    const target = Math.min(raw, reach);
+    floors.set(key, { target, want: target - extra, max: c.max, unreachable: raw > reach + 0.5 });
   }
 
   // The plan under the sheet and priorities, plus a boost on each stat held to a floor.
@@ -277,14 +310,31 @@ function* goalSearch(input: GoalInputs): Generator<void, GoalOutcome> {
   const unmet = (r: GoalRun) => [...floors].filter(([key, f]) => total(r, key) < f.want - 0.5).map(([key]) => key);
 
   // Raise the boost on whatever is still short until every floor holds…
+  // Two floors pull against each other: doubling the short one can push the other under, and doubling
+  // that one back leapfrogs. So a raise that flips another floor shrinks its own step (×2, ×1.5, ×1.25 …),
+  // which closes in on the weighting that holds both — and the best plan seen is the one kept, not
+  // whichever the last round happened to end on.
   const boost = new Map<SingleGoal, number>();
+  const step = new Map<SingleGoal, number>();
+  /** How far under their floors a plan is, as a share of each — 0 when every floor holds. */
+  const shortfall = (r: GoalRun) => [...floors].reduce((sum, [key, f]) => (total(r, key) < f.want - 0.5 ? sum + (f.want - total(r, key)) / f.target : sum), 0);
   let result = yield* blend(boost);
+  let best = { result, boost: new Map(boost), missed: shortfall(result) };
   for (let round = 0; round < SEARCH_ROUNDS; round++) {
-    const short = unmet(result).filter((key) => (boost.get(key) ?? 0) < MAX_BOOST);
+    const wasShort = unmet(result);
+    const short = wasShort.filter((key) => (boost.get(key) ?? 0) < MAX_BOOST);
     if (!short.length) break;
-    for (const key of short) boost.set(key, Math.min(MAX_BOOST, (boost.get(key) ?? 0) * 2 || FIRST_BOOST));
+    for (const key of short) boost.set(key, Math.min(MAX_BOOST, (boost.get(key) ?? 0) * (step.get(key) ?? 2) || FIRST_BOOST));
     result = yield* blend(boost);
+    if (unmet(result).some((key) => !wasShort.includes(key))) {
+      for (const key of short) step.set(key, Math.max(MIN_STEP, 1 + ((step.get(key) ?? 2) - 1) / 2));
+    }
+    const missed = shortfall(result);
+    if (missed < best.missed) best = { result, boost: new Map(boost), missed };
   }
+  result = best.result;
+  boost.clear();
+  for (const [key, b] of best.boost) boost.set(key, b);
   // …then take back what wasn't needed, so a floor costs the objective as little as it can.
   if (!unmet(result).length) {
     for (const key of boost.keys()) {
@@ -306,8 +356,19 @@ function* goalSearch(input: GoalInputs): Generator<void, GoalOutcome> {
     // Nothing in the pool gives it: still a row, so the goal can say so instead of sitting silent.
     if (!c) return key === "swing" ? [] : [{ key, max: 0, got: 0, met: !goals[key]?.floor, unreachable: !!goals[key]?.floor }];
     const f = key === "swing" ? undefined : floors.get(key);
-    const got = key === "swing" ? undefined : total(result, key);
-    return [{ key, max: c.max, floor: f?.want, got, met: !f || got! >= f.want - 0.5, unreachable: f?.unreachable ?? false }];
+    const gear = key === "swing" ? undefined : total(result, key);
+    const extra = key === "swing" ? 0 : beyondGear(key);
+    return [
+      {
+        key,
+        max: c.max + extra,
+        floor: f?.target,
+        got: gear === undefined ? undefined : gear + extra,
+        met: !f || gear! >= f.want - 0.5,
+        unreachable: f?.unreachable ?? false,
+        ...(extra !== 0 && { base: extra }),
+      },
+    ];
   });
   // The sheet, a priority that still counts and "everything else" are what steer past the floors; boosts only hold them.
   const driven = [...components.keys()].some((key) => key === "sheet" || priority(key) > 0);

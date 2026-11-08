@@ -14,6 +14,7 @@ import { slotLabel, type BisHunt, type BisPlan, type BisSlotChoice } from "@/sha
 import { withExcluded, withLock, type BisOptions, type BisSlotLock } from "@/shared/items/bis-options";
 import type { ItemRow, StatWeights } from "@/shared/items/item-search";
 import { derivedGains, type DerivedRate } from "@/shared/items/derived-stats";
+import { slotCell, type SlotCell } from "@/shared/items/slot-change";
 import { GainNote } from "@/app/components/items/GainNote";
 import { gradedTitle } from "@/shared/items/item-upgrade";
 import { wikiName } from "@/shared/shown-name";
@@ -230,17 +231,18 @@ export default function BisWearTable({
         valueGetter: (_v, row) => row.pick?.value,
         renderCell: (p) => (p.value === undefined ? <span className="muted">—</span> : p.value),
       },
-      ...statKeys.map(
-        (key): GridColDef<SlotRow> => ({
+      ...statKeys.map((key): GridColDef<SlotRow> => {
+        const cellOf = (row: SlotRow) => (row.pick ? slotCell(plan.pickStats[row.slotIndex] ?? {}, plan.replaces[row.slotIndex], key, rates) : undefined);
+        return {
           field: `stat_${key}`,
           headerName: statMeta(key).label,
-          description: `${statMeta(key).label} the pick gives, at its grade`,
+          description: `${statMeta(key).label} the pick gives at its grade, as the game counts it — what its attributes buy included — and the change from what you wear in that slot now`,
           ...NUM_COL,
-          width: 76,
-          valueGetter: (_v, row) => (row.pick ? plan.pickStats[row.slotIndex]?.[key] : undefined),
-          renderCell: (p) => (p.value === undefined ? <span className="muted">—</span> : p.value),
-        }),
-      ),
+          width: 100,
+          valueGetter: (_v, row) => cellOf(row)?.value,
+          renderCell: ({ row }) => <StatCellView cell={cellOf(row)} lowerIsBetter={!!statMeta(key).lowerIsBetter} />,
+        };
+      }),
       {
         field: "where",
         headerName: "Held / get from",
@@ -314,7 +316,7 @@ export default function BisWearTable({
         },
       },
     ];
-  }, [options, onOptions, onList, plan.huntFrom, plan.pickStats, weights, rates, statKeys, orderZones]);
+  }, [options, onOptions, onList, plan.huntFrom, plan.pickStats, plan.replaces, weights, rates, statKeys, orderZones]);
 
   return (
     <DataGrid
@@ -328,6 +330,26 @@ export default function BisWearTable({
       getRowClassName={({ row }) => (!row.pick ? "bis-empty" : isHunt(row) ? "bis-hunt" : isMoved(row) ? "bis-move" : "")}
       initialState={{ sorting: { sortModel: [{ field: "slot", sort: "asc" }] } }}
     />
+  );
+}
+
+/**
+ * One stat of a pick: what it gives as the game counts it, and — when it replaces something — the change,
+ * green when better. The hover says how the figure is made up and what it replaces.
+ */
+function StatCellView({ cell, lowerIsBetter }: { cell?: SlotCell; lowerIsBetter: boolean }) {
+  if (!cell) return <span className="muted">—</span>;
+  const { value, change, fromAttributes, replaces } = cell;
+  const better = change !== undefined && (lowerIsBetter ? change < 0 : change > 0);
+  const notes = [
+    value !== undefined && fromAttributes ? `${Math.round((value - fromAttributes) * 10) / 10} printed + ${fromAttributes} from attributes` : undefined,
+    change !== undefined ? (replaces ? `replacing ${replaces}` : "filling an empty slot") : undefined,
+  ].filter(Boolean);
+  return (
+    <span title={notes.join(" · ") || undefined}>
+      {value === undefined ? <span className="muted">—</span> : value}
+      {change !== undefined && <span className={`small ${better ? "good" : "warn"}`}> {signed(change)}</span>}
+    </span>
   );
 }
 

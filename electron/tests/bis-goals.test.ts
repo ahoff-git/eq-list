@@ -6,7 +6,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { GOAL_PRESETS, goalsWithoutPools, normalizeGoals, solveGoals, solveGoalsAsync, withGoal, type RunPlan } from "../../src/shared/items/bis-goals";
+import { GOAL_PRESETS, goalsWithoutBase, goalsWithoutPools, normalizeGoals, solveGoals, solveGoalsAsync, withGoal, type RunPlan } from "../../src/shared/items/bis-goals";
 import { expectedStats } from "../../src/shared/items/bis-columns";
 import { bisPlan } from "../../src/shared/items/bis-plan";
 import { NO_BIS_OPTIONS } from "../../src/shared/items/bis-options";
@@ -74,6 +74,43 @@ test("a floor above the max is held to the max and says so", () => {
   assert.equal(mana.unreachable, true);
   assert.equal(mana.floor, 2000);
   assert.equal(plan(out).mana, 2000);
+});
+
+// ─── Floors in the game's own numbers (ADR 0366) ────────────────────────────
+
+const solveBased = (goals: Parameters<typeof normalizeGoals>[0], base: Parameters<typeof solveGoals>[0]["base"]) =>
+  solveGoals({ goals: normalizeGoals(goals), sheet: {}, melee: NO_MELEE_WEIGHTS, rates: [], run: toy, base });
+
+test("a floor counts what the character has beyond gear, so the gear is only asked for the rest", () => {
+  // 1,000 mana as the game shows it, 400 of it the character's own: the gear must give 600, which the 800 loadout does.
+  const out = solveBased({ hp: { priority: 100 }, mana: { floor: { min: 1000 } } }, { mana: 400 });
+  assert.deepEqual(plan(out), { hp: 2600, mana: 800 });
+  const mana = out.rows.find((r) => r.key === "mana")!;
+  assert.deepEqual([mana.floor, mana.got, mana.max, mana.base, mana.met], [1000, 1200, 2400, 400, true], "reported as the game would show it");
+});
+
+test("a floor the base already covers asks nothing of the gear", () => {
+  const out = solveBased({ hp: { priority: 100 }, mana: { floor: { min: 1000 } } }, { mana: 1500 });
+  assert.equal(plan(out).hp, 3000, "all the gear goes to HP");
+  assert.ok(out.rows.find((r) => r.key === "mana")?.met);
+});
+
+test("a percent floor is a share of the most the character could show, base included", () => {
+  // 50% of 2,000 gear + 400 base = 1,200 in game, so the gear gives 800.
+  const out = solveBased({ hp: { priority: 100 }, mana: { floor: { pct: 50 } } }, { mana: 400 });
+  assert.equal(plan(out).mana, 800);
+  assert.equal(out.rows.find((r) => r.key === "mana")?.floor, 1200);
+});
+
+test("a floor past what gear and base can reach is held to that, and says so", () => {
+  const mana = solveBased({ hp: { priority: 50 }, mana: { floor: { min: 9999 } } }, { mana: 400 }).rows.find((r) => r.key === "mana")!;
+  assert.deepEqual([mana.unreachable, mana.floor, mana.got], [true, 2400, 2400]);
+});
+
+test("no base leaves floors exactly as they were — gear's share only", () => {
+  const goals = { hp: { priority: 100 }, mana: { floor: { min: 800 } } };
+  assert.deepEqual(solveBased(goals, {}).rows, solve(goals).rows);
+  assert.equal(solve(goals).rows.find((r) => r.key === "mana")?.base, undefined);
 });
 
 test("a goal on a stat nothing gives still reports, so it can say so", () => {
@@ -282,4 +319,35 @@ test("a mana or HP goal with no class ticked is flagged, and not once classes gi
   const goals = normalizeGoals({ mana: { floor: { min: 5000 } }, hp: { priority: 50 }, ac: { priority: 50 } });
   assert.deepEqual(goalsWithoutPools(goals, derivedRates({ classes: [], level: 50 })), ["hp", "mana"]);
   assert.deepEqual(goalsWithoutPools(goals, derivedRates({ classes: ["Wizard"], level: 50 })), []);
+});
+
+test("a floor on something you start with is flagged until a race is known, and only a floor", () => {
+  const goals = normalizeGoals({ hp: { floor: { min: 2000 } }, int: { floor: { min: 200 } }, mana: { priority: 80 }, svFire: { floor: { min: 100 } } });
+  // Resists have no base to count, and a priority alone has no floor to misjudge.
+  assert.deepEqual(goalsWithoutBase(goals, derivedRates({ classes: ["Wizard"], level: 50 })), ["hp", "int"]);
+  assert.deepEqual(goalsWithoutBase(goals, derivedRates({ classes: ["Wizard"], level: 50, race: "HUM" })), []);
+  // A pool the player typed the game's figure for already holds its base; an attribute has no such figure.
+  assert.deepEqual(goalsWithoutBase(goals, derivedRates({ classes: ["Wizard"], level: 50 }), { hp: 453 }), ["int"]);
+});
+
+test("two floors that pull against each other are both held when one loadout holds them", () => {
+  // Only the second loadout clears both 60% floors (1200 HP, 204 AC). Doubling whichever floor was short
+  // used to leapfrog between the HP-heavy and AC-heavy ends and stop on one of them.
+  const loadouts = [
+    { hp: 2000, ac: 140, swing: 40 },
+    { hp: 1200, ac: 240, swing: 30 },
+    { hp: 1200, ac: 180, swing: 40 },
+    { hp: 500, ac: 300, swing: 30 },
+    { hp: 1400, ac: 160, swing: 30 },
+    { hp: 0, ac: 340, swing: 10 },
+  ];
+  const run: RunPlan = (w, m) => {
+    const value = (l: (typeof loadouts)[number]) => (w.hp ?? 0) * l.hp + (w.ac ?? 0) * l.ac + m.damage * l.swing;
+    const best = loadouts.reduce((a, b) => (value(b) > value(a) ? b : a));
+    return { total: value(best), stats: { hp: best.hp, ac: best.ac } };
+  };
+  const goals = normalizeGoals({ swing: { priority: 100 }, hp: { floor: { pct: 60 } }, ac: { floor: { pct: 60 } } });
+  const out = solveGoals({ goals, sheet: {}, melee: NO_MELEE_WEIGHTS, rates: [], run });
+  assert.deepEqual(out.rows.filter((r) => r.floor !== undefined).map((r) => r.met), [true, true]);
+  assert.deepEqual(run(out.weights, out.melee).stats, { hp: 1200, ac: 240 });
 });

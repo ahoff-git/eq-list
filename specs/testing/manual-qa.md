@@ -1195,6 +1195,18 @@ features for later in [../ideas.md](../ideas.md).
   it plans on release, takes a moment, and the Loadout score is in goal units. Time a release at the
   full catalogue; if it's over a few seconds, the search wants fewer rounds. Reload: goals persist, and
   save a preset: they come back with it.
+- **Floors in the game's own numbers** ([ADR 0366](../decisions/0366-a-loadout-floor-is-in-the-games-own-numbers.md)).
+  Items → loadout builder with a real dump, a goal on HP with *At least* set. A "The game shows you, in what
+  you wear now" row appears with an HP box whose placeholder is the plan's own figure. Type what the Inventory
+  window shows for HP: the goal's "got of possible" is now in that same scale, and hovering it splits gear from
+  "you have without it". Clear the box and it falls back. Change a worn piece in game, re-dump, reopen: the
+  figure follows the gear by what the piece changed. With no Race ticked and no figure typed, a floor on HP says to
+  tick a race. The boxes are absent while planning for a peer.
+- **A loadout row's change** ([ADR 0367](../decisions/0367-a-loadout-row-says-what-it-changes.md)). With an HP,
+  mana or AC goal, the stat columns show the pick's figure and a green/amber `+N` against what you wear in that
+  slot. Swap a ring for one with more INT as a caster: the Mana column's change is the INT difference times the
+  mana per INT shown in the weights panel's fold note. Hover for "N printed + N from attributes" and
+  "replacing …". Two rings or ears that merely swapped hands show no change; with "include what I own" off none show.
 - **A floor that is enough, and everything else** ([ADR 0359](../decisions/0359-a-floor-can-be-enough-and-the-rest-is-maximised.md)).
   Tick one casting class and add Mana with *At least* 4,000 points and HP at 100%. Note the mana line,
   then tick *Stop at floor*: the Priority slider on Mana goes away, mana drops to just over 4,000, and

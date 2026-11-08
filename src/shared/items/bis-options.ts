@@ -16,6 +16,7 @@ import { WORN_LAYOUT } from "./bis";
 import { NO_GOALS, normalizeGoals, type BisGoals } from "./bis-goals";
 import { normalizeItemName } from "./grouping";
 import { NO_MELEE_WEIGHTS, normalizeMeleeWeights, type MeleeWeights } from "./melee";
+import { normalizeCalibration, type Calibration } from "./stat-base";
 
 /** A slot held to one item (worn there whatever it's worth) or held empty. */
 export type BisSlotLock = { title: string } | { empty: true };
@@ -43,12 +44,18 @@ export interface BisOptions {
   melee: MeleeWeights;
   /** Per-stat priorities and floors ("2k HP, 100 AC, then the hardest swing") — turned into weights by `bis-goals.ts`. */
   goals: BisGoals;
+  /**
+   * What the game shows for HP, mana, AC and endurance beyond what the model counts — class and level HP,
+   * AAs, buffs — kept as an offset so floors can be in the game's own numbers (`stat-base.ts`, ADR 0366).
+   * About your character, not your plan: a peer's plan never takes it.
+   */
+  calibration: Calibration;
 }
 
 /** The grades a catalogue item can be weighed at — the Hunt table's columns, and `+0`. */
 export const HUNT_GRADE_CHOICES = [0, 2, 5, 10] as const;
 
-export const NO_BIS_OPTIONS: BisOptions = { locks: {}, wantEffects: [], excluded: [], includeOwned: true, includeHunt: true, huntGrade: 0, melee: NO_MELEE_WEIGHTS, goals: NO_GOALS };
+export const NO_BIS_OPTIONS: BisOptions = { locks: {}, wantEffects: [], excluded: [], includeOwned: true, includeHunt: true, huntGrade: 0, melee: NO_MELEE_WEIGHTS, goals: NO_GOALS, calibration: {} };
 
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !!x.trim()) : []);
 
@@ -75,6 +82,7 @@ export function normalizeBisOptions(stored: unknown): BisOptions {
     huntGrade: HUNT_GRADE_CHOICES.find((g) => g === o.huntGrade) ?? 0,
     melee: normalizeMeleeWeights(o.melee),
     goals: normalizeGoals(o.goals),
+    calibration: normalizeCalibration(o.calibration),
   };
 }
 
@@ -92,15 +100,18 @@ function normalizeLocks(stored: unknown): Record<number, BisSlotLock> {
   return locks;
 }
 
-/** How many things the options change — what a "Reset (N)" button counts. The owned/hunt switches, grade, melee weights and goals are settings, not changes. */
+/** How many things the options change — what a "Reset (N)" button counts. The owned/hunt switches, grade, melee weights, goals and calibration are settings, not changes. */
 export function bisOptionCount(o: BisOptions): number {
   return Object.keys(o.locks).length + o.wantEffects.length + o.excluded.length;
 }
 
 /** The same settings with every change dropped — what Reset leaves, and where a peer's plan starts from yours. */
 export function withoutChanges(o: BisOptions): BisOptions {
-  return { ...NO_BIS_OPTIONS, includeOwned: o.includeOwned, includeHunt: o.includeHunt, huntGrade: o.huntGrade, melee: o.melee, goals: o.goals };
+  return { ...NO_BIS_OPTIONS, includeOwned: o.includeOwned, includeHunt: o.includeHunt, huntGrade: o.huntGrade, melee: o.melee, goals: o.goals, calibration: o.calibration };
 }
+
+/** Where a peer's plan starts: your settings, none of your changes, and none of your calibration — that is your character's. */
+export const startFromYours = (o: BisOptions): BisOptions => ({ ...withoutChanges(o), calibration: {} });
 
 /** Add or remove a name from one of the title lists, matching the way item names are matched. */
 export function toggleTitle(list: readonly string[], title: string): string[] {
