@@ -52,7 +52,12 @@ best variant got it right on one row and wrong on another, and varied run to run
   be split: a pool's max is at least its current and normally equal to it; an attribute's or resist's max is the cap
   every other row shows (the page's own, or 510 and 1000 when none read cleanly). AC's softcap is anything, so its split is only ever a guess. A repair
   anchored by structure is *certain*; one resting on nothing, or on a word the recogniser was unsure of, is **doubtful**.
-  The second preparation is a second opinion, run only when something was repaired — a page that read cleanly never
+  A spent pool has no equal halves (`555/2924` → `55512924`), so its lost slash is guessed — a `1` standing where it
+  was, when there is exactly one place it could be, and only from a run too long to be a single figure. An
+  attribute a drag clipped to a lone `214` is *not* split into 2 and 4: that would turn a right answer into a wrong one.
+  Re-reading one fused cell on its own, enlarged and as a single line, was tried and **rejected**: the same cell came
+  back `555/2924`, `5551/2924` or `55572924` depending on the zoom, and cells that had read cleanly (`946/2034`)
+  came back wrong. The second preparation is a second opinion, run only when something was repaired — a page that read cleanly never
   pays for it — and the cleanest read of each stat wins, the recogniser's confidence breaking a tie.
 - **A doubtful figure is shown, never applied.** The notice names it with the guess ("Not sure of AC (242?)") and lists
   rows that weren't in the box; `confidentValues` is all the planner uses.
@@ -65,8 +70,10 @@ best variant got it right on one row and wrong on another, and varied run to run
 
 ## Consequences
 
-- On the two real screenshots the pipeline read all 17 figures right from a tight drag, a loose one, a drag clipping
-  the first and last rows, and the whole window; a crop of half the page reported the rest as missing. Varied from
+- On the first two real screenshots the pipeline read all 17 figures right from a tight drag, a loose one, a drag
+  clipping the first and last rows, and the whole window; a crop of half the page reported the rest as missing. A
+  third, taken at level 32 and *damaged* (HP 946/2034, mana 555/2924), read HP as its max — and its spent mana as a
+  flagged guess, correct but not applied, because the lost slash has nothing to anchor it. Varied from
   those: a light skin, a UI scale of 125–200%, dim and washed-out images were all read right; 70% and a heavy blur
   lose figures (reported missing, not guessed); under heavy noise the soft preparation alone inserts a stray digit into
   AC (2,427 for 242) — flagged doubtful, so not applied. Real OCR words from these are fixtures in `stats-page.test.ts`.

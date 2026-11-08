@@ -176,6 +176,32 @@ test("a lone pool number is taken as the figure but not trusted — 1976 is not 
   assert.deepEqual(read.doubtful, ["hp"]);
 });
 
+test("a spent pool's lost / is guessed — a 1 where the slash was, the only place it could be — and says so", () => {
+  // 555/2924 has no equal halves to anchor a split. Its max is still the right-hand part.
+  const read = readStatsPage([page(withRow("Mana", "left", [["55512924", 260]]))]);
+  assert.equal(read.values.mana, 2924);
+  assert.deepEqual(read.repaired, ["mana"]);
+  assert.deepEqual(read.doubtful, ["mana"], "a guess, so never applied");
+});
+
+test("a spent pool whose current was misread as bigger than its max is not guessed at", () => {
+  // 556512924 is "5565" + 1 + "2924": a current above the max, which no pool has.
+  const read = readStatsPage([page(withRow("Mana", "left", [["556512924", 260]]))]);
+  assert.equal(read.values.mana, undefined);
+  assert.ok(read.missing.includes("mana"));
+});
+
+test("a cell a drag clipped down to one number is that number, not a guess at two — 214 is not 2 and 4", () => {
+  // The box stopped before the "/510": the figure is there, the cap isn't.
+  const attribute = readStatsPage([page(withRow("Intelligence", "right", [["214", 880]]))]);
+  assert.equal(attribute.values.int, 214);
+  assert.deepEqual(attribute.doubtful, ["int"], "unconfirmed, because the cap that would confirm it was clipped");
+  // And a five-digit pool is one figure, even with a 1 inside it.
+  const pool = readStatsPage([page(withRow("HP", "left", [["12115", 260]]))]);
+  assert.equal(pool.values.hp, 12115);
+  assert.deepEqual(pool.doubtful, ["hp"]);
+});
+
 test("AC's fused mitigation/softcap is split, but with nothing to anchor it, it is only ever a guess", () => {
   const read = readStatsPage([page(withRow("AC", "left", [["2421368", 200], ["|280", 400]]))]);
   assert.equal(read.values.ac, 242);
@@ -248,6 +274,10 @@ test("a doubtful figure is shown but never applied: confidentValues leaves it ou
 
 type Words = { soft: OcrWord[]; strict: OcrWord[] };
 const real = fixtures as unknown as Record<string, Words>;
+// A third real screenshot, level 32 and *damaged*: HP 946/2034, mana 555/2924 and endurance 259/885 are all below
+// their maxes, so a pool's "equal halves" are no help and the wanted figure is the max, not the current.
+const DAMAGED = "damaged, level 32 (tight drag)";
+const TRUTH_DAMAGED = { ...TRUTH, hp: 2034, mana: 2924, end: 885, ac: 243 };
 const SCROLL_POSITIONS = ["scrolled to the equipment (tight drag)", "scrolled to the vitals (tight drag)"];
 
 for (const name of SCROLL_POSITIONS) {
@@ -286,4 +316,35 @@ test("real OCR, noisy: with both preparations the surer one's AC wins, and it is
   const read = readStatsPage([noisy.soft, noisy.strict]);
   assert.deepEqual(read.values, TRUTH);
   assert.ok(read.doubtful.includes("ac"));
+});
+
+test("real OCR, damaged: a pool below its max is read as the max — HP 946/2034 is 2034, not 946", () => {
+  const read = readStatsPage([real[DAMAGED].soft, real[DAMAGED].strict]);
+  assert.equal(read.values.hp, 2034);
+  assert.equal(read.values.end, 885);
+  assert.equal(read.values.ac, 243);
+});
+
+test("real OCR, damaged: every figure comes out right, and the spent mana's lost / is a flagged guess", () => {
+  const read = readStatsPage([real[DAMAGED].soft, real[DAMAGED].strict]);
+  assert.deepEqual(read.values, TRUTH_DAMAGED);
+  assert.deepEqual(read.repaired, ["mana"], "55512924 is 555/2924 with its slash read as a 1");
+  assert.deepEqual(read.doubtful, ["mana"], "and nothing anchors that split, so it is not applied");
+  assert.equal(confidentValues(read).mana, undefined);
+  assert.equal(Object.keys(confidentValues(read)).length, 16);
+});
+
+test("real OCR, damaged: the soft preparation misreads the current mana as bigger than the max and gives nothing, not a wrong figure", () => {
+  const read = readStatsPage([real[DAMAGED].soft]);
+  assert.equal(read.values.mana, undefined);
+  assert.ok(read.missing.includes("mana"));
+  assert.equal(read.values.ac, 243, "AC's fused slash is still repaired");
+  assert.deepEqual(read.doubtful, ["ac"]);
+  for (const [key, value] of Object.entries(TRUTH_DAMAGED)) if (key !== "mana") assert.equal(read.values[key as keyof typeof read.values], value, key);
+});
+
+test("real OCR, damaged: the strict preparation alone gets the mana, as a guess, and AC cleanly", () => {
+  const read = readStatsPage([real[DAMAGED].strict]);
+  assert.deepEqual(read.values, TRUTH_DAMAGED);
+  assert.deepEqual(read.repaired, ["mana"]);
 });

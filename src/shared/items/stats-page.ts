@@ -18,7 +18,8 @@
  *    `/` is a thin stroke that Tesseract reads as a **`1`** (`242/368` → `2421368`) or drops. The format
  *    is rigid enough to undo that: a repaired cell is the split that fits what the stat can be (a
  *    pool's max is at least its current and usually equal to it; an attribute's max is the cap every
- *    other row shows). A repair that rests on nothing is reported as `doubtful`, never passed off as read.
+ *    other row shows). A repair that rests on nothing — a spent pool has no equal halves — is a guess and
+ *    is reported as `doubtful`, never passed off as read.
  *
  * Several OCR passes may be given — the same image prepared two ways fails in different places, so per
  * stat the cleanest read wins (a cell whose dividers all survived, then a repair that was certain, then
@@ -197,7 +198,7 @@ interface Decoded {
   parts: number[];
   /** Every divider was read as one. */
   clean: boolean;
-  /** For a repair: it rests on a structural match, not on a preference for how the font fails. */
+  /** For a repair: it rests on a structural match (equal halves, the cap), not on a guess about how the font fails. */
   certain: boolean;
 }
 
@@ -208,18 +209,27 @@ const noLeadingZero = (digits: string) => digits === "0" || !digits.startsWith("
 /** AC's first number is only ever fused with the softcap when it has this many digits (1 + 1 + 3 at the least). */
 const FUSED_AC_DIGITS = 5;
 
+/** A pool this many digits long (100,000+) is two figures run together: no character here has that much HP, mana or endurance. */
+const FUSED_POOL_DIGITS = 6;
+
 /**
  * A run of digits that should hold a current and a max, split. The `/` between them came out as a `1`
  * (inserted) or as nothing (dropped); both splits are tried and the structure of the stat decides:
  * a pool's max is at least its current, and equal to it unless it is damaged or spent; an attribute's or
- * resist's max is the cap the other rows show. A split is only *taken* when something anchors it — a
- * lone `1976` is not `19/76` — except AC, which has no anchor (its softcap is anything), so it is taken
- * only from a number long enough to be two, and never called certain. A style preference (an inserted
- * `1` is the commoner failure) breaks ties but cannot decide a split alone.
+ * resist's max is the cap the other rows show. That is what makes a split *certain*.
+ *
+ * Without such an anchor — a spent pool (`555/2924` → `55512924`) has no equal halves — the one failure
+ * actually seen is still taken, as a guess: a `1` standing where the slash was, when there is exactly one
+ * place it could be. Only for a pool, and only from a run too long to be one figure: a pool is never
+ * that big, but an attribute whose `/510` a drag clipped off is a lone `214`, and splitting *that* into
+ * `2` and `4` would turn a right answer into a wrong one. A lone `1976` is not `19/76` for the same reason;
+ * a dropped slash has no evidence at all and is not guessed at. AC has no anchor either (its softcap is
+ * anything), so it is taken only from a number long enough to be two. A style preference breaks ties
+ * but cannot make a split certain.
  */
 function splitFused(digits: string, group: Group, caps: readonly number[]): { cur: number; max: number; certain: boolean } | undefined {
   if (group === "ac" && digits.length < FUSED_AC_DIGITS) return undefined;
-  const scored: { cur: string; max: string; score: number }[] = [];
+  const scored: { cur: string; max: string; score: number; inserted: boolean }[] = [];
   for (let i = 1; i < digits.length; i++) {
     const options = [{ cur: digits.slice(0, i), max: digits.slice(i), style: 0.5 }];
     if (digits[i] === "1" && i <= digits.length - 2) options.push({ cur: digits.slice(0, i), max: digits.slice(i + 1), style: 1 });
@@ -229,12 +239,16 @@ function splitFused(digits: string, group: Group, caps: readonly number[]): { cu
       let score = style;
       if (group === "pool" && cur === max) score += 10;
       if ((group === "attribute" || group === "resist") && caps.includes(Number(max))) score += 10;
-      scored.push({ cur, max, score });
+      scored.push({ cur, max, score, inserted: style === 1 });
     }
   }
   scored.sort((a, b) => b.score - a.score);
   const [best, next] = scored;
-  if (!best || (group !== "ac" && best.score < 10)) return undefined;
+  if (!best) return undefined;
+  const anchored = best.score >= 10;
+  const onlyPlaceForAOne = best.inserted && scored.filter((s) => s.inserted).length === 1;
+  const tooLongForOne = group === "pool" && digits.length >= FUSED_POOL_DIGITS;
+  if (group !== "ac" && !anchored && !(onlyPlaceForAOne && tooLongForOne)) return undefined;
   return { cur: Number(best.cur), max: Number(best.max), certain: best.score - (next?.score ?? 0) >= DECISIVE };
 }
 

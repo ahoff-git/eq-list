@@ -1221,6 +1221,9 @@ features for later in [../ideas.md](../ideas.md).
   70% to 150%: below about 70% figures should go *missing*, never wrong. A figure that is wrong **and not flagged** is
   the bug — keep the debug log (tray → Debug logging) and look for the `stats pass` lines. After a level-up or a
   buff change, read again: a read is a snapshot of what the game showed with that gear on.
+  Read it once mid-session with mana or HP spent: a pool below its max reads as its max, and a spent one may come
+  back as "Not sure of Mana (2,924?)" — that guess is usually right but is held back, so type it or read again at
+  full mana.
 - **A floor that is enough, and everything else** ([ADR 0359](../decisions/0359-a-floor-can-be-enough-and-the-rest-is-maximised.md)).
   Tick one casting class and add Mana with *At least* 4,000 points and HP at 100%. Note the mana line,
   then tick *Stop at floor*: the Priority slider on Mana goes away, mana drops to just over 4,000, and
