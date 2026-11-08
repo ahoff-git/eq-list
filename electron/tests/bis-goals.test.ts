@@ -326,8 +326,12 @@ test("a floor on something you start with is flagged until a race is known, and 
   // Resists have no base to count, and a priority alone has no floor to misjudge.
   assert.deepEqual(goalsWithoutBase(goals, derivedRates({ classes: ["Wizard"], level: 50 })), ["hp", "int"]);
   assert.deepEqual(goalsWithoutBase(goals, derivedRates({ classes: ["Wizard"], level: 50, race: "HUM" })), []);
-  // A pool the player typed the game's figure for already holds its base; an attribute has no such figure.
-  assert.deepEqual(goalsWithoutBase(goals, derivedRates({ classes: ["Wizard"], level: 50 }), { hp: 453 }), ["int"]);
+  // A stat the game's figure is known for — typed, or read off the stats page — already holds its base.
+  const noRace = derivedRates({ classes: ["Wizard"], level: 50 });
+  assert.deepEqual(goalsWithoutBase(goals, noRace, { hp: 453 }), ["int"]);
+  assert.deepEqual(goalsWithoutBase(goals, noRace, { hp: 453, int: 114 }), [], "an attribute can be calibrated too, now");
+  // A resist is never flagged, calibrated or not: no race gives one, so ticking a race would change nothing.
+  assert.deepEqual(goalsWithoutBase(normalizeGoals({ svFire: { floor: { min: 100 } } }), noRace), []);
 });
 
 test("two floors that pull against each other are both held when one loadout holds them", () => {

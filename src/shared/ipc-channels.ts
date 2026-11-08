@@ -318,6 +318,7 @@ export const CH = {
   tradeskillProgressChanged: "evt:tradeskill-progress",
   hpChanged: "evt:hp",
   searchPrefill: "evt:searchPrefill",
+  statsRead: "evt:statsRead", // main → control window: the stats grab's result (or null when it could not read)
   searchOpenPageRequest: "evt:searchOpenPage",
   navCommand: "evt:navCommand",
   mapViewZone: "evt:mapViewZone",

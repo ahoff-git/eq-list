@@ -53,11 +53,12 @@ import { createPeerArchive } from "./peer-archive";
 import { readIdentity } from "./identity";
 import { createOcr } from "./ocr";
 import { createLookup } from "./lookup";
+import { createStatsReader } from "./stats-reader";
 import { registerIpc } from "./ipc";
-import { createMainWindow, createMapWindow, createAdminWindow, createAlertWindow, closeAlertWindow, getAlertWindow, getMainWindow, getMapWindow, neutralizeOverlays, setOverlayProvider, showInSearch } from "./windows";
+import { createMainWindow, createMapWindow, createAdminWindow, createAlertWindow, closeAlertWindow, getAlertWindow, getMainWindow, getMapWindow, neutralizeOverlays, setOverlayProvider, showInSearch, showStatsRead } from "./windows";
 import { resetPositions, beginQuit, wasMapOpen } from "./window-state";
 import { CH } from "../src/shared/ipc-channels";
-import { OVERLAY_HOTKEY, LOOKUP_HOTKEY } from "../src/shared/constants";
+import { OVERLAY_HOTKEY, LOOKUP_HOTKEY, STATS_HOTKEY } from "../src/shared/constants";
 import { createLogger, setLogSink, formatLogParts } from "../src/shared/logging";
 import { once } from "../src/shared/once";
 import { characterFromLogFile } from "../src/shared/log-parser";
@@ -365,7 +366,14 @@ if (!app.requestSingleInstanceLock()) {
   const contributorId = readIdentity(userData);
   const ocr = createOcr(path.join(userData, "tesseract-cache"));
   // The wiki's mirrored titles are what tell an OCR misreading from a name we simply don't have.
-  const lookup = createLookup(ocr, showInSearch, (readings) => wiki.bestKnownReading(readings));
+  const statsReader = createStatsReader(ocr);
+  const lookup = createLookup(
+    ocr,
+    showInSearch,
+    (readings) => wiki.bestKnownReading(readings),
+    // The stats page, not a name: read as columns of numbers and handed to the loadout planner.
+    async (shot) => showStatsRead(shot ? await statsReader.read(shot) : null),
+  );
 
   let currentZone: string | null = null;
   let currentLoc: LocEvent | null = null;
@@ -997,12 +1005,19 @@ if (!app.requestSingleInstanceLock()) {
     else void lookup.open();
   });
   if (!lookupReg) log.warn("could not register lookup hotkey:", LOOKUP_HOTKEY.accelerator);
+  // Same toggle, same frozen screen — only what the drag is *for* differs.
+  const statsReg = globalShortcut.register(STATS_HOTKEY.accelerator, () => {
+    if (lookup.isOpen()) lookup.cancel();
+    else void lookup.open("stats");
+  });
+  if (!statsReg) log.warn("could not register stats hotkey:", STATS_HOTKEY.accelerator);
   appInfo = {
     logFile,
     version: currentAppVersion(),
     hotkeys: [
       { action: "Show / hide window", label: OVERLAY_HOTKEY.label, registered: overlayReg },
       { action: "Screengrab item lookup", label: LOOKUP_HOTKEY.label, registered: lookupReg },
+      { action: "Read my stats from the Inventory window", label: STATS_HOTKEY.label, registered: statsReg },
     ],
   };
 

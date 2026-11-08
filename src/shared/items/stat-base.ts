@@ -15,7 +15,10 @@
  *   the model counts is kept — as an *offset*, not as the typed number, so it stays right when the worn
  *   gear changes under it (the way `faction-correction.ts` keeps a stated total).
  *
- * Only the pooled stats can be calibrated: HP, mana, AC and endurance, the ones attributes feed.
+ * What can be calibrated is what the game's stats page shows and the model can't fully explain: the four
+ * pools (HP, mana, AC, endurance), the seven attributes, and the six resists. Attributes and resists are
+ * the same case as the pools — a base the model knows only in part (a race's attributes, but not AAs or a
+ * buff; no resist base at all) — and the stats grab (ADR 0368) reads every one of them in one go.
  *
  * Pure → a tested black box.
  */
@@ -25,8 +28,11 @@ import type { StatKey } from "./item-stats";
 
 export type StatTotals = Partial<Record<StatKey, number>>;
 
-/** The stats the game shows that gear and attributes don't fully explain — the ones that can be calibrated. */
-export const CALIBRATED = ["hp", "mana", "ac", "end"] as const satisfies readonly StatKey[];
+/** The six resists, as the stats page lists them. */
+export const RESISTS = ["svMagic", "svFire", "svCold", "svDisease", "svPoison", "svVoid"] as const satisfies readonly StatKey[];
+
+/** The stats the game shows that gear and race don't fully explain — the ones that can be calibrated. */
+export const CALIBRATED = ["hp", "mana", "ac", "end", ...ATTRIBUTES, ...RESISTS] as const satisfies readonly StatKey[];
 export type Calibrated = (typeof CALIBRATED)[number];
 
 /** For each calibrated stat, the points the game shows beyond what the model counts (may be negative). */
@@ -77,12 +83,31 @@ export function countedNow(modelled: StatTotals, wornEffective: StatTotals): Sta
   return out;
 }
 
-/** The calibration with one stat set so the model agrees with what the game shows; a blank or zero clears it. */
-export function calibrate(calibration: Calibration, key: Calibrated, shown: number, counted: number): Calibration {
+/** The calibration with `key` set to the points the game shows beyond `counted`; no difference clears it. */
+function withOffset(calibration: Calibration, key: Calibrated, shown: number, counted: number): Calibration {
   const next = { ...calibration };
   const extra = Math.round(shown - counted);
-  if (!(shown > 0) || extra === 0) delete next[key];
+  if (extra === 0) delete next[key];
   else next[key] = extra;
+  return next;
+}
+
+/** The calibration with one stat set so the model agrees with what the game shows; a blank or zero clears it. */
+export function calibrate(calibration: Calibration, key: Calibrated, shown: number, counted: number): Calibration {
+  return shown > 0 ? withOffset(calibration, key, shown, counted) : withOffset(calibration, key, counted, counted);
+}
+
+/**
+ * The calibration after the stats page was read: every stat it gave is made to agree with the game, the
+ * rest left as they were. Unlike a box the player typed into, a read **zero is a figure** (a character
+ * with no void resist shows 0), not a blank — so it can pull a counted number down to match.
+ */
+export function applyRead(calibration: Calibration, shown: StatTotals, counted: StatTotals): Calibration {
+  let next = calibration;
+  for (const key of CALIBRATED) {
+    const figure = shown[key];
+    if (figure !== undefined && Number.isFinite(figure)) next = withOffset(next, key, figure, counted[key] ?? 0);
+  }
   return next;
 }
 

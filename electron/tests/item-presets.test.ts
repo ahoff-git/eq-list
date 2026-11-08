@@ -66,7 +66,7 @@ test("goals survive normalizing, and Reset leaves them alone", () => {
 });
 
 test("calibration is your character's: it survives Reset, and a peer's plan never starts with it", () => {
-  const o = normalizeBisOptions({ calibration: { hp: 410.4, mana: 0, str: 5, ac: "x" }, goals: { hp: { priority: 100 } } });
+  const o = normalizeBisOptions({ calibration: { hp: 410.4, mana: 0, hpRegen: 5, ac: "x" }, goals: { hp: { priority: 100 } } });
   assert.deepEqual(o.calibration, { hp: 410 }, "only the calibrated stats, as whole non-zero numbers");
   assert.deepEqual(withoutChanges(o).calibration, { hp: 410 });
   const theirs = startFromYours(o);

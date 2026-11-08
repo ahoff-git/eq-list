@@ -5,6 +5,7 @@ import type { GameExportTimes } from "./game-exports";
 import type { InventoryItem } from "./game-export-dumps";
 import type { AdminPatchResult, AdminRecord, AdminSearchHit, AdminStoreInfo } from "./admin";
 import type { CheckResult } from "./chrome/self-check";
+import type { StatsRead } from "./items/stats-page";
 import type { MobKnowledge, MobObservation } from "./mob/mob-stats";
 import type { NpcSighting } from "./npc/npc-sightings";
 import type { KnowledgeContributor } from "./contributors";
@@ -3588,6 +3589,13 @@ export type AutoUpdateStatus =
 export type Unsubscribe = () => void;
 
 /**
+ * What a screengrab is for: an item name to look up (the default), or the Inventory window's stats page
+ * to read ([ADR 0368](../../specs/decisions/0368-a-stats-grab-reads-the-inventory-window.md)). Same
+ * frozen screen and drag; only what is done with the crop differs.
+ */
+export type GrabPurpose = "item" | "stats";
+
+/**
  * What this host can actually do — read once (it never changes mid-session) rather than probed per
  * feature, so a tab strip or a titlebar button can style itself off one flat object instead of every
  * caller guessing from what a method happens to return.
@@ -4319,14 +4327,15 @@ export interface EqlApi {
     onChanged(cb: (progress: XpProgress) => void): Unsubscribe;
   };
   lookup: {
-    /** Open the region selector (same as the screengrab hotkey). */
-    open(): Promise<void>;
+    /** Open the region selector (same as the screengrab hotkey — or the stats hotkey, for `"stats"`). */
+    open(purpose?: GrabPurpose): Promise<void>;
     /**
      * Sent by a selector window once it is mounted and listening. Nothing else may call it: it is
      * what puts that window on screen, because a selector that can't take a drag must not be shown
-     * ([ADR 0102](../../specs/decisions/0102-a-lookup-never-holds-the-screen.md)).
+     * ([ADR 0102](../../specs/decisions/0102-a-lookup-never-holds-the-screen.md)). Answers what the
+     * grab is for, so the selector can say so.
      */
-    ready(): Promise<void>;
+    ready(): Promise<GrabPurpose | undefined>;
     /**
      * OCR the selected region; the read text is routed to the Search box. `rect` is
      * in the selector window's client pixels and `view` is that window's viewport
@@ -4370,6 +4379,13 @@ export interface EqlApi {
      * `false` for an id main doesn't know. The caller re-runs the check to show whether it worked.
      */
     selfCheckFix(id: string): Promise<boolean>;
+  };
+  stats: {
+    /**
+     * Fires when a stats grab has read the Inventory window's stats page — or could not (null: nothing
+     * to read the screen from). Pushed to the control window, which is brought forward.
+     */
+    onRead(cb: (read: StatsRead | null) => void): Unsubscribe;
   };
   search: {
     /** Fires when a screengrab lookup fills the Search box with OCR'd text. */

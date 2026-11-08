@@ -1207,6 +1207,20 @@ features for later in [../ideas.md](../ideas.md).
   slot. Swap a ring for one with more INT as a caster: the Mana column's change is the INT difference times the
   mana per INT shown in the weights panel's fold note. Hover for "N printed + N from attributes" and
   "replacing …". Two rings or ears that merely swapped hands show no change; with "include what I own" off none show.
+- **Reading your stats from the Inventory window** ([ADR 0368](../decisions/0368-a-stats-grab-reads-the-inventory-window.md)).
+  Desktop app only, and the one thing here only run on two screenshots — never yet through the hotkey. Open the
+  Inventory window with Character Vitals and Stats and Resists both showing (scroll so every row is in view). Items →
+  loadout builder with a dump, a goal on INT and on SV. Fire: press *Read my stats from the game* (or Ctrl+Shift+K) and
+  drag a box over both columns. The selector says "Drag over Character Vitals and Stats and Resists", Esc cancels it
+  as it does the item lookup, and a second or two later a toast reads "Read 17 stats from your Inventory window". The
+  INT and SV. Fire boxes now show the game's numbers and each goal's "got of possible" matches the window. Then try:
+  a tight drag, a loose one, one that clips the top row (the toast lists what it didn't see), the whole window, and
+  one over something else (toast: "No stats found in that box"). With the Items tab closed, the hotkey opens it on
+  the builder. With no inventory dump the goals box says a read is waiting. The first read downloads the OCR model,
+  as the first item lookup does. Worth trying on the other skins (`default`, `default_light`) and UI scales from
+  70% to 150%: below about 70% figures should go *missing*, never wrong. A figure that is wrong **and not flagged** is
+  the bug — keep the debug log (tray → Debug logging) and look for the `stats pass` lines. After a level-up or a
+  buff change, read again: a read is a snapshot of what the game showed with that gear on.
 - **A floor that is enough, and everything else** ([ADR 0359](../decisions/0359-a-floor-can-be-enough-and-the-rest-is-maximised.md)).
   Tick one casting class and add Mana with *At least* 4,000 points and HP at 100%. Note the mana line,
   then tick *Stop at floor*: the Priority slider on Mana goes away, mana drops to just over 4,000, and

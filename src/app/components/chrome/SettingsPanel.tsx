@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useAppInfo, useCapabilities, useSettings } from "@/lib/hooks";
 import { api } from "@/lib/api";
-import { MAP_UI_SCALE, OVERLAY_OPACITY, UI_SCALE } from "@/shared/constants";
+import { MAP_UI_SCALE, OVERLAY_OPACITY, STATS_HOTKEY, UI_SCALE } from "@/shared/constants";
 import LogSettings from "@/app/components/chrome/LogSettings";
 import SelfCheck from "@/app/components/chrome/SelfCheck";
 import DataHealth from "@/app/components/chrome/DataHealth";
@@ -204,12 +204,34 @@ export default function SettingsPanel() {
           </div>
         </div>
       )}
+
+      {capabilities.lookup && (
+        <div className="setting">
+          <label>Read my stats from the Inventory window</label>
+          <span className="hint">
+            Open the Inventory window, press <kbd>{statsGrabLabel(info)}</kbd> (or the button below), then drag
+            a box over Character Vitals and Stats and Resists. HP, mana, endurance, AC, your attributes and
+            resists are read off the screen — the same OCR as the item lookup, with its own reader for the
+            page&apos;s columns — and the loadout planner counts what you have beyond your gear in its floors. Anything
+            it isn&apos;t sure of is left for you to confirm. Scroll the rows into view first: it reads what is on screen.
+          </span>
+          <div className="row" style={{ marginTop: 6 }}>
+            <button className="btn" onClick={() => api()?.lookup.open("stats")}>
+              Read my stats
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function screengrabLabel(info: ReturnType<typeof useAppInfo>): string {
   return info?.hotkeys.find((h) => /screengrab/i.test(h.action))?.label ?? "Ctrl/Cmd+Shift+L";
+}
+
+function statsGrabLabel(info: ReturnType<typeof useAppInfo>): string {
+  return info?.hotkeys.find((h) => /stats/i.test(h.action))?.label ?? STATS_HOTKEY.label;
 }
 
 /** Human text for each `AutoUpdateStatus` — what `UpdateBanner` doesn't say, because here nothing is too quiet to show. */

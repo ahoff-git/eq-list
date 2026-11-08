@@ -32,6 +32,7 @@ import { windowOpacity } from "../src/shared/constants";
 import { once } from "../src/shared/once";
 import { createLogger } from "../src/shared/logging";
 import type { OverlaySettings, WindowToggles } from "../src/shared/types";
+import type { StatsRead } from "../src/shared/items/stats-page";
 
 const log = createLogger("windows");
 
@@ -896,11 +897,11 @@ export function createLookupWindow(bounds: { x: number; y: number; width: number
  * `showInSearch`/`openPageInSearch`, which differ only in which channel and what a search-less
  * caller means by the text it's handing over.
  */
-function sendToControlWindow(channel: Channel, text: string): void {
+function sendToControlWindow(channel: Channel, payload: unknown): void {
   const win = getMainWindow() ?? createMainWindow();
   win.show();
   win.focus();
-  const send = () => win.webContents.send(channel, text);
+  const send = () => win.webContents.send(channel, payload);
   if (win.webContents.isLoading()) win.webContents.once("did-finish-load", send);
   else send();
 }
@@ -913,6 +914,14 @@ function sendToControlWindow(channel: Channel, text: string): void {
  */
 export function showInSearch(text: string): void {
   sendToControlWindow(CH.searchPrefill, text);
+}
+
+/**
+ * Hand the control window what a stats grab read (`null`: there was nothing to read from), bringing it
+ * forward. The window decides what to do with it — which is to put it where the loadout planner finds it.
+ */
+export function showStatsRead(read: StatsRead | null): void {
+  sendToControlWindow(CH.statsRead, read);
 }
 
 /**

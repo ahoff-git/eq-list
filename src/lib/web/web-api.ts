@@ -417,7 +417,7 @@ function createWebApi(): EqlApi {
 
     lookup: {
       open: async () => {},
-      ready: async () => {},
+      ready: async () => undefined,
       capture: async () => "",
       cancel: async () => {},
     },
@@ -429,6 +429,10 @@ function createWebApi(): EqlApi {
       onDataChanged: () => noop,
       selfCheck: async () => [],
       selfCheckFix: async () => false,
+    },
+
+    stats: {
+      onRead: () => noop,
     },
 
     search: {

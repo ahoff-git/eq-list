@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { calibrate, countedNow, modelledBase, normalizeCalibration, shownNow, statBase } from "../../src/shared/items/stat-base";
+import { applyRead, calibrate, countedNow, modelledBase, normalizeCalibration, shownNow, statBase } from "../../src/shared/items/stat-base";
 import { derivedRates } from "../../src/shared/items/derived-stats";
 
 const TRIO = ["Wizard", "Druid", "Magician"];
@@ -49,7 +49,40 @@ test("typing what the model already counts, or nothing, clears the calibration",
 });
 
 test("a stored calibration keeps only whole, non-zero figures for the stats it covers", () => {
-  assert.deepEqual(normalizeCalibration({ hp: 410.4, mana: 0, str: 5, ac: "x", end: -3, nonsense: 1 }), { hp: 410, end: -3 });
+  // Pools, attributes and resists are covered (ADR 0368); a regen rate or a made-up key is not.
+  assert.deepEqual(
+    normalizeCalibration({ hp: 410.4, mana: 0, int: 7.4, svFire: -3, hpRegen: 5, ac: "x", end: -3, nonsense: 1 }),
+    { hp: 410, int: 7, svFire: -3, end: -3 },
+  );
   assert.deepEqual(normalizeCalibration(null), {});
   assert.deepEqual(normalizeCalibration([1, 2]), {});
+});
+
+test("an attribute and a resist calibrate the way a pool does: an offset from what is counted", () => {
+  // No race ticked: nothing modelled, so the worn gear's 100 INT is all that is counted, and what the game
+  // shows (214) says the character has 114 without gear — whatever the race, the AAs and the buffs give.
+  const counted = countedNow({}, { int: 100, svFire: 10 });
+  assert.deepEqual([counted.int, counted.svFire], [100, 10]);
+  const calibration = calibrate(calibrate({}, "int", 214, counted.int!), "svFire", 19, counted.svFire!);
+  assert.deepEqual(calibration, { int: 114, svFire: 9 });
+  assert.equal(statBase({}, calibration).int, 114, "what a floor may count beyond gear");
+  // Gear worth 20 more INT later: the game's figure follows by 20.
+  assert.equal(shownNow(countedNow({}, { int: 120 }), calibration, "int"), 234);
+});
+
+test("a stats read sets every stat it gave and leaves the others as they were", () => {
+  const counted = { hp: 797, int: 100, svFire: 10, svCold: 34 };
+  const next = applyRead({ hp: 1, svCold: 4, mana: 55 }, { hp: 1250, int: 214, svFire: 19, svCold: 34 }, counted);
+  assert.deepEqual(next, { hp: 453, int: 114, svFire: 9, mana: 55 }, "svCold now matches what is counted, so its old offset goes; mana wasn't in the read, so it stays");
+});
+
+test("a read zero is a figure, unlike a blank box: it can pull a counted number down", () => {
+  assert.deepEqual(applyRead({}, { svVoid: 0 }, { svVoid: 12 }), { svVoid: -12 });
+  // Typed, a zero is "I left it blank" and clears instead.
+  assert.deepEqual(calibrate({ svVoid: -12 }, "svVoid", 0, 12), {});
+});
+
+test("a read ignores stats that cannot be calibrated and figures that are not numbers", () => {
+  const next = applyRead({}, { hpRegen: 18, haste: 100, str: Number.NaN, sta: 137 }, { sta: 100 });
+  assert.deepEqual(next, { sta: 37 });
 });

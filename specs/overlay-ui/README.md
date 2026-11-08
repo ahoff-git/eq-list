@@ -1230,6 +1230,14 @@ list, hunt, search, damage, session, peers, settings.
   reading where the font fooled OCR ("Moming Star" → "Morning Star") and the raw one
   otherwise — always editable, never a guess with nothing behind it. See
   [ADR 0081](../decisions/0081-an-ocr-grab-is-corrected-before-it-is-searched.md).
+- **Stats grab** (`electron/stats-reader.ts` + `src/shared/items/stats-page.ts`): `Ctrl/Cmd+Shift+K` (or *Read
+  my stats* in the loadout builder's goals box or Settings) opens **the same frozen-screen drag** with a different
+  purpose; the selector's hint says "Drag over Character Vitals and Stats and Resists". The crop is parsed as the
+  Inventory window's columns of labels and numbers — by position, not line order — into HP, mana, endurance, AC,
+  the seven attributes and the six resists, and handed to the control window, which opens the Items tab on the
+  loadout builder; the builder turns each figure into a calibration (what the game shows beyond what the plan
+  counts) and a toast says what was read, what it wasn't sure of (held back, never applied) and what wasn't in
+  the box. See [ADR 0368](../decisions/0368-a-stats-grab-reads-the-inventory-window.md).
 - **Client glue** (`src/lib/`): `api.ts` (null-safe access to `window.eql`),
   `hooks.ts` (`useShoppingList`, `useSettings`, `useWatcherStatus`, `useLootFeed`,
   `useMatchFlashes`, `useCurrentZone`, `useEntrySources`, `useItemCard`) — subscribe on

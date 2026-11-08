@@ -408,6 +408,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0365: Winning comfortably suggests trading survivability for damage](./0365-winning-comfortably-suggests-trading-survivability-for-damage.md)
 - [0366: A loadout floor is in the game's own numbers — race and class base plus a typed-in calibration count toward it, kept as an offset from what the worn gear gives (extends 0353)](./0366-a-loadout-floor-is-in-the-games-own-numbers.md)
 - [0367: A loadout row says what it changes — each stat column shows the pick as the game counts it (attributes' HP/mana/AC included) and the change from what you wear in that slot](./0367-a-loadout-row-says-what-it-changes.md)
+- [0368: A stats grab reads the Inventory window — a second hotkey fires the same frozen-screen drag but parses the crop as the page's columns of labels and numbers, repairs a lost "/" by structure, never applies a guess, and calibrates attributes and resists as well as the pools (extends 0366)](./0368-a-stats-grab-reads-the-inventory-window.md)
 
 ## Open Questions
 
@@ -753,9 +754,10 @@ and degrading to blank facts when the file isn't there.*
   named pins ([ADR 0265](./0265-named-spawns-mark-themselves-on-the-map.md)) can mark common spawns.
   [ADR 0351](./0351-a-zone-page-opens-the-map-and-lists-its-spawns.md) uses the roster's article
   instead. Open: switch `isNamedMob` to that rule, intersect the two, or find a narrower category.
-- **Should the loadout's HP box start from the log's estimate?** [ADR 0366](./0366-a-loadout-floor-is-in-the-games-own-numbers.md)
-  asks the player to type what the game shows for HP, mana, AC and endurance. `hp-estimate.ts` already
-  bounds HP (1,103–1,306 on the real character) and takes a stated figure for the Damage panel. Open:
-  prefill the box from the estimate, offer its range as a hint, or share the one stated figure with the
-  Damage panel — and whether the planner should use the character's level for its rates rather than the
-  Items tab's level cap.
+- **Should the stats grab set the planner's level and classes?** [ADR 0368](./0368-a-stats-grab-reads-the-inventory-window.md)
+  reads the figures on the Inventory window's stats page but not the header above them (`31 WIZ/DRU/MAG`), and
+  the planner's rates still use the Items tab's level cap (60) — not the character's level, which the same
+  screenshot says is 31. Open: read the level and class list from a crop that includes the header, take the level
+  from the log's last level line, or only warn when the two disagree. Also open: whether a read HP should become the
+  stated figure [ADR 0018](./0018-inferred-max-hit-points.md) lets the player give the Damage panel — today the
+  two are separate, and the read only feeds the planner.

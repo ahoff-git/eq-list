@@ -24,8 +24,7 @@ import { effectiveStats, type LoadoutStats } from "./loadout-stats";
 import { STATS, type StatKey } from "./item-stats";
 import type { StatWeights } from "./item-search";
 import type { MeleeWeights } from "./melee";
-import { ATTRIBUTES } from "./character-base";
-import { isCalibrated, type Calibration, type StatTotals } from "./stat-base";
+import { RESISTS, isCalibrated, type Calibration, type StatTotals } from "./stat-base";
 
 /**
  * Melee swing damage is a goal too — it isn't a stat on a card, but it's what "max melee damage" means.
@@ -108,12 +107,13 @@ export function goalsWithoutPools(goals: BisGoals, rates: readonly DerivedRate[]
 /**
  * Floors on a stat the character starts with some of — an attribute, or a pool attributes buy — when no
  * race is known (no rate has a base). The floor is in the game's numbers, but only gear can be counted
- * toward it, so the page says to tick a race rather than let a short total pass for the game's. A pool
- * the player has typed the game's figure for is covered already: that figure holds the base too.
+ * toward it, so the page says to tick a race rather than let a short total pass for the game's. A stat
+ * the game's figure is known for (typed, or read off the stats page) is covered already: that figure
+ * holds the base too. Resists are left out: no race gives one, so ticking a race would change nothing.
  */
 export function goalsWithoutBase(goals: BisGoals, rates: readonly DerivedRate[], calibration: Calibration = {}): StatKey[] {
   if (rates.some((r) => r.base !== undefined)) return [];
-  const starts = (key: StatKey) => (isCalibrated(key) && !calibration[key]) || (ATTRIBUTES as readonly string[]).includes(key);
+  const starts = (key: StatKey) => isCalibrated(key) && !calibration[key] && !(RESISTS as readonly string[]).includes(key);
   return (Object.keys(goals) as GoalKey[]).filter((key): key is StatKey => !priorityOnly(key) && starts(key) && !!goals[key]?.floor);
 }
 

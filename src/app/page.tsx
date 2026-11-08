@@ -57,6 +57,9 @@ import { PASS_THROUGH, useClickThrough } from "@/lib/chrome/clickThrough";
 import { useWindowPin } from "@/lib/chrome/windowToggles";
 import AwariHost from "@/lib/awari/host";
 import { OVERLAY_HOTKEY, UI_SCALE } from "@/shared/constants";
+import { offerStatsRead } from "@/lib/stats-read";
+import { showToast } from "@/lib/toast";
+import { readNotice } from "@/shared/items/stats-read-notice";
 
 type Tab = "overview" | "list" | "hunt" | "timers" | "goals" | "achievements" | "buffs" | "loot" | "faction" | "search" | "items" | "spells" | "stances" | "aa" | "tradeskills" | "crafting" | "combat" | "session" | "exports" | "alerts" | "peers" | "settings";
 
@@ -232,6 +235,21 @@ function ControlWindow() {
   // A screengrab lookup fills the Search box with OCR'd text and jumps here (so does a
   // name clicked in the map window, which has no search of its own).
   useEffect(() => api()?.search.onPrefill(lookUp), [lookUp]);
+
+  // The other screengrab: the Inventory window's stats page, read as numbers. What a figure means is only
+  // known to the loadout planner (how far it is from what the plan counts), so the read waits for it and
+  // the Items tab opens on the planner; what was read, and what wasn't sure, is said here either way.
+  useEffect(
+    () =>
+      api()?.stats.onRead((read) => {
+        if (read && Object.keys(read.values).length) {
+          offerStatsRead(read);
+          openTab("items");
+        }
+        showToast({ ...readNotice(read), key: "stats-read", ms: 7000 });
+      }),
+    [openTab],
+  );
 
   // A caller elsewhere already knows the exact title (a map marker naming a mob eqlwiki or the
   // kill log itself named) — open straight to its page rather than a results list with one match

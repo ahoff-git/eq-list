@@ -20,7 +20,9 @@ import { HUNT_GRADE_CHOICES, bisOptionCount, lockAll, toggleTitle, withExcluded,
 import { WORN_LAYOUT } from "@/shared/items/bis";
 import { expectedStats } from "@/shared/items/bis-columns";
 import { effectiveStats, type LoadoutStats } from "@/shared/items/loadout-stats";
-import { countedNow, modelledBase, statBase } from "@/shared/items/stat-base";
+import { applyRead, countedNow, modelledBase, statBase } from "@/shared/items/stat-base";
+import { confidentValues } from "@/shared/items/stats-page";
+import { clearStatsRead, usePendingStatsRead } from "@/lib/stats-read";
 import { publishHeadroom } from "@/lib/combat/headroom";
 import { useLeanLoadout } from "@/lib/items/useLeanLoadout";
 import { effectiveRun, goalCount, solveGoalsAsync, type GoalOutcome } from "@/shared/items/bis-goals";
@@ -114,6 +116,16 @@ export default function BisView({
   const base = useMemo(() => statBase(modelled, planned.calibration), [modelled, planned.calibration]);
   // What the model counts for you now, to calibrate against what the game shows. A peer's game figures aren't yours to type.
   const counted = useMemo(() => (worn && !holder ? countedNow(modelled, effectiveStats(worn, rates ?? []).total) : undefined), [worn, holder, modelled, rates]);
+  // A stats grab (ADR 0368) is applied here, because here is where it can be measured: each figure it read
+  // is made to agree with the game by comparing it with what the plan counts for what you wear. Yours only,
+  // and only with a dump to measure against — until then it waits, and the goals box says so. A figure the
+  // read wasn't sure of is left for the player to confirm, never applied on a guess.
+  const statsRead = usePendingStatsRead();
+  useEffect(() => {
+    if (!statsRead || holder || !counted) return;
+    onOptions({ ...options, calibration: applyRead(options.calibration, confidentValues(statsRead), counted) });
+    clearStatsRead();
+  }, [statsRead, holder, counted, options, onOptions]);
   const goalKey = goaled ? planKey([rows, items, procSpells], [criteria, weights, planned, rates, closedKey]) : "";
   const [, answered] = useState(0);
   const lastSteering = useRef<GoalOutcome | null>(null);
@@ -145,7 +157,12 @@ export default function BisView({
   const orderZones = useMemo(() => (zones: readonly string[]) => zonesByReach(zones, criteria.facets.zone, closedZones), [criteria.facets.zone, closedZones]);
   // Stats you weighted, set a goal on or put a floor under get a column in the loadout grid.
   const statKeys = useMemo(() => expectedStats(weights, options.goals, criteria.mins), [weights, options.goals, criteria.mins]);
-  const calibrating = { counted, calibration: options.calibration, onCalibration: (calibration: BisOptions["calibration"]) => onOptions({ ...options, calibration }) };
+  const calibrating = {
+    counted,
+    calibration: options.calibration,
+    onCalibration: (calibration: BisOptions["calibration"]) => onOptions({ ...options, calibration }),
+    readWaiting: !!statsRead && !holder && !counted,
+  };
   const planWeights = steering?.weights ?? weights;
   const planMelee = steering?.melee ?? planned.melee;
   const plan = useMemo(() => {

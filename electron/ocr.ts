@@ -12,9 +12,10 @@
  * *screen* is held is not this module's call: `lookup.ts` decides that, and stops waiting on a read
  * without stopping the read, so a slow first run still lands in Search when it finishes.
  */
-import type { Worker } from "tesseract.js";
+import type { Page, Worker } from "tesseract.js";
 import { createLogger } from "../src/shared/logging";
 import { withTimeout } from "../src/shared/deadline";
+import type { OcrWord } from "../src/shared/chrome/ocr-rows";
 
 const log = createLogger("ocr");
 
@@ -28,11 +29,29 @@ const log = createLogger("ocr");
  */
 const BUDGET = {
   read: 4_000,
+  /** A whole panel of words, not one name: a page of sparse text is several times the work. */
+  words: 12_000,
   worker: 60_000,
 } as const;
 
+/** Every word Tesseract found, flat, with its box — it nests them block → paragraph → line → word. */
+function wordsOf(page: Pick<Page, "blocks">): OcrWord[] {
+  return (page.blocks ?? []).flatMap((b) =>
+    b.paragraphs.flatMap((p) =>
+      p.lines.flatMap((l) =>
+        l.words.map((w) => ({ text: w.text, x0: w.bbox.x0, y0: w.bbox.y0, x1: w.bbox.x1, y1: w.bbox.y1, confidence: w.confidence })),
+      ),
+    ),
+  );
+}
+
 export interface Ocr {
   recognize(image: Buffer): Promise<string>;
+  /**
+   * Every word in the image with its box, found as sparse text — no assumption that it is one block, which
+   * is what a panel of labels and numbers needs and an item name does not. Failures degrade to `[]`.
+   */
+  words(image: Buffer): Promise<OcrWord[]>;
   /**
    * Start loading the worker now, off the critical path. Optional to call — `recognize` still
    * initializes on demand — but calling it before a read means the first-run model download isn't
@@ -46,6 +65,18 @@ export function createOcr(cachePath: string): Ocr {
   // worker properly doesn't undo the lazy `await import` below, which is what keeps the WASM and the
   // language model out of startup.
   let workerPromise: Promise<Worker> | null = null;
+
+  /**
+   * One read at a time. The worker's segmentation mode is its state, and `words` changes it for the length
+   * of a read — an item lookup landing in the middle would be read as sparse text instead of one block.
+   * A failed read must not stop the next one, so the queue carries on whatever a job did.
+   */
+  let queue: Promise<unknown> = Promise.resolve();
+  const exclusive = <T,>(job: () => Promise<T>): Promise<T> => {
+    const run = queue.then(job, job);
+    queue = run.catch(() => {});
+    return run;
+  };
 
   async function getWorker(): Promise<Worker> {
     if (!workerPromise) {
@@ -84,16 +115,37 @@ export function createOcr(cachePath: string): Ocr {
       void getWorker().catch(() => {}); // failures are reported by the read that needs it
     },
 
-    async recognize(image) {
-      try {
-        const worker = await withTimeout(getWorker(), BUDGET.worker, "OCR worker init");
-        const { data } = await withTimeout(worker.recognize(image), BUDGET.read, "OCR read");
-        return (data.text ?? "").trim();
-      } catch (e) {
-        log.warn("OCR failed:", (e as Error).message);
-        discardWorker();
-        return "";
-      }
+    recognize(image) {
+      return exclusive(async () => {
+        try {
+          const worker = await withTimeout(getWorker(), BUDGET.worker, "OCR worker init");
+          const { data } = await withTimeout(worker.recognize(image), BUDGET.read, "OCR read");
+          return (data.text ?? "").trim();
+        } catch (e) {
+          log.warn("OCR failed:", (e as Error).message);
+          discardWorker();
+          return "";
+        }
+      });
+    },
+
+    words(image) {
+      return exclusive(async () => {
+        try {
+          const tesseract = await import("tesseract.js");
+          const worker = await withTimeout(getWorker(), BUDGET.worker, "OCR worker init");
+          await worker.setParameters({ tessedit_pageseg_mode: tesseract.PSM.SPARSE_TEXT });
+          const { data } = await withTimeout(worker.recognize(image, {}, { blocks: true }), BUDGET.words, "OCR words");
+          // Put the worker back as item lookups expect it. Only on success: a worker that timed out is
+          // discarded below, and a fresh one starts in the single-block mode already.
+          await worker.setParameters({ tessedit_pageseg_mode: tesseract.PSM.SINGLE_BLOCK });
+          return wordsOf(data);
+        } catch (e) {
+          log.warn("OCR words failed:", (e as Error).message);
+          discardWorker();
+          return [];
+        }
+      });
     },
   };
 }

@@ -5,6 +5,7 @@ import { useItemQuery } from "@/lib/items/useItemQuery";
 import { useHeldGrades, useInventory, useOwnedItems } from "@/lib/exports/useGameExports";
 import { loadoutStats } from "@/shared/items/loadout-stats";
 import { usePersistentState } from "@/lib/usePersistentState";
+import { usePendingStatsRead } from "@/lib/stats-read";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import CatalogueHarvest from "@/app/components/items/CatalogueHarvest";
 import ItemFacetRow from "@/app/components/items/ItemFacetRow";
@@ -93,6 +94,11 @@ export default function ItemSearchPanel({ damage }: { damage?: DamageControl }) 
   useEffect(() => {
     if (damage?.focus) setMode("bis");
   }, [damage?.focus, setMode]);
+  // So does a stats grab (ADR 0368): what it read is applied by the builder, which has to be on screen to do it.
+  const statsRead = usePendingStatsRead();
+  useEffect(() => {
+    if (statsRead) setMode("bis");
+  }, [statsRead, setMode]);
   // What you've told the loadout builder. Held here rather than in `BisView` so a preset can carry it.
   const [storedBis, setBisOptions] = usePersistentState<BisOptions>(STORAGE_KEYS.itemBisOptions, normalizeBisOptions(undefined));
   const bisOptions = useMemo(() => normalizeBisOptions(storedBis), [storedBis]);

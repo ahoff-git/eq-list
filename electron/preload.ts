@@ -259,7 +259,7 @@ const api: EqlApi = {
     onChanged: (cb) => on(CH.xpChanged, cb),
   },
   lookup: {
-    open: () => ipcRenderer.invoke(CH.lookupOpen),
+    open: (purpose) => ipcRenderer.invoke(CH.lookupOpen, purpose),
     ready: () => ipcRenderer.invoke(CH.lookupReady),
     capture: (rect, view) => ipcRenderer.invoke(CH.lookupCapture, rect, view),
     cancel: () => ipcRenderer.invoke(CH.lookupCancel),
@@ -271,6 +271,9 @@ const api: EqlApi = {
     selfCheck: () => ipcRenderer.invoke(CH.selfCheck),
     selfCheckFix: (id: string) => ipcRenderer.invoke(CH.selfCheckFix, id),
     onDataChanged: (cb) => on(CH.dataChanged, cb),
+  },
+  stats: {
+    onRead: (cb) => on(CH.statsRead, cb),
   },
   search: {
     onPrefill: (cb) => on(CH.searchPrefill, cb),

@@ -18,6 +18,11 @@ in the main process and all UI in the renderer.
     the EQ-font confusion table (`rn` read as `m`, …) and the wiki's mirrored titles pick
     between the readings; see
     [ADR 0081](../decisions/0081-an-ocr-grab-is-corrected-before-it-is-searched.md).
+  - `stats-reader.ts` — the same grab, opened by a second hotkey for `"stats"`: the crop is enlarged and made
+    dark-on-light (`src/shared/chrome/ocr-pixels.ts`), read as word boxes (`Ocr.words`), and parsed by
+    `src/shared/items/stats-page.ts` — geometry, the game's own labels, and a repair for the `/` the font loses.
+    The result goes to the control window, not to Search; see
+    [ADR 0368](../decisions/0368-a-stats-grab-reads-the-inventory-window.md).
     The selectors cover every display and take input, so **nothing may hold them open
     indefinitely**: a selector is created hidden and shown only once its renderer reports
     (`lookup:ready`) that it is listening, a per-phase deadline closes them, `destroy()` means a

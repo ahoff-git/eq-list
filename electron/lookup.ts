@@ -1,5 +1,5 @@
 /**
- * lookup.ts — the screengrab item lookup.
+ * lookup.ts — the screengrab: item lookup, and the stats-page read that shares its frozen screen and drag.
  *
  * On open we FIRST screenshot every display (before any of our windows appear, so
  * a hovered game tooltip is frozen intact and none of our UI is captured), then
@@ -7,6 +7,10 @@
  * any monitor; we crop that display's already-captured image, OCR it, and hand the
  * text to the main window's Search box (`onText`). Per-display windows keep DPI
  * handling simple.
+ *
+ * The same drag serves a second purpose (`GrabPurpose`): a grab opened for `"stats"` hands the crop,
+ * as pixels, to `onStats` instead — the stats page is columns of labels and numbers, which OCR as one
+ * block of item-name text reads badly (ADR 0368). Everything about getting the crop is unchanged.
  *
  * Those windows cover every screen and swallow every click, so nothing here is allowed to hold them
  * open indefinitely — see `DEADLINE`.
@@ -16,16 +20,17 @@ import { createLookupWindow, destroyLookupWindows, hasLookupWindows } from "./wi
 import { createLogger } from "./../src/shared/logging";
 import { ocrReadings } from "../src/shared/chrome/ocr-variants";
 import type { Ocr } from "./ocr";
-import type { Rect } from "../src/shared/types";
+import type { GrabPurpose, Rect } from "../src/shared/types";
 
 const log = createLogger("lookup");
 
 export interface Lookup {
-  open(): Promise<void>;
+  /** Freeze the screens and put a selector over each. `purpose` says what the drag is for; item lookup is the default. */
+  open(purpose?: GrabPurpose): Promise<void>;
   /** OCR the selected region and route the text onward; resolves the read text. */
   capture(rect: Rect, view: { width: number; height: number }, sender: WebContents): Promise<string>;
-  /** A selector reporting it is mounted and listening — the only thing that puts it on screen. */
-  ready(sender: WebContents): void;
+  /** A selector reporting it is mounted and listening — the only thing that puts it on screen. Answers what the grab is for. */
+  ready(sender: WebContents): GrabPurpose | undefined;
   cancel(): void;
   /** Whether selectors are currently on screen — lets the hotkey call off a lookup it started. */
   isOpen(): boolean;
@@ -39,6 +44,13 @@ export interface Lookup {
 export type PickReading = (readings: readonly string[]) => string;
 
 const believeOcr: PickReading = (readings) => readings[0] ?? "";
+
+/**
+ * What a stats grab does with its crop: read it and say so. `null` means there was no screen to crop
+ * from. Injected for the same reason `pickReading` is — judging the numbers is nothing to do with how a
+ * grab is taken — and it may take a few seconds, which the grab waits for without holding the screen.
+ */
+export type StatsGrab = (shot: NativeImage | null) => void | Promise<void>;
 
 interface Selector {
   win: BrowserWindow;
@@ -131,9 +143,14 @@ function cropIn(image: { width: number; height: number }, rect: Rect, view: { wi
   };
 }
 
+/** The selection itself — or the whole grab, when the drag was too small to mean anything. */
+function croppedTo(image: NativeImage, crop: Rect): NativeImage {
+  return crop.width > MIN_CROP_PX && crop.height > MIN_CROP_PX ? image.crop(crop) : image;
+}
+
 /** The grab as Tesseract wants it: cropped to the selection, then enlarged per `UPSCALE`. */
 function forOcr(image: NativeImage, crop: Rect): NativeImage {
-  const cropped = crop.width > MIN_CROP_PX && crop.height > MIN_CROP_PX ? image.crop(crop) : image;
+  const cropped = croppedTo(image, crop);
   const size = cropped.getSize();
   const factor = Math.max(1, Math.min(UPSCALE.maxFactor, UPSCALE.targetWidth / Math.max(1, size.width)));
   if (factor <= UPSCALE.worthIt) return cropped;
@@ -176,10 +193,14 @@ async function grabAllDisplays(displays: Electron.Display[]): Promise<Map<number
 
 /**
  * `onText` receives the recognized text (empty string if none) to route to Search; `pickReading`
- * chooses between OCR's raw reading and its corrections, defaulting to the raw one.
+ * chooses between OCR's raw reading and its corrections, defaulting to the raw one. `onStats` takes the
+ * crop of a grab opened for `"stats"`; without it every grab is an item lookup.
  */
-export function createLookup(ocr: Ocr, onText: (text: string) => void, pickReading: PickReading = believeOcr): Lookup {
+export function createLookup(ocr: Ocr, onText: (text: string) => void, pickReading: PickReading = believeOcr, onStats?: StatsGrab): Lookup {
   let selectors: Selector[] = [];
+  // What the grab now open is for. Set by `open()`, read by `ready()` (so the selector can say so) and by
+  // `capture()` (so the crop goes to the right place); a lookup is one at a time, so one value is enough.
+  let purpose: GrabPurpose = "item";
   // `open()` captures the screens (100s of ms) before it assigns `selectors`. It's
   // reachable from both the hotkey and IPC, so guard against a second call racing inside
   // that window — otherwise the first call's fullscreen, input-blocking windows are
@@ -249,11 +270,12 @@ export function createLookup(ocr: Ocr, onText: (text: string) => void, pickReadi
     selectors.find((s) => !s.win.isDestroyed() && s.win.webContents === sender);
 
   return {
-    async open() {
+    async open(wanted = "item") {
       if (opening) return; // a capture is already being set up; don't stack a second set
       opening = true;
       try {
         closeAll();
+        purpose = wanted === "stats" && onStats ? "stats" : "item";
         const displays = screen.getAllDisplays();
         // Capture BEFORE creating any window, so the shot has neither our UI nor a
         // tooltip that would vanish when our window steals focus.
@@ -319,9 +341,10 @@ export function createLookup(ocr: Ocr, onText: (text: string) => void, pickReadi
      */
     ready(sender) {
       const sel = find(sender);
-      if (!sel) return; // a report from a selector we have already closed
+      if (!sel) return undefined; // a report from a selector we have already closed
       sel.reveal();
       armDeadline(DEADLINE.select, "selection");
+      return purpose;
     },
 
     cancel() {
@@ -332,9 +355,11 @@ export function createLookup(ocr: Ocr, onText: (text: string) => void, pickReadi
       const sel = find(sender) ?? selectors[0];
       closeAll(sel?.win); // region chosen — drop the other monitors, keep this one for the loading state
       armDeadline(DEADLINE.ocr, "read"); // the kept window shows progress; it doesn't get to stay
+      const grabbing = purpose; // a new open() mid-read must not redirect this one's result
       if (!sel?.image) {
         closeAll();
-        onText("");
+        if (grabbing === "stats") await onStats?.(null);
+        else onText("");
         return "";
       }
       try {
@@ -353,6 +378,13 @@ export function createLookup(ocr: Ocr, onText: (text: string) => void, pickReadi
             ` displaySize=${sel.display.size.width}x${sel.display.size.height} scale=${sel.display.scaleFactor}` +
             ` content=${JSON.stringify(cb)} img=${isize.width}x${isize.height} → ${JSON.stringify(crop)}`,
         );
+        if (grabbing === "stats") {
+          // The selector gives up on *showing* the read at its deadline; the read itself carries on and
+          // lands in the control window when it is done, the way a slow first item lookup lands in Search.
+          await onStats?.(croppedTo(img, crop));
+          closeAll();
+          return "";
+        }
         const text = readingOf(await ocr.recognize(forOcr(img, crop).toPNG()), pickReading);
         log.debug("OCR text:", JSON.stringify(text));
         closeAll(); // done — close the last selector; main brings itself forward
@@ -361,7 +393,8 @@ export function createLookup(ocr: Ocr, onText: (text: string) => void, pickReadi
       } catch (e) {
         log.warn("capture failed:", (e as Error).message);
         closeAll();
-        onText("");
+        if (grabbing === "stats") await Promise.resolve(onStats?.(null)).catch(() => {});
+        else onText("");
         return "";
       }
     },

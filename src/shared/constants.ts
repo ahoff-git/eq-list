@@ -99,6 +99,16 @@ export const LOOKUP_HOTKEY = {
 } as const;
 
 /**
+ * Global hotkey to read the Inventory window's stats page (the same frozen-screen drag as the lookup,
+ * but the crop is parsed as stats, not searched as a name). K, because L and O are taken and neither
+ * is a letter a game binds to a chord with Shift.
+ */
+export const STATS_HOTKEY = {
+  accelerator: "CommandOrControl+Shift+K",
+  label: "Ctrl/Cmd+Shift+K",
+} as const;
+
+/**
  * How far back a rule's **check** may look through the log, in bytes — each step the next press of
  * "further back" (`log-tail.ts` reads it; the Alerts tab climbs it).
  *

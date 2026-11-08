@@ -884,7 +884,7 @@ function registerAppIpc(context: IpcContext, shared: SharedIpc): void {
   ipcMain.handle(CH.lookupCapture, (e, rect: Rect, view: { width: number; height: number }) =>
     lookup.capture(rect, view, e.sender),
   );
-  ipcMain.handle(CH.lookupOpen, () => lookup.open());
+  ipcMain.handle(CH.lookupOpen, (_e, purpose?: string) => lookup.open(purpose === "stats" ? "stats" : "item"));
   ipcMain.handle(CH.lookupReady, (e) => lookup.ready(e.sender));
   ipcMain.handle(CH.searchShow, (_e, text: string) => showInSearch(text));
   ipcMain.handle(CH.searchOpenPage, (_e, title: string) => openPageInSearch(title));

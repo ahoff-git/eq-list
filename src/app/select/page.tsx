@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import type { Rect } from "@/shared/types";
+import type { GrabPurpose, Rect } from "@/shared/types";
 
 type Phase = "select" | "loading";
 
@@ -13,6 +13,20 @@ type Phase = "select" | "loading";
  * screen off to OCR; it should close, which is what the same click would have done on nothing.
  */
 const MIN_SELECTION_PX = 6;
+
+/** What the selector says, by what the grab is for. Both drag a box; only what is done with the crop differs. */
+const WORDS: Record<GrabPurpose, { hint: string; reading: string; note: string }> = {
+  item: {
+    hint: "Drag over an item name · Esc to cancel",
+    reading: "Reading text…",
+    note: "(the first lookup downloads the OCR model; this closes on its own and the result still opens in Search)",
+  },
+  stats: {
+    hint: "Drag over Character Vitals and Stats and Resists · Esc to cancel",
+    reading: "Reading your stats…",
+    note: "(this closes on its own; the numbers go to the loadout planner)",
+  },
+};
 
 /**
  * Fullscreen, transparent region selector for the screengrab lookup — one per
@@ -27,6 +41,8 @@ const MIN_SELECTION_PX = 6;
  */
 export default function Select() {
   const [phase, setPhase] = useState<Phase>("select");
+  // Item lookup until main says otherwise: the answer to `ready()` is what this grab is for.
+  const [purpose, setPurpose] = useState<GrabPurpose>("item");
   const [rect, setRect] = useState<Rect | null>(null);
   const dragStart = useRef<{ x: number; y: number } | null>(null);
 
@@ -39,7 +55,9 @@ export default function Select() {
     window.addEventListener("keydown", onKey);
     // Handlers are attached, so this window is now worth showing. Main holds it off screen until
     // this lands, and closes it if it never does.
-    void api()?.lookup.ready();
+    void api()
+      ?.lookup.ready()
+      .then((wanted) => wanted && setPurpose(wanted));
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
@@ -74,11 +92,7 @@ export default function Select() {
       <div className="select-root dimmed">
         <div className="lookup-card">
           <p className="muted">
-            Reading text…{" "}
-            <span className="small">
-              (the first lookup downloads the OCR model; this closes on its own and the result still
-              opens in Search)
-            </span>
+            {WORDS[purpose].reading} <span className="small">{WORDS[purpose].note}</span>
           </p>
         </div>
       </div>
@@ -87,7 +101,7 @@ export default function Select() {
 
   return (
     <div className="select-root" onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp}>
-      <div className="select-hint">Drag over an item name · Esc to cancel</div>
+      <div className="select-hint">{WORDS[purpose].hint}</div>
       {rect && (
         <div className="select-rect" style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height }} />
       )}
