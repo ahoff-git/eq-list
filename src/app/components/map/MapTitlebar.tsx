@@ -136,7 +136,6 @@ export default function MapTitlebar({
         onChange={(e) => onSource(e.target.value)}
         title={
           "Which set of maps to draw.\n\n" +
-          "• Bundled images — the P99 scans that ship with EQ List. Hand-calibrated, and only ~15 zones.\n" +
           "• Game maps — the .txt maps EverQuest itself draws, from <EverQuest>\\maps\\. Every zone, with labels, and no calibration needed.\n" +
           "• A pack — any subfolder of maps\\ holding .txt maps: unzip Brewall's into <EverQuest>\\maps\\Brewall\\, Goodurden's into its own subfolder, and it appears here.\n\n" +
           (mapsDir ? `Reading: ${mapsDir}` : "No maps folder found — it's located from your log folder in Settings (<EverQuest>\\Logs).")

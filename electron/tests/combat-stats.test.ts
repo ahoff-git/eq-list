@@ -2069,3 +2069,64 @@ test("a spell hit nobody saw you cast is counted as a proc, over your swings and
   // Still a spell in the by-spell split — the proc list says which of those were procs, not instead.
   assert.ok(you.bySpell.some((s) => s.spell === "Smiting Strike"));
 });
+
+// ── experience and coin are written before the kill that paid them (EverQuest Legends) ──
+//
+// The game writes XP, coin, the corpse's dying words, then "has been slain", all in one second. A meter that credits
+// "the most recent kill" pays each mob the *previous* mob's reward, or — beyond its 15 s window — nobody's: on a
+// real 94 MB log, 61% of experience gains had no kill behind them to credit.
+
+test("experience and coin written just before a kill are that kill's, not the previous kill's", () => {
+  const t = tracker();
+  feed(t, [[10, "You pierce a coyote for 10 points of damage."]]);
+  t.recordKill("a coyote", stamp(20));
+  feed(t, [[28, "You pierce a gnoll for 10 points of damage."]]);
+  t.recordXp(xp(1.5, 30)); // the game writes the reward first…
+  t.recordCoin(coin(32, 30));
+  t.recordKill("a gnoll", stamp(30)); // …then the kill, in the same second
+
+  const s = t.snapshot().session;
+  assert.equal(s.xpPct, 1.5, "the session's totals are untouched");
+  assert.equal(s.copper, 32);
+  const gnoll = s.byMob.find((m) => m.mob === "a gnoll")!;
+  assert.equal(gnoll.xpPct, 1.5);
+  assert.equal(gnoll.copper, 32);
+  const coyote = s.byMob.find((m) => m.mob === "a coyote")!;
+  assert.equal(coyote.xpPct, 0, "the mob before it wasn't paid twice");
+  assert.equal(coyote.copper, 0);
+});
+
+test("the first kill of a run gets its own reward — there is no earlier kill for the old rule to guess", () => {
+  const t = tracker();
+  feed(t, [[8, "You pierce a coyote for 10 points of damage."]]);
+  t.recordXp(xp(2, 10));
+  t.recordCoin(coin(7, 10));
+  t.recordKill("a coyote", stamp(10));
+  const coyote = t.snapshot().session.byMob.find((m) => m.mob === "a coyote")!;
+  assert.equal(coyote.xpPct, 2);
+  assert.equal(coyote.copper, 7);
+});
+
+test("a reward is taken by one kill only, and an older kill keeps what it was paid", () => {
+  const t = tracker();
+  feed(t, [[10, "You pierce a coyote for 10 points of damage."]]);
+  t.recordKill("a coyote", stamp(20));
+  t.recordXp(xp(1.5, 21)); // after the kill: the old order, still the coyote's
+  feed(t, [[38, "You pierce a gnoll for 10 points of damage."]]);
+  t.recordKill("a gnoll", stamp(40)); // 19 s later — nothing led this one
+  const s = t.snapshot().session;
+  assert.equal(s.byMob.find((m) => m.mob === "a coyote")!.xpPct, 1.5);
+  assert.equal(s.byMob.find((m) => m.mob === "a gnoll")!.xpPct, 0);
+});
+
+test("a reward more than a few seconds before a kill isn't that kill's", () => {
+  const t = tracker();
+  feed(t, [[10, "You pierce a coyote for 10 points of damage."]]);
+  t.recordKill("a coyote", stamp(20));
+  t.recordXp(xp(1, 36)); // 16 s on: past the old rule's window too, so nobody's…
+  feed(t, [[38, "You pierce a gnoll for 10 points of damage."]]);
+  t.recordKill("a gnoll", stamp(40)); // …and 4 s ahead of this kill is too far to be its lead
+  const s = t.snapshot().session;
+  assert.equal(s.xpPct, 1);
+  assert.equal(s.byMob.find((m) => m.mob === "a gnoll")!.xpPct, 0);
+});

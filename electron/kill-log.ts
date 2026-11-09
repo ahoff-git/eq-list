@@ -139,6 +139,17 @@ const LOOT_WINDOW_MS = 120_000;
 const COIN_FOLLOWS_LOOT_MS = 10_000;
 
 /**
+ * How far *behind* its kill a coin line may be written and still be that kill's. EverQuest Legends writes a
+ * corpse's coin **before** the "has been slain" line of the mob it came off — XP, then coin, then the corpse's
+ * dying words, then the kill, all in one second (6,994 of 7,001 coin lines in one real 94 MB log have a kill within
+ * 3 s *after* them; 7 have one before). `noteCoin` can only guess from what has happened already, so it files the
+ * coin under the *previous* kill — and when the next kill is written `claimLeadingCoin` takes it back. Wide enough
+ * for the second the lines share and the next one the clock may tick over to; narrow enough that a coin from
+ * looting an old corpse isn't taken by a kill that happens to come soon after.
+ */
+const COIN_LEADS_KILL_MS = 3_000;
+
+/**
  * `drainTouched`'s own cap — see its call site. Well clear of ordinary live combat (a coalesce
  * window would need hundreds of kills/loots/coins inside ~500ms to reach it) and well under
  * SQLite's own bound on how many `?` a query may bind, so `byIds` never gets asked to.
@@ -607,6 +618,12 @@ export function createKillLog(db: Database, userDataDir: string): KillLog {
    *  drop attaching and the coin line landing is seen, the same way it would be if this held a live
    *  reference to the row the way the old array-backed store's `lastLooted.kill` did. */
   let lastLooted: { killId: string; at: number } | null = null;
+  /**
+   * Coin lines from the last few seconds and where `noteCoin` put them (`killId` null: nowhere), so the kill that
+   * follows them — which is the one they belong to, see `COIN_LEADS_KILL_MS` — can claim them. `claimed`: a kill
+   * already has, so a second kill in the same second doesn't take them again.
+   */
+  let recentCoin: { key: string; at: number; copper: number; killId: string | null; claimed: boolean }[] = [];
   /** One spelling per mob. Seeded from what's already stored so the canonical name survives
    *  a restart — otherwise the spelling the file uses and the spelling this session picks
    *  could differ, and the same mob would show up twice. */
@@ -658,6 +675,38 @@ export function createKillLog(db: Database, userDataDir: string): KillLog {
   function attachCoin(killId: string, prevCoin: number | null, copper: number): void {
     updateCoin.run((prevCoin ?? 0) + copper, killId);
     touch(killId);
+  }
+
+  /** Coin taken back off a corpse it was filed under by mistake. Nothing left is stored as nothing, not zero. */
+  function detachCoin(killId: string, copper: number): void {
+    const row = selectById.get(killId) as KillRow | undefined;
+    if (!row) return;
+    const left = (row.coin ?? 0) - copper;
+    updateCoin.run(left > 0 ? left : null, killId);
+    touch(killId);
+  }
+
+  /** Remember a coin line for `claimLeadingCoin`, forgetting the ones too old for any kill to claim. */
+  function rememberCoin(entry: { key: string; at: number; copper: number; killId: string | null }): void {
+    recentCoin = recentCoin.filter((c) => entry.at - c.at < COIN_LEADS_KILL_MS * 2);
+    recentCoin.push({ ...entry, claimed: false });
+  }
+
+  /**
+   * A kill of yours was just written: take the coin lines that led it. A line filed under the previous kill is
+   * moved here; one nothing could place is placed here and marked seen, so a replay doesn't count it twice.
+   */
+  function claimLeadingCoin(killId: string, killAt: number): void {
+    for (const c of recentCoin) {
+      const lead = killAt - c.at;
+      if (c.claimed || lead < 0 || lead >= COIN_LEADS_KILL_MS || c.killId === killId) continue;
+      if (c.killId) detachCoin(c.killId, c.copper);
+      else insertCoinSeen.run(c.key);
+      const row = selectById.get(killId) as KillRow | undefined;
+      attachCoin(killId, row?.coin ?? null, c.copper);
+      c.killId = killId;
+      c.claimed = true;
+    }
   }
 
   return {
@@ -787,6 +836,7 @@ export function createKillLog(db: Database, userDataDir: string): KillLog {
         insertKillSeen.run(key, base);
       });
       insert();
+      if (record.mine) claimLeadingCoin(record.id, at);
       // Read back what was stored, rather than shaping `record` a second way: the mirror then holds
       // exactly what a rebuild from the table would, whichever way a row got there.
       evidenceMirror?.unshift(evidenceRecord(selectEvidenceById.get(record.id)));
@@ -867,6 +917,7 @@ export function createKillLog(db: Database, userDataDir: string): KillLog {
         if (row && row.mine !== 0) {
           attachCoin(row.id, row.coin, event.copper);
           insertCoinSeen.run(key);
+          rememberCoin({ key, at, copper: event.copper, killId: row.id });
           return true;
         }
       }
@@ -875,8 +926,11 @@ export function createKillLog(db: Database, userDataDir: string): KillLog {
         if (row.mine === 0) continue; // `mine === false` — a stranger's corpse is never a candidate
         attachCoin(row.id, row.coin, event.copper);
         insertCoinSeen.run(key);
+        rememberCoin({ key, at, copper: event.copper, killId: row.id });
         return true;
       }
+      // Nowhere yet — but the kill this coin belongs to may be about to be written (`COIN_LEADS_KILL_MS`).
+      rememberCoin({ key, at, copper: event.copper, killId: null });
       return false;
     },
 

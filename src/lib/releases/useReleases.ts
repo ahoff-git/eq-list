@@ -4,7 +4,7 @@ import { api } from "@/lib/api";
 import { useAppInfo } from "@/lib/hooks";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { BEFORE_NOTES, CHANGELOG } from "@/shared/releases/changelog";
-import { countFrom, nextSeen, notesSince, readSeen, updateHeadline, type ReleaseNote } from "@/shared/releases/release-notes";
+import { countFrom, firstLaunchMarker, nextSeen, notesSince, readSeen, updateHeadline, type ReleaseNote } from "@/shared/releases/release-notes";
 import { createLogger } from "@/shared/logging";
 
 const log = createLogger("releases");
@@ -59,6 +59,14 @@ export function useReleases(): Releases {
   const ready = stored !== undefined && info !== null;
   const fresh = useMemo(() => (ready ? notesSince(CHANGELOG, from, current) : []), [ready, from, current]);
   const headline = useMemo(() => updateHeadline(fresh, seenAtLaunch, current), [fresh, seenAtLaunch, current]);
+
+  // A first install starts counting from this build at once — see `firstLaunchMarker`. `seenAtLaunch` stays null for this
+  // session, so the courtesy banner still shows; it is the *next* launch that has something to read the marker from.
+  useEffect(() => {
+    if (!ready || !stored) return;
+    const first = firstLaunchMarker(stored.seen, stored.usedBefore, current);
+    if (first) void api()?.ui.set(STORAGE_KEYS.releaseSeen, first);
+  }, [ready, stored, current]);
 
   const answer = useCallback(() => {
     if (!ready || answered) return;

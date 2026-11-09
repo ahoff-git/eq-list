@@ -57,7 +57,7 @@ import { NavProvider, useNav } from "@/lib/chrome/nav";
 import { useScrollMemory } from "@/lib/chrome/useScrollMemory";
 import { OwnershipProvider } from "@/lib/exports/ownership";
 import NavBar from "@/app/components/chrome/NavBar";
-import { AREAS, areaOf, sectionToOpen, type AreaKey } from "@/shared/chrome/areas";
+import { AREAS, SECTION_NAMES, areaOf, sectionToOpen, type AreaKey } from "@/shared/chrome/areas";
 import { PASS_THROUGH, useClickThrough } from "@/lib/chrome/clickThrough";
 import { useWindowPin } from "@/lib/chrome/windowToggles";
 import AwariHost from "@/lib/awari/host";
@@ -319,28 +319,28 @@ function ControlWindow() {
   // where the number is worth acting on; a log-fed section is greyed out on a host with no log.
   const logged = { disabled: needsLog, disabledReason: noLog };
   const sectionItems: Record<Tab, TabItem> = {
-    overview: { key: "overview", label: "Overview", ...logged },
+    overview: { key: "overview", label: SECTION_NAMES.overview, ...logged },
     buffs: { key: "buffs", label: buffsLabel(buffs), ...logged },
-    timers: { key: "timers", label: "Timers", ...logged },
+    timers: { key: "timers", label: SECTION_NAMES.timers, ...logged },
     goals: { key: "goals", label: goalsLabel(goalsRunning), ...logged },
     achievements: { key: "achievements", label: achievementsLabel(achievementsRunning), ...logged },
     alerts: { key: "alerts", label: alertsLabel(settings?.castAlerts), ...logged },
-    list: { key: "list", label: "List" },
-    hunt: { key: "hunt", label: "Hunt" },
-    search: { key: "search", label: "Search" },
-    items: { key: "items", label: "Items" },
-    spells: { key: "spells", label: "Spells" },
-    stances: { key: "stances", label: "Stances" },
-    aa: { key: "aa", label: "AAs" },
-    exports: { key: "exports", label: "Inventory & exports", ...logged },
-    faction: { key: "faction", label: "Faction", ...logged },
-    tradeskills: { key: "tradeskills", label: "Guides" },
-    crafting: { key: "crafting", label: crafted ? `Crafting log (${crafted})` : "Crafting log", ...logged },
-    combat: { key: "combat", label: "Combat", ...logged },
-    session: { key: "session", label: "Session", ...logged },
-    loot: { key: "loot", label: "Loot", ...logged },
-    settings: { key: "settings", label: "General" },
-    help: { key: "help", label: "How-to" },
+    list: { key: "list", label: SECTION_NAMES.list },
+    hunt: { key: "hunt", label: SECTION_NAMES.hunt },
+    search: { key: "search", label: SECTION_NAMES.search },
+    items: { key: "items", label: SECTION_NAMES.items },
+    spells: { key: "spells", label: SECTION_NAMES.spells },
+    stances: { key: "stances", label: SECTION_NAMES.stances },
+    aa: { key: "aa", label: SECTION_NAMES.aa },
+    exports: { key: "exports", label: SECTION_NAMES.exports, ...logged },
+    faction: { key: "faction", label: SECTION_NAMES.faction, ...logged },
+    tradeskills: { key: "tradeskills", label: SECTION_NAMES.tradeskills },
+    crafting: { key: "crafting", label: crafted ? `${SECTION_NAMES.crafting} (${crafted})` : SECTION_NAMES.crafting, ...logged },
+    combat: { key: "combat", label: SECTION_NAMES.combat, ...logged },
+    session: { key: "session", label: SECTION_NAMES.session, ...logged },
+    loot: { key: "loot", label: SECTION_NAMES.loot, ...logged },
+    settings: { key: "settings", label: SECTION_NAMES.settings },
+    help: { key: "help", label: SECTION_NAMES.help },
     updates: { key: "updates", label: updatesLabel(releases.answered ? 0 : releases.fresh.length) },
     peers: { key: "peers", label: peersLabel(peers.length, settings?.connectPeers) },
   };
@@ -506,10 +506,11 @@ function areaLabel(key: AreaKey, counts: { buffsDown: number; listed: number }):
  * the fight where it mattered.
  */
 function alertsLabel(alerts: Settings["castAlerts"] | undefined): string {
-  if (!alerts) return "Alerts";
-  if (!alerts.enabled) return "Alerts (off)";
+  const name = SECTION_NAMES.alerts;
+  if (!alerts) return name;
+  if (!alerts.enabled) return `${name} (off)`;
   const live = alerts.watches.filter((w) => w.enabled).length;
-  return live ? `Alerts (${live})` : "Alerts";
+  return live ? `${name} (${live})` : name;
 }
 
 /**
@@ -521,8 +522,9 @@ function alertsLabel(alerts: Settings["castAlerts"] | undefined): string {
  * `(0)` would stop being read.
  */
 function peersLabel(peers: number, connected: boolean | undefined): string {
-  if (!connected) return "Peers (off)";
-  return peers ? `Peers (${peers})` : "Peers";
+  const name = SECTION_NAMES.peers;
+  if (!connected) return `${name} (off)`;
+  return peers ? `${name} (${peers})` : name;
 }
 
 /**
@@ -533,16 +535,16 @@ function peersLabel(peers: number, connected: boolean | undefined): string {
  * is one to show.
  */
 function goalsLabel(running: number): string {
-  return running ? `Goals (${running})` : "Goals";
+  return running ? `${SECTION_NAMES.goals} (${running})` : SECTION_NAMES.goals;
 }
 
 /** What the What's new section says about itself: how many releases are waiting to be read, while any are. */
 function updatesLabel(unread: number): string {
-  return unread ? `What's new (${unread})` : "What's new";
+  return unread ? `${SECTION_NAMES.updates} (${unread})` : SECTION_NAMES.updates;
 }
 
 function achievementsLabel(running: number): string {
-  return running ? `Achievements (${running})` : "Achievements";
+  return running ? `${SECTION_NAMES.achievements} (${running})` : SECTION_NAMES.achievements;
 }
 
 /**
@@ -555,7 +557,7 @@ function achievementsLabel(running: number): string {
  */
 function buffsLabel(view: BuffView): string {
   const down = view.lapsed.length;
-  return down ? `Buffs (${down})` : "Buffs";
+  return down ? `${SECTION_NAMES.buffs} (${down})` : SECTION_NAMES.buffs;
 }
 
 /**

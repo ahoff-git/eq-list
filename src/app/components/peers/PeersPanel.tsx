@@ -29,7 +29,8 @@ import type { AwariPeer, AwariStatus, Settings } from "@/shared/types";
  *   1. **Your connection** — whether you are in a room, who you are in it, and how to try again.
  *      Nothing here needs EverQuest running; the tab says so, because it is a thing people assume
  *      they cannot do.
- *   2. **What you share** — a toggle per kind, off until switched on, with the count a peer would
+ *   2. **What you share** — a toggle per kind (what you've observed, public pages and your character stats
+ *      are on by default; what you made is off until switched on), with the count a peer would
  *      see beside it so "sharing my list" is a number rather than a promise.
  *   3. **Who's here** — the roster, each row saying what that person is offering and letting you
  *      ask for it. Asking is always a click: nothing authored arrives unrequested.
@@ -72,9 +73,11 @@ export default function PeersPanel({
             onChange={() => void api()?.settings.update({ connectPeers: true })}
           />
           <span className="hint">
-            Off by default. Connecting only makes you <i>visible</i> — nothing leaves this machine
-            until you switch a kind on, and nothing arrives that you didn&rsquo;t ask for. EverQuest
-            doesn&rsquo;t need to be running.
+            Off by default. Connecting makes you <i>visible</i> and shares what is switched on below —
+            by default what you&rsquo;ve observed (mob and kill observations, respawn times), wiki pages you
+            hold, and your character stats once you&rsquo;ve read them; never your list, rules, pins or
+            inventory unless you turn those on. What others pool arrives on its own; anything somebody
+            made waits for you to add it. EverQuest doesn&rsquo;t need to be running.
           </span>
         </section>
       </div>

@@ -707,8 +707,10 @@ as insurance.
   Whether a *chosen* route may be drawn as a schematic across several maps is an open question, not a
   settled no; it needs its own answer to “what stops this reading as a walkable path?”
   ([todo.md](../todo.md)).
-- **The graph isn't shipped, and the stored one isn't loaded.** The app builds from your own pack at
-  runtime; `data/travel-graph.*.json` exists for you to read, not for the app to consume.
+- **A graph is shipped, and routes use it by default** ([ADR 0341](../decisions/0341-a-travel-graph-ships-with-the-app.md)):
+  built from Brewall's pack, the same on every machine, so a game folder with no teleport labels still routes over the
+  druid and wizard networks. Building one from *your own* maps instead is a setting (Settings → General, "Map travel: build
+  routes from my own map files…"), and then the app builds it at runtime as it always did.
 - **The hand-authored table is not verified in EQ Legends.** The boat runs are classic-EverQuest
   knowledge and a starting point, not a finding; the translocator gnomes are deliberately empty,
   because nothing about a Legends-only NPC can be read off a map or reasonably guessed.

@@ -12,12 +12,13 @@ lines; the reasoning lives in the ADR it links. Everything else has a neighbour:
 
 ## Bugs
 
-- **Lead, not yet checked: coin and XP may be credited to the previous kill.** In one real 87 MB log,
-  6,798 of 6,805 corpse-coin lines are followed by a kill line within 3 s, and only 168 had a kill in the
-  2 s before them, so this server writes a kill's coin before its "You have slain" line (as
-  `faction-cause.ts` already notes). `combat-stats.ts`'s `recordCoin`/`recordXp` credit "the most recent
-  kill", and `kill-log.ts`'s `noteCoin` attaches by corpse and time — confirm whether the per-mob coin and
-  XP on the Session tab land on the right mob before touching it.
+- **Identical same-second faction hits collapse into one row.** In the real 94 MB log 3,937 of 28,656 faction
+  lines (14%, 526 groups) repeat an earlier line's second, faction, direction and amount — two mobs dying together
+  each give "Storm Guard raised 5" — and `faction-log.ts`'s key (`at faction direction delta`) keeps one. Kills and
+  loot already tell such repeats apart with an ordinal and a per-replay pass (`ordinalFor`, `startReplay`); faction
+  needs the same, a migration for existing keys, and a decision about standings a player has already corrected
+  ([ADR 0229](./decisions/0229-a-faction-correction-is-a-stated-offset.md)). Found alongside
+  [ADR 0375](./decisions/0375-a-kills-coin-and-experience-belong-to-the-kill-that-follows.md).
 
 ## Maps, zones and travel
 
@@ -42,10 +43,6 @@ lines; the reasoning lives in the ADR it links. Everything else has a neighbour:
 
 ## Features
 
-- **`SV Void` isn't a stat.** The wiki's Statistics page lists six resist types, Void among them, and
-  five cached item pages carry an `SV Void` line, but `item-stats.ts` has only Fire, Cold, Magic,
-  Disease and Poison, so the line is dropped and Void never counts in a loadout, a goal or a score.
-  Check how many catalogue items have it, then add it like the other resists (including its alias).
 - **Fight trends suggest what to do.** Turn [ADR 0344](./decisions/0344-fight-search-finds-combatants-and-reads-trends.md)'s
   tips into advice: fire resist against a fire-heavy mob, AC against crushing melee, another spell
   against a resist wall.

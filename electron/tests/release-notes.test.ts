@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { changelogProblems, countFrom, historyProblems, nextSeen, notesSince, periodText, readSeen, releaseLine, updateHeadline, type HistoryNote, type ReleaseNote } from "../../src/shared/releases/release-notes";
+import { changelogProblems, countFrom, firstLaunchMarker, historyProblems, nextSeen, notesSince, periodText, readSeen, releaseLine, updateHeadline, type HistoryNote, type ReleaseNote } from "../../src/shared/releases/release-notes";
 
 const note = (line: string, over: Partial<ReleaseNote> = {}): ReleaseNote => ({
   line,
@@ -203,4 +203,23 @@ test("an update from before tracking is owed every note since, while a first ins
   const since = countFrom(null, true, "0.1.0");
   assert.deepEqual(lines(notesSince(FIVE, since, "0.3.5")), ["0.3", "0.2"]);
   assert.deepEqual(lines(notesSince(FIVE, countFrom(null, false, "0.1.0"), "0.3.5")), ["0.3"]);
+});
+
+// A first install that never opens the notes must not turn into an "old install" on its second launch.
+test("a first install remembers its version at once; nobody else does", () => {
+  assert.equal(firstLaunchMarker(null, false, "0.3.5"), "0.3.5", "a blank slate starts counting from this build");
+  assert.equal(firstLaunchMarker("0.2.1", false, "0.3.5"), null, "a marker is already there");
+  assert.equal(firstLaunchMarker(null, true, "0.3.5"), null, "an install with settings is an update, not a first launch");
+  assert.equal(firstLaunchMarker(null, false, ""), null, "a host with no version has nothing to remember");
+});
+
+test("…which is what stops its second launch being owed the whole changelog", () => {
+  // Launch 1: blank slate, shown the newest note, marker written. The user never opens What's new.
+  const marker = firstLaunchMarker(null, false, "0.3.5");
+  // Launch 2 (settings now exist): without the marker this read as "updating from before tracking".
+  const withoutIt = countFrom(null, true, "0.1.0");
+  assert.deepEqual(lines(notesSince(FIVE, withoutIt, "0.3.5")), ["0.3", "0.2"], "the bug: everything since the baseline");
+  const withIt = countFrom(marker, true, "0.1.0");
+  assert.deepEqual(lines(notesSince(FIVE, withIt, "0.3.5")), [], "nothing, until there is an update");
+  assert.deepEqual(lines(notesSince(FIVE, withIt, "0.5.1")), ["0.5", "0.4"], "and then exactly what is new since");
 });

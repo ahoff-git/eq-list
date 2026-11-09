@@ -30,6 +30,11 @@ export const CHANGELOG: readonly ReleaseNote[] = [
     changes: [
       { kind: "new", text: "After an update, a strip across the top tells you what changed — and if you skipped several updates, every one of them. Everything is kept under Settings → What's new." },
       { kind: "new", text: "Settings → How-to: short walkthroughs for the parts people tend to miss — keeping the window over the game, building a list, alerts, reading your stats, planning gear, the map's routes and the peer room." },
+      { kind: "fixed", text: "The Session tab credits each mob with the XP and coin it actually paid — before, most XP was credited to no mob, and coin to the kill before. The kill ledger's per-kill coin now matches your log." },
+      { kind: "fixed", text: "The Spells catalogue no longer fails to load at launch when another tab asks for the item catalogue at the same moment." },
+      { kind: "fixed", text: "The breadcrumb names a tab the way the tab row does (AAs, Inventory & exports, General) instead of a capitalised internal name." },
+      { kind: "fixed", text: "The Peers tab said nothing leaves your machine until you switch something on, though what you've observed, wiki pages you hold and your character stats are shared by default. It now says what is shared." },
+      { kind: "fixed", text: "The map's source tooltip no longer advertises bundled maps the app stopped shipping." },
     ],
   },
   {

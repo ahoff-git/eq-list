@@ -78,6 +78,19 @@ export function countFrom(seen: string | null, usedBefore: boolean, baseline: st
 }
 
 /**
+ * What a **first install** should remember the moment it launches, or null when it shouldn't. A blank slate — nothing
+ * remembered, nothing else saved — has no history to catch up on, so it is shown the newest note once, as a courtesy,
+ * and starts counting from this build. Left unmarked until somebody opens the notes, it would fail the next test the
+ * way an old install does: its second launch has saved settings but no marker, reads as "updating from before this was
+ * tracked", and is owed *every* note since the baseline — a list that grows with each release for anyone who never
+ * clicked the banner.
+ */
+export function firstLaunchMarker(seen: string | null, usedBefore: boolean, current: string): string | null {
+  if (seen !== null || usedBefore) return null;
+  return parseVersion(current) ? current : null;
+}
+
+/**
  * The version to remember once the notes have been shown: the one running — unless that is *behind*
  * what's already remembered. A dev build (`0.3.0`, never CI-stamped) launched over an installed `0.3.45`, or a
  * rollback, must not pull the marker back, or the next real launch would announce everything again.

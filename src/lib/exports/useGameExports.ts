@@ -152,7 +152,7 @@ export interface PeerStats {
 }
 
 /**
- * Everyone sharing their stats with you (the **Character stats** kind, off by default), by name — asked for the way
+ * Everyone sharing their stats with you (the **Character stats** kind, on unless switched off — [ADR 0372](../../../specs/decisions/0372-character-stats-are-shared-by-default.md)), by name — asked for the way
  * inventories are (`inventoryAsksDue`, `kind` "stats"), since a live kind nothing fetches unprompted. Only what has
  * arrived: a peer offering one is not listed until it does ([ADR 0371](../../../specs/decisions/0371-a-stats-record-is-kept-and-shared.md)).
  */

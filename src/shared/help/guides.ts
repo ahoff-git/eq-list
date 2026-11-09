@@ -150,7 +150,7 @@ export const GUIDES: readonly Guide[] = [
     gist: "Join the room, choose what to share, ask for what others have, and plan as them.",
     section: "peers",
     steps: [
-      "Open Settings → **Peers** and tick **Connect to the peer-to-peer network**. Connecting only makes you visible.",
+      "Open Settings → **Peers** and tick **Connect to the peer-to-peer network**. Connecting makes you visible, and starts sharing what is on by default (below).",
       "Put your name in **Shown to peers**.",
       "Under **What you share**, choose what you offer. What you've observed (mob and kill observations, respawn times) and copies of wiki pages are on by default; things you made — rules, styles, your list, your pins — are off until you switch them on.",
       "**Who's here** lists the room. Press a button under someone's name to ask for that kind of thing. What arrives waits under **What's arrived** — things somebody made are only added when you press **Add**.",

@@ -154,3 +154,19 @@ test("rubbish places are dropped and the rest still read", () => {
   assert.deepEqual(labels(t), ["List", "Loot"]);
   assert.equal(t.at, 1);
 });
+
+// A crumb is the name of the tab you clicked. It used to be the tab's *key*, capitalised — "Aa" for AAs, "Exports" for
+// Inventory & exports, "Settings" for General — three words for one place, on the row meant to match the tab row.
+test("a crumb is called what its tab is called, not its key with a capital", () => {
+  assert.equal(placeLabel({ tab: "aa" }), "AAs");
+  assert.equal(placeLabel({ tab: "exports" }), "Inventory & exports");
+  assert.equal(placeLabel({ tab: "settings" }), "General");
+  assert.equal(placeLabel({ tab: "tradeskills" }), "Guides");
+  assert.equal(placeLabel({ tab: "crafting" }), "Crafting log");
+  assert.equal(placeLabel({ tab: "help" }), "How-to");
+  assert.equal(placeLabel({ tab: "updates" }), "What's new");
+});
+
+test("a remembered trail naming a tab that no longer exists still reads as something", () => {
+  assert.equal(placeLabel({ tab: "oldtab" }), "Oldtab");
+});

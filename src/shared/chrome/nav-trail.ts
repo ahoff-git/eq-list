@@ -14,6 +14,7 @@
  * Pure and framework-free so it can be tested as a black box; `src/lib/nav.tsx` is the React binding
  * and `NavBar` draws it.
  */
+import { SECTION_NAMES } from "./areas";
 
 /** A screen in the control window: which tab, and the wiki page open on it (if any). */
 export interface NavPlace {
@@ -93,10 +94,14 @@ export function stepTo(trail: NavTrail, index: number): NavTrail {
   return { ...trail, at: index };
 }
 
-/** What a place is called on a breadcrumb: the page it holds, else the tab's own name. */
+/**
+ * What a place is called on a breadcrumb: the page it holds, else the section's own name — the one its tab wears
+ * (`SECTION_NAMES`), so the trail says "AAs" where the row says "AAs", not "Aa". A key no section has (one a
+ * remembered trail still names, since dropped) falls back to the key, capitalised.
+ */
 export function placeLabel(place: NavPlace): string {
   if (place.page) return place.page;
-  return place.tab.charAt(0).toUpperCase() + place.tab.slice(1);
+  return SECTION_NAMES[place.tab] ?? place.tab.charAt(0).toUpperCase() + place.tab.slice(1);
 }
 
 export interface NavCrumb {

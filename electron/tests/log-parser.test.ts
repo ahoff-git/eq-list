@@ -177,6 +177,30 @@ test("parses coin from an auto-sold item, and says it came from the item", () =>
   assert.equal(e!.copper, 4);
 });
 
+// Verbatim from a real EverQuest Legends log: off an item it is "received", not "receive" — 195 lines, all of them.
+// The parser matched only "receive", so none of them were ever read.
+test("parses 'You received …' off an item, in every shape of coin the real log has", () => {
+  const cases: [string, number][] = [
+    ["You received 1 gold, 7 silver and 9 copper from that item.", 179],
+    ["You received 1 platinum, 2 gold, 1 silver and 4 copper from that item.", 1214],
+    ["You received 5 copper from that item.", 5],
+    ["You received 1 gold and 3 copper from that item.", 103],
+    ["You received 2 silver and 9 copper from that item.", 29],
+    ["You received 1 platinum from that item.", 1000],
+  ];
+  for (const [text, copper] of cases) {
+    const e = parseCoinLine(`[Thu Jul 30 13:11:56 2026] ${text}`);
+    assert.ok(e, text);
+    assert.equal(e!.from, "item", text);
+    assert.equal(e!.copper, copper, text);
+  }
+});
+
+test("'received' is not a way into other lines: it still needs coin, and a place that pays it", () => {
+  assert.equal(parseCoinLine("[Thu Jul 30 13:11:56 2026] You received a Gnoll Fang from that item."), null);
+  assert.equal(parseCoinLine("[Thu Jul 30 13:11:56 2026] You received 3 silver from a vendor."), null);
+});
+
 test("a 'You receive' line with no coin in it is not a coin line", () => {
   assert.equal(parseCoinLine("[Fri Jul 17 18:41:14 2026] You receive a Gnoll Fang from the corpse."), null);
   assert.equal(parseCoinLine("[Fri Jul 17 18:41:14 2026] You receive 3 silver from a vendor."), null);

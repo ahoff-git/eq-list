@@ -1149,3 +1149,80 @@ test("placedKills is every positioned kill ever, past the unscoped window", () =
   assert.ok(placed.every((r) => r.y !== undefined && r.x !== undefined));
   assert.equal(placed[0].mob, "a rat 249"); // newest first
 });
+
+// ── a kill's coin is written before the kill (EverQuest Legends) ──
+//
+// 6,994 of 7,001 corpse-coin lines in a real 94 MB log have the kill's "has been slain" line within 3 s
+// *after* them — the game writes XP, coin, the corpse's dying words, then the kill, in one second. A ledger that
+// files coin under "the most recent kill" therefore pays each mob the *next* mob's money; measured against that log,
+// 73% of kills (6,646 of 9,144) had the wrong coin, or none.
+
+const byMob = (k: KillLog) => new Map(k.kills().map((x) => [x.mob, x.coin]));
+
+test("coin written just before a kill is that kill's, not the previous kill's", () => {
+  const k = freshKillLog();
+  kill(k, "a kobold", 10);
+  k.noteCoin(coin(59, 20)); // …the game writes this first,
+  kill(k, "a gnoll", 20); // …then this, in the same second.
+  assert.equal(byMob(k).get("a gnoll"), 59, "the mob that died with the coin gets it");
+  assert.equal(byMob(k).get("a kobold"), undefined, "and the one before it doesn't keep it");
+});
+
+test("a run of kills each keep their own coin, including the first, which has no earlier kill to guess", () => {
+  const k = freshKillLog();
+  k.noteCoin(coin(3, 10));
+  kill(k, "a kobold", 10);
+  k.noteCoin(coin(5, 20));
+  kill(k, "a gnoll", 20);
+  k.noteCoin(coin(7, 30));
+  kill(k, "a jackal", 30);
+  const coins = byMob(k);
+  assert.equal(coins.get("a kobold"), 3);
+  assert.equal(coins.get("a gnoll"), 5);
+  assert.equal(coins.get("a jackal"), 7);
+});
+
+test("the correction counts the coin once, in the ledger and on a replay", () => {
+  const dir = tempDir();
+  const first = freshKillLog(dir);
+  first.noteCoin(coin(5, 10));
+  kill(first, "a kobold", 10);
+  assert.equal(byMob(first).get("a kobold"), 5);
+  const again = freshKillLog(dir); // a restart, and the same log read again
+  assert.equal(again.noteCoin(coin(5, 10)), false, "already seen");
+  assert.equal(byMob(again).get("a kobold"), 5, "not doubled");
+});
+
+test("two coin lines before one kill both go to it", () => {
+  const k = freshKillLog();
+  k.noteCoin(coin(5, 10));
+  k.noteCoin(coin(7, 11));
+  kill(k, "a kobold", 11);
+  assert.equal(byMob(k).get("a kobold"), 12);
+});
+
+test("coin from looting an old corpse isn't taken by a kill that comes seconds later", () => {
+  const k = freshKillLog();
+  kill(k, "a kobold", 10);
+  k.noteLoot(looted("Bone Chips", "a kobold", 40));
+  k.noteCoin(coin(8, 41)); // the same looting action as the item line
+  kill(k, "a gnoll", 50); // nine seconds on — too far behind to be this kill's
+  assert.equal(byMob(k).get("a kobold"), 8);
+  assert.equal(byMob(k).get("a gnoll"), undefined);
+});
+
+test("where the kill is written first, the coin stays with it", () => {
+  const k = freshKillLog();
+  kill(k, "a kobold", 10);
+  k.noteCoin(coin(9, 11));
+  assert.equal(byMob(k).get("a kobold"), 9);
+});
+
+test("a stranger's kill doesn't claim your coin", () => {
+  const k = freshKillLog();
+  k.noteCoin(coin(9, 10));
+  k.record("a kobold", "Someone Else", ZONE, stamp(10), 10);
+  kill(k, "a gnoll", 10);
+  assert.equal(byMob(k).get("a gnoll"), 9, "yours is the one that gets paid");
+  assert.equal(byMob(k).get("a kobold"), undefined);
+});

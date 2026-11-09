@@ -4,7 +4,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { AREAS, areaOf, sectionToOpen } from "../../src/shared/chrome/areas";
+import { AREAS, SECTION_NAMES, areaOf, sectionToOpen } from "../../src/shared/chrome/areas";
 
 test("every section belongs to exactly one area", () => {
   const all = AREAS.flatMap((a) => a.sections);
@@ -37,4 +37,10 @@ test("a remembered section that can't be used here, or isn't in the area, falls 
 test("an area with nothing usable still names a section, so the window never shows an empty panel", () => {
   const now = areaOf("buffs")!;
   assert.equal(sectionToOpen(now, {}, () => false), "overview");
+});
+
+test("every section has a name — the one its tab and its breadcrumb both wear — and nothing is named that has no section", () => {
+  const sections = AREAS.flatMap((a) => a.sections);
+  assert.deepEqual(sections.filter((s) => !SECTION_NAMES[s]), []);
+  assert.deepEqual(Object.keys(SECTION_NAMES).filter((s) => !sections.includes(s)), [], "a name for a section that was dropped");
 });

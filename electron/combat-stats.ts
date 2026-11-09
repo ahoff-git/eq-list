@@ -103,6 +103,14 @@ const CAST_PAIR_MS = 20_000;
 const XP_ATTRIBUTION_MS = 15_000;
 
 /**
+ * How far *behind* a kill its experience and coin may be written and still be that kill's. EverQuest Legends writes
+ * both **before** the "has been slain" line — XP, coin, the corpse's dying words, the kill, one second — so crediting
+ * "the most recent kill" credits the one before. Measured on a real 94 MB log: 61% of experience gains (5,215 of
+ * 8,586) had no kill in the 15 s behind them at all, so no mob was credited though the one that paid was 3 s ahead.
+ */
+const GAIN_LEADS_KILL_MS = 3_000;
+
+/**
  * How long after a kill coin off a corpse is still credited to it. Longer than the experience
  * window: experience lands the same second as the kill, whereas looting is something the player
  * gets round to — often after the next pull has already started.
@@ -233,13 +241,14 @@ export interface CombatTracker {
    */
   recordKill(mob: string, at: string): void;
   /**
-   * An experience gain: counted, credited to the most recent kill, and split solo/party.
+   * An experience gain: counted, split solo/party, and credited to the kill it belongs to — the one that *follows* it
+   * on this server (ADR 0375), until then to the most recent.
    * Takes the parsed event so the tracker isn't handed loose numbers to re-interpret.
    */
   recordXp(event: XpEvent): void;
   /**
-   * Coin off a corpse — the mob's money. Credited to the most recent kill, the same
-   * attribution the log forces on experience (it names no mob either).
+   * Coin off a corpse — the mob's money. Credited like experience: to the kill that follows it, until then to the
+   * most recent (the line names no mob).
    */
   recordCoin(event: CoinEvent): void;
   /**
@@ -718,6 +727,15 @@ export function createCombatStats(
   let heldQueue: HeldEvent[] = [];
   /** The last mob to die, for experience attribution, and when the last kill landed. */
   let lastKill: { mob: string; at: number } | null = null;
+  /**
+   * Experience and coin from the last few seconds and the mob each was credited to (null: none), so the kill that
+   * follows them — which is the one that paid, see `GAIN_LEADS_KILL_MS` — can take them over. `claimed`: a kill has.
+   */
+  let recentGains: { at: number; xpPct: number; copper: number; mob: string | null; claimed: boolean }[] = [];
+  const noteGain = (gain: { at: number; xpPct: number; copper: number; mob: string | null }): void => {
+    recentGains = recentGains.filter((g) => gain.at - g.at < GAIN_LEADS_KILL_MS * 2);
+    recentGains.push({ ...gain, claimed: false });
+  };
   let lastKillAt = 0;
   /**
    * How the fight in progress last had an opponent leave it — what it will be filed as ending in,
@@ -1805,13 +1823,32 @@ export function createCombatStats(
       }
       lastKill = { mob, at };
       lastKillAt = at;
+      // The experience and coin written just before this line paid for *this* kill: take them from whoever the
+      // backwards-looking rule gave them to (the kill before), or from nobody.
+      for (const g of recentGains) {
+        const lead = at - g.at;
+        if (g.claimed || lead < 0 || lead >= GAIN_LEADS_KILL_MS || g.mob === mob) continue;
+        for (const w of openWindows()) {
+          if (g.mob) {
+            const was = w.mob(g.mob);
+            was.xpPct = Math.max(0, was.xpPct - g.xpPct);
+            was.copper = Math.max(0, was.copper - g.copper);
+          }
+          const now = w.mob(mob);
+          now.xpPct += g.xpPct;
+          now.copper += g.copper;
+        }
+        g.mob = mob;
+        g.claimed = true;
+      }
       emit();
     },
 
     /**
      * Experience. Counted, split solo/party, and credited to the mob that died in the
-     * attribution window — EQ never says which mob paid, and the "slain" line lands
-     * immediately before the gain, so the most recent kill is the best available answer.
+     * attribution window — EQ never says which mob paid. The "slain" line lands in the *same second*, but after
+     * the gain on this server, so the first guess is the most recent kill and the kill that follows (`recordKill`)
+     * takes it over (ADR 0375).
      */
     recordXp(event) {
       const at = ms(event.at);
@@ -1822,9 +1859,9 @@ export function createCombatStats(
         else w.totals.soloXp += 1;
         w.totals.xpPct += pct;
       }
-      if (pct && lastKill && at - lastKill.at >= -2000 && at - lastKill.at < XP_ATTRIBUTION_MS) {
-        for (const w of openWindows()) w.mob(lastKill.mob).xpPct += pct;
-      }
+      const credited = pct && lastKill && at - lastKill.at >= -2000 && at - lastKill.at < XP_ATTRIBUTION_MS ? lastKill.mob : null;
+      if (credited) for (const w of openWindows()) w.mob(credited).xpPct += pct;
+      if (pct) noteGain({ at, xpPct: pct, copper: 0, mob: credited });
       emit();
     },
 
@@ -1841,9 +1878,9 @@ export function createCombatStats(
       if (event.from !== "corpse" || event.copper <= 0) return;
       const at = ms(event.at);
       for (const w of openWindows()) w.totals.copper += event.copper;
-      if (lastKill && at - lastKill.at >= -2000 && at - lastKill.at < COIN_ATTRIBUTION_MS) {
-        for (const w of openWindows()) w.mob(lastKill.mob).copper += event.copper;
-      }
+      const credited = lastKill && at - lastKill.at >= -2000 && at - lastKill.at < COIN_ATTRIBUTION_MS ? lastKill.mob : null;
+      if (credited) for (const w of openWindows()) w.mob(credited).copper += event.copper;
+      noteGain({ at, xpPct: 0, copper: event.copper, mob: credited });
       emit();
     },
 
@@ -1891,6 +1928,7 @@ export function createCombatStats(
       pending = null;
       lastKill = null;
       lastKillAt = 0;
+      recentGains = []; // credits belong to the sitting that earned them
       lastLanding = null;
       incoming.length = 0;
       heldIncoming.clear();

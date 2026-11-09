@@ -240,7 +240,25 @@ export function createPageStore(db: Database, legacyDir: string): PageStore {
     return migrating ? readLegacy(title) : null;
   }
 
-  async function each(visit: (entry: StoredPage) => void): Promise<void> {
+  /**
+   * The walk in progress (or the last one to finish), so the next waits for it.
+   *
+   * `walk` yields to the event loop every `EACH_CHUNK` pages — and while it is yielded its row iterator is still
+   * open on `eachStmt`. A second walk starting then (the Items tab mounting while the Spells tab, the share hub or
+   * the shard index asks for the same catalogue — an ordinary launch) opened a second iterator on the same statement
+   * and SQLite refused: "This statement is busy executing a query". The Spells catalogue then failed to load, at
+   * startup, on a real launch. One iterator at a time; the callers' own results are unchanged, only later.
+   */
+  let walking: Promise<void> = Promise.resolve();
+
+  function each(visit: (entry: StoredPage) => void): Promise<void> {
+    const run = walking.then(() => walk(visit));
+    // Whether a walk finishes or throws, the next one goes after it — a failing visitor mustn't wedge the queue.
+    walking = run.catch(() => undefined);
+    return run;
+  }
+
+  async function walk(visit: (entry: StoredPage) => void): Promise<void> {
     await migration;
     let n = 0;
     for (const row of eachStmt.iterate() as IterableIterator<{ version: number; page_json: string }>) {

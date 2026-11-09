@@ -8,7 +8,7 @@ import type { ReceivedShare } from "@/shared/types";
 const num = (n: number) => Math.round(n).toLocaleString();
 
 /**
- * What the people who shared their **Character stats** (off by default) say they have: their classes and level,
+ * What the people who shared their **Character stats** (on by default since ADR 0372, once a read has been taken) say they have: their classes and level,
  * and the figures the game's own Inventory window showed them — HP, mana, AC — as of when they read it. Only what
  * you asked them for, and never a figure they weren't sure of.
  *

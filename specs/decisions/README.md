@@ -415,6 +415,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0372: Character stats are shared by default — the one live kind that is on unless switched off, because there is no row until a stats read has been taken, a guess never goes, and the switch still wins (amends 0371)](./0372-character-stats-are-shared-by-default.md)
 - [0373: Release notes are a release line, and how-to guides are checked against the code — a player is shown every line since the one they last saw, and the process is a CLAUDE.md rule held up by tests](./0373-release-notes-are-a-release-line-and-guides-are-checked-against-the-code.md)
 - [0374: History before release notes is read, never announced — dated periods rebuilt from the project's log, less detail the further back; and an update from before tracking is counted from the baseline (amends 0373)](./0374-history-before-release-notes-is-read-never-announced.md)
+- [0375: A kill's coin and experience belong to the kill that follows — this server writes them *before* the slain line, so the kill ledger's per-kill coin was right for 27% of kills and the meter credited no mob for 61% of XP; a kill now claims the rewards that led it](./0375-a-kills-coin-and-experience-belong-to-the-kill-that-follows.md)
 
 ## Open Questions
 

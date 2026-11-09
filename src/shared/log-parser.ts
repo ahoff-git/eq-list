@@ -18,7 +18,7 @@
  *
  * Coin is its own line and names neither mob nor item — only which of the two paid:
  *   You receive <coins> from the corpse.     (the mob's money)
- *   You receive <coins> from that item.      (an auto-sold item's money)
+ *   You received <coins> from that item.     (an item's money — "received", not "receive": every real line)
  *
  * A line can report a stack ("You looted 2 Spiderling Eye from…"), so every pattern
  * captures the count into `qty` — dropping it would under-count the shopping list.
@@ -210,7 +210,11 @@ export function parseLoot(line: LogLine): LootEvent | null {
  * Neither form names the mob or the item — attribution is the reader's job (see
  * `electron/kill-log.ts` for the corpse and the loot line itself for the item).
  */
-const COIN_RE = /^You receive (?<coins>.+?) from (?<from>the corpse|that item)\.$/;
+// "receive" off a corpse, but **"received"** off an item: all 195 "from that item" lines in a real 94 MB log read
+// `You received 1 gold, 7 silver and 9 copper from that item.` (after `You successfully destroyed 1 Catman Skin.`),
+// and none read `You receive … from that item` — the wording this header used to document. The one pattern
+// missed every one of them, so they fell into the unmatched pile.
+const COIN_RE = /^You receive[d]? (?<coins>.+?) from (?<from>the corpse|that item)\.$/;
 
 export function parseCoin(line: LogLine): CoinEvent | null {
   const m = line.message.match(COIN_RE);

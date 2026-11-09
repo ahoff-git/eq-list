@@ -38,6 +38,39 @@ export const AREAS: readonly AreaDef[] = [
   { key: "settings", label: "Settings", sections: ["settings", "peers", "help", "updates"] },
 ];
 
+/**
+ * What each section is **called** — the one list the section row, the breadcrumb and the how-to buttons all read.
+ * The breadcrumb used to make a name by capitalising the tab's key, so it said "Aa" for AAs, "Exports" for Inventory &
+ * exports and "Settings" for General: three words for one place, on the one row (a trail you read back to find where you
+ * were) that is meant to match the tab you clicked. A count (`Alerts (6)`) is the tab's own business; this is the name.
+ */
+export const SECTION_NAMES: Readonly<Record<string, string>> = {
+  overview: "Overview",
+  buffs: "Buffs",
+  timers: "Timers",
+  goals: "Goals",
+  achievements: "Achievements",
+  alerts: "Alerts",
+  list: "List",
+  hunt: "Hunt",
+  search: "Search",
+  items: "Items",
+  spells: "Spells",
+  stances: "Stances",
+  aa: "AAs",
+  exports: "Inventory & exports",
+  faction: "Faction",
+  tradeskills: "Guides",
+  crafting: "Crafting log",
+  combat: "Combat",
+  session: "Session",
+  loot: "Loot",
+  settings: "General",
+  peers: "Peers",
+  help: "How-to",
+  updates: "What's new",
+};
+
 /** The area a section belongs to, or undefined for a key no area has (a section since dropped). */
 export function areaOf(section: string): AreaDef | undefined {
   return AREAS.find((a) => a.sections.includes(section));
