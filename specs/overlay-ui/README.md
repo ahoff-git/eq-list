@@ -260,7 +260,9 @@ list, hunt, search, damage, session, peers, settings.
   ghosts the top prefix match for Tab, and remembers recent picks
   ([ADR 0349](../decisions/0349-the-search-bar-autocompletes.md)). Now's first section is the **Overview** (`now/NowOverview.tsx`), one card
   per running board, each opening its section. The status bar carries the **stale-export reminder**
-  (`exports/StaleExportChip.tsx`), and an item's hover card says **who has it** (`lib/exports/ownership.tsx`).
+  (`exports/StaleExportChip.tsx`) and the **stale-stats reminder** (`items/StaleStatsChip.tsx`: a level, a stat ability or
+  buff, or the plan's race/classes/level changed since your stats were read — [ADR 0369](../decisions/0369-a-stale-stats-read-says-so.md)),
+  and an item's hover card says **who has it** (`lib/exports/ownership.tsx`).
   An item's **page** says how many you have per area of the export (`items/HeldOnPage.tsx`,
   [ADR 0350](../decisions/0350-an-item-page-says-how-many-you-have.md)), and under it which sharing peers
   hold it and how many (`items/PeersHoldOnPage.tsx`, [ADR 0354](../decisions/0354-an-item-page-says-which-peers-have-it.md)). A **zone** page opens its

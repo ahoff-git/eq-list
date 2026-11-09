@@ -29,6 +29,7 @@ import type { CombatTracker } from "./combat-stats";
 import type { CombatHistory } from "./combat-history";
 import type { HighScoreKeeper } from "./high-scores";
 import type { XpTracker } from "./xp-progress";
+import type { StatChanges } from "./stat-changes";
 import type { SkillProgressTracker } from "./skill-progress";
 import type { HpTracker } from "./hp-estimate";
 import type { KillLog } from "./kill-log";
@@ -87,6 +88,7 @@ export interface IpcContext {
   /** Personal bests — the board, and wiping it. */
   scores: HighScoreKeeper;
   xp: XpTracker;
+  statChanges: StatChanges;
   skills: SkillProgressTracker;
   hp: HpTracker;
   killLog: KillLog;
@@ -523,7 +525,7 @@ function registerLucyIpc(context: IpcContext): void {
  * loot, faction standing and pooled mob knowledge.
  */
 function registerStatsIpc(context: IpcContext, mergedFight: PeerIpc["mergedFight"]): void {
-  const { watcher, combat, history, xp, skills, hp, killLog, lootLog, factionLog, factionCorrections, npcSightings, mobs, factionObservations, spawns, goals, buffs, achievements, gameClock, damageOverlay, getCurrentZone, getCurrentLoc, broadcast } = context;
+  const { watcher, combat, history, xp, statChanges, skills, hp, killLog, lootLog, factionLog, factionCorrections, npcSightings, mobs, factionObservations, spawns, goals, buffs, achievements, gameClock, damageOverlay, getCurrentZone, getCurrentLoc, broadcast } = context;
 
   // Pooled the same way the live push and a filed fight both are (ADR 0276) — a reader that opens
   // the Combat tab mid-fight gets the same merged figures `CH.combatChanged` would have pushed it,
@@ -548,6 +550,7 @@ function registerStatsIpc(context: IpcContext, mergedFight: PeerIpc["mergedFight
   ipcMain.handle(CH.combatZones, () => history.zones());
   ipcMain.handle(CH.combatBests, () => history.bests());
   ipcMain.handle(CH.xpGet, () => xp.state());
+  ipcMain.handle(CH.statChangesGet, () => statChanges.all());
   ipcMain.handle(CH.tradeskillProgress, () => context.tradeskillView());
   // The one figure the log can't give us, supplied by the player (see xp-progress.ts).
   ipcMain.handle(CH.xpSet, (_e, intoLevel: number, level?: number) => xp.set(intoLevel, level));

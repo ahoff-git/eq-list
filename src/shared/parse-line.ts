@@ -15,7 +15,7 @@
  * doesn't own, so the order only affects cost — never the outcome.
  */
 import { parseCombat } from "./combat/combat-parser";
-import { parseCoin, parseCombine, parseFactionChange, parseGameTime, parseKill, parseLevel, parseLoc, parseLogin, parseLoot, parseParty, parseSighting, parseSkillUp, parseXp, parseZone, splitLine } from "./log-parser";
+import { parseAbility, parseCoin, parseCombine, parseFactionChange, parseGameTime, parseKill, parseLevel, parseLoc, parseLogin, parseLoot, parseParty, parseSighting, parseSkillUp, parseXp, parseZone, splitLine } from "./log-parser";
 import type { CombatEvent, LogEvent, LogLine } from "./types";
 
 /** Everything a log line can turn into. */
@@ -78,6 +78,9 @@ const MATCHERS: ((line: LogLine) => ParsedEvent | null)[] = [
   // night — and every one of its three wordings is a tight, unambiguous anchor, so it costs
   // nothing to leave this late either.
   parseFactionChange,
+  // Spending ability points. A few lines a night, on a tight anchor ("You have gained the ability" /
+  // "You have improved … at a cost of"), so it costs nothing to leave late.
+  parseAbility,
   // A consider or a hail. Before `parseParty`, whose group-chat pattern is looser than either of
   // these — and after everything that owns a line outright, since it is a handful of lines a night.
   parseSighting,

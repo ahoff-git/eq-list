@@ -435,6 +435,11 @@ function createWebApi(): EqlApi {
       onRead: () => noop,
     },
 
+    statChanges: {
+      get: async () => [],
+      onChanged: () => noop,
+    },
+
     search: {
       onPrefill: () => noop,
       show: async () => {},

@@ -185,6 +185,10 @@ export const STORAGE_KEYS = {
   /** The AC, health and mana your worn gear gives against what the loadout builder's loadout reaches — written
    *  by the builder so the status bar's pill can say it without planning anything itself (`headroom.ts`). */
   itemHeadroom: "eqlist.items.headroom",
+  /** When your stats were last read (or typed) and against which race, classes and level, the stat-buff moves
+   *  seen since, and the race/classes/level the planner uses now — one record, written by the loadout builder
+   *  and the status bar's buff watcher, read by the "re-read your stats" pill (`stats-stamp.ts`). */
+  statsStamp: "eqlist.items.statsStamp",
   /** Items tab: what you've told best in slot — locks, wanted effects, benched items, skipped hunts. */
   itemBisOptions: "eqlist.items.bisOptions",
   /** Items tab: the same choices for each person sharing their inventory, by name (ADR 0342). */

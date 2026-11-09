@@ -4349,8 +4349,10 @@ select optgroup {
 .result.across { flex-direction: column; align-items: flex-start; gap: 2px; }
 
 /* The status bar's resist suggestion (DamageTakenChip): the gold of a "worth a look", and a button. */
-.statusbar .damage-chip { background: transparent; color: var(--accent); border-color: var(--accent-dim); font: inherit; font-size: 11px; cursor: pointer; flex-shrink: 0; }
-.statusbar .damage-chip:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.statusbar .damage-chip, .statusbar .stats-chip { background: transparent; color: var(--accent); border-color: var(--accent-dim); font: inherit; font-size: 11px; cursor: pointer; flex-shrink: 0; }
+.statusbar .damage-chip:hover, .statusbar .stats-chip:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+/* The stats reminder (StaleStatsChip) — the same gold, plus a quiet nudge: it is the one chip that asks you to do something in the game. */
+.statusbar .stats-chip { border-style: dashed; }
 
 /* A status-bar chip that opens its tab (`StatusLink`): reads as the bar's text until pointed at. */
 .statusbar .status-link { cursor: pointer; border-radius: 4px; padding: 1px 4px; }

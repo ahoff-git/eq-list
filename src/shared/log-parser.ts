@@ -40,6 +40,7 @@ import type {
   KillEvent,
   LocEvent,
   LevelEvent,
+  AbilityEvent,
   LoginEvent,
   PartyEvent,
   SightingEvent,
@@ -326,6 +327,30 @@ export function parseLevel(line: LogLine): LevelEvent | null {
     };
   }
   return null;
+}
+
+/**
+ * Spending ability points, verbatim from a real log: `You have gained the ability "Soul Abrasion" at a cost
+ * of 3 ability points.` and `You have improved Soul Abrasion 2 at a cost of 6 ability points.` — a new
+ * ability, and a rank bought in one already held (the trailing number is the rank). The cost is "1 ability
+ * point" singular as well. Free upgrades at a level-up arrive in the second form at a cost of 0.
+ */
+const ABILITY_RE = /^You have (?:gained the ability "(?<gained>[^"]+)"|improved (?<improved>.+?)(?: (?<rank>\d+))?) at a cost of (?<cost>\d+) ability points?\.$/;
+
+export function parseAbility(line: LogLine): AbilityEvent | null {
+  const m = line.message.match(ABILITY_RE);
+  if (!m?.groups) return null;
+  const name = (m.groups.gained ?? m.groups.improved ?? "").trim();
+  if (!name) return null;
+  return {
+    kind: "ability",
+    name,
+    ...(m.groups.rank && { rank: Number(m.groups.rank) }),
+    cost: Number(m.groups.cost),
+    logId: line.logId,
+    raw: line.raw,
+    at: line.at,
+  };
 }
 
 /**

@@ -6,6 +6,7 @@ import { CheckField } from "@/app/components/ui";
 import { api } from "@/lib/api";
 import { useCapabilities } from "@/lib/hooks";
 import { STATS_HOTKEY } from "@/shared/constants";
+import type { Reason } from "@/shared/items/stats-drift";
 import type { DerivedRate } from "@/shared/items/derived-stats";
 import { GOAL_PRESETS, goalCount, goalsWithoutBase, goalsWithoutPools, priorityOnly, withGoal, type BisGoals, type GoalKey, type GoalRow, type StatGoal } from "@/shared/items/bis-goals";
 import { calibrate, isCalibrated, shownNow, type Calibration, type StatTotals } from "@/shared/items/stat-base";
@@ -34,6 +35,8 @@ export default function BisGoals({
   counted,
   calibration = {},
   readWaiting = false,
+  drift = [],
+  onAcknowledge,
   onGoals,
   onCalibration,
 }: {
@@ -47,6 +50,10 @@ export default function BisGoals({
   calibration?: Calibration;
   /** A stats grab has been read but can't be applied yet — it is measured against what you wear, which needs your dump. */
   readWaiting?: boolean;
+  /** Why the stats you read can no longer be trusted (`stats-drift.ts`) — empty while they can. */
+  drift?: readonly Reason[];
+  /** "Nothing has changed": keep the stats as they are and stop saying so until something else does. */
+  onAcknowledge?: () => void;
   onGoals: (next: BisGoals) => void;
   onCalibration?: (next: Calibration) => void;
 }) {
@@ -98,6 +105,21 @@ export default function BisGoals({
       {baseless.length > 0 && (
         <p className="small warn">
           Tick your race in the Race picker: a floor on {baseless.map(labelOf).join(" and ")} is in the game&apos;s numbers, and the attributes your race and classes start with count toward it only once the plan knows your race. Until then it counts gear alone.
+        </p>
+      )}
+      {drift.length > 0 && (
+        <p className="small warn">
+          Your stats may have changed since you last read them — {drift.map((r) => r.text).join("; ")}. Floors count what you have beyond your gear from that read, so they are off until it is read again.{" "}
+          {capabilities.lookup && (
+            <button className="btn sm" onClick={() => void api()?.lookup.open("stats")} title={`Open your Inventory window's stats page, then drag over it (or press ${STATS_HOTKEY.label})`}>
+              Read my stats again
+            </button>
+          )}{" "}
+          {onAcknowledge && (
+            <button className="btn ghost sm" onClick={onAcknowledge} title="Keep the stats as they are, and stop saying this until something else changes">
+              Nothing&apos;s changed
+            </button>
+          )}
         </p>
       )}
       {readWaiting && (

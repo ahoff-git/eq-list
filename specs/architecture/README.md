@@ -47,7 +47,9 @@ in the main process and all UI in the renderer.
   - `combat-stats.ts` — the one session tracker: experience/kill counters, per-combatant
     and per-spell tallies, per-mob rates; `combat-history.ts` — finished fights persisted
     for later; `xp-progress.ts` / `hp-estimate.ts` — persistent player state that outlives
-    a session reset (all see [log-watching](../log-watching/README.md)).
+    a session reset (all see [log-watching](../log-watching/README.md)); `stat-changes.ts` — the journal of
+    levels and stat-moving abilities the log says you gained, which is what makes a stats read stale
+    ([ADR 0369](../decisions/0369-a-stale-stats-read-says-so.md)).
     See [ADR 0019](../decisions/0019-parse-once-and-one-tracker.md).
   - `windows.ts` — the framed control window and the frameless transparent overlay.
     Windows show without stealing focus (overlay uses `showInactive`); DevTools open

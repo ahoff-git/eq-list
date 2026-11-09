@@ -16,7 +16,7 @@ import { splitLine } from "../src/shared/log-parser";
 import { catchUpState, type CaughtUpState } from "../src/shared/log-catchup";
 import { createLogger } from "../src/shared/logging";
 import type { LogCursor } from "./log-cursor";
-import type { CombineEvent, SkillUpEvent } from "../src/shared/types";
+import type { AbilityEvent, CombineEvent, SkillUpEvent } from "../src/shared/types";
 import type { CoinEvent, FactionEvent, GameTimeEvent, LootEvent, LogLine, LoginEvent, PartyEvent, ZoneEvent, XpEvent, KillEvent, LocEvent, LevelEvent, CombatEvent, SightingEvent, WatcherStatus } from "../src/shared/types";
 
 const log = createLogger("log-watcher");
@@ -58,6 +58,8 @@ export interface LogWatcher {
   onGameTime(cb: (e: GameTimeEvent) => void): void;
   onCombat(cb: (e: CombatEvent) => void): void;
   onLevel(cb: (e: LevelEvent) => void): void;
+  /** Ability points spent — a new ability or a rank. Some of them move your stats (`stat-changes.ts`). */
+  onAbility(cb: (e: AbilityEvent) => void): void;
   /** A skill going up, with its new value — the only place the log states a skill. */
   onSkillUp(cb: (e: SkillUpEvent) => void): void;
   /** A tradeskill combine's result, success or failure. */
@@ -421,6 +423,7 @@ export function createLogWatcher(cursor?: LogCursor): LogWatcher {
     onGameTime: (cb) => void bus.on("gameTime", cb),
     onCombat: (cb) => void bus.on("combat", cb),
     onLevel: (cb) => void bus.on("level", cb),
+    onAbility: (cb) => void bus.on("ability", cb),
     onSkillUp: (cb) => void bus.on("skillup", cb),
     onCombine: (cb) => void bus.on("combine", cb),
     onSighting: (cb) => void bus.on("sighting", cb),

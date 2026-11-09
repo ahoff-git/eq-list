@@ -1224,6 +1224,16 @@ features for later in [../ideas.md](../ideas.md).
   Read it once mid-session with mana or HP spent: a pool below its max reads as its max, and a spent one may come
   back as "Not sure of Mana (2,924?)" — that guess is usually right but is held back, so type it or read again at
   full mana.
+- **The "re-read your stats" pill** ([ADR 0369](../decisions/0369-a-stale-stats-read-says-so.md)). Desktop app. With
+  a stats read applied in the loadout builder, the status bar shows nothing. Then, one at a time: level up in game
+  (the pill says "level up" within a moment, and its hover names the level); buy a stat ability such as Innate
+  Eminence (it says "new ability"), but not a utility one (it stays quiet); let a stat buff fade — Skin like Wood,
+  a Spirit of … — and the pill says "buffs changed", then recast it and it goes away by itself; tick a different
+  race, or change the level band, in the Items tab ("race/class/level changed"). Click the pill: it opens the
+  builder, whose goals box says the same in a sentence with *Read my stats again* and *Nothing's changed* —
+  the second clears the pill until something else changes. Read again: gone. Restart the app with the buffs still
+  up: the pill must **not** appear (the board starts empty after a launch; that is not a change). Clear the last
+  calibrated box by hand: the pill goes. A player who has never read or typed their stats never sees it.
 - **A floor that is enough, and everything else** ([ADR 0359](../decisions/0359-a-floor-can-be-enough-and-the-rest-is-maximised.md)).
   Tick one casting class and add Mana with *At least* 4,000 points and HP at 100%. Note the mana line,
   then tick *Stop at floor*: the Priority slider on Mana goes away, mana drops to just over 4,000, and

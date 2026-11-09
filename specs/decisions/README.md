@@ -409,6 +409,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0366: A loadout floor is in the game's own numbers — race and class base plus a typed-in calibration count toward it, kept as an offset from what the worn gear gives (extends 0353)](./0366-a-loadout-floor-is-in-the-games-own-numbers.md)
 - [0367: A loadout row says what it changes — each stat column shows the pick as the game counts it (attributes' HP/mana/AC included) and the change from what you wear in that slot](./0367-a-loadout-row-says-what-it-changes.md)
 - [0368: A stats grab reads the Inventory window — a second hotkey fires the same frozen-screen drag but parses the crop as the page's columns of labels and numbers, repairs a lost "/" by structure, never applies a guess, and calibrates attributes and resists as well as the pools (extends 0366)](./0368-a-stats-grab-reads-the-inventory-window.md)
+- [0369: A stale stats read says so — a status-bar pill when a level, a stat-moving ability, a stat buff coming or going, or the plan's own race/classes/level has changed since the read; never gear or time (extends 0368)](./0369-a-stale-stats-read-says-so.md)
 
 ## Open Questions
 
@@ -754,6 +755,15 @@ and degrading to blank facts when the file isn't there.*
   named pins ([ADR 0265](./0265-named-spawns-mark-themselves-on-the-map.md)) can mark common spawns.
   [ADR 0351](./0351-a-zone-page-opens-the-map-and-lists-its-spawns.md) uses the roster's article
   instead. Open: switch `isNamedMob` to that rule, intersect the two, or find a narrower category.
+- **Should the damage-taken suggestions count the stats read's resist totals?** [ADR 0361](./0361-damage-taken-is-read-over-a-window-and-priced-by-the-wikis-resist-rule.md)
+  prices a resist, and undoes the resists already worn, on the **gear's** points alone — "the only points known"
+  — while a stats read ([ADR 0368](./0368-a-stats-grab-reads-the-inventory-window.md)) now holds the game's
+  *total* for each (race, AAs and buffs included). Open: feed the read's totals to `resist-worth.ts`, which would make
+  it a second consumer of a read, and so a second thing [ADR 0369](./0369-a-stale-stats-read-says-so.md)'s reminder must cover.
+- **Should a stats read be kept as figures, so a changed race, class or level recomputes instead of nagging?**
+  [ADR 0369](./0369-a-stale-stats-read-says-so.md) stores what the game showed as an offset from what the plan counts,
+  which is only true against the race, classes and level it was measured with. Open: store the figures the game
+  showed and the gear worn, and re-derive the offsets under whatever basis the plan has now.
 - **Should the stats grab set the planner's level and classes?** [ADR 0368](./0368-a-stats-grab-reads-the-inventory-window.md)
   reads the figures on the Inventory window's stats page but not the header above them (`31 WIZ/DRU/MAG`), and
   the planner's rates still use the Items tab's level cap (60) — not the character's level, which the same

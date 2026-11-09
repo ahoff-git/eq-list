@@ -58,6 +58,9 @@ import { useWindowPin } from "@/lib/chrome/windowToggles";
 import AwariHost from "@/lib/awari/host";
 import { OVERLAY_HOTKEY, UI_SCALE } from "@/shared/constants";
 import { offerStatsRead } from "@/lib/stats-read";
+import { useStatsStore } from "@/lib/items/stats-stamp";
+import StaleStatsChip from "@/app/components/items/StaleStatsChip";
+import StatBuffWatcher from "@/app/components/items/StatBuffWatcher";
 import { showToast } from "@/lib/toast";
 import { readNotice } from "@/shared/items/stats-read-notice";
 
@@ -175,6 +178,18 @@ function ControlWindow() {
   useEffect(() => {
     if (nav.tab !== "items") setFocusDamage(0);
   }, [nav.tab]);
+  // The stats reminder's way in (ADR 0369): the loadout builder, on the same count-so-a-second-click-lands pattern.
+  const [focusStats, setFocusStats] = useState(0);
+  const viewStats = useCallback(() => {
+    setFocusStats((n) => n + 1);
+    openTab("items");
+  }, [openTab]);
+  useEffect(() => {
+    if (nav.tab !== "items") setFocusStats(0);
+  }, [nav.tab]);
+  // Only someone with a stats read needs the buff board watched for stat buffs coming and going — the
+  // reminder compares a buff then against now — and watching means loading the spell catalogue.
+  const { stamp: statsStamp } = useStatsStore();
   useEffect(() => {
     const a = api();
     if (!a) return;
@@ -402,7 +417,7 @@ function ControlWindow() {
           {tab === "loot" && <LootPanel />}
           {tab === "faction" && <FactionPanel />}
           {tab === "search" && <SearchPanel prefill={prefill} onPrefillUsed={prefillUsed} />}
-          {tab === "items" && <ItemSearchPanel damage={{ window: damageWindow, onWindow: setDamageWindow, focus: focusDamage }} />}
+          {tab === "items" && <ItemSearchPanel damage={{ window: damageWindow, onWindow: setDamageWindow, focus: focusDamage }} statsFocus={focusStats} />}
           {tab === "spells" && <SpellSearchPanel />}
           {tab === "stances" && <StancesPanel />}
           {tab === "aa" && <AAPanel />}
@@ -416,8 +431,10 @@ function ControlWindow() {
           {tab === "settings" && <SettingsPanel />}
         </div>
 
+        {statsStamp && <StatBuffWatcher />}
         <StatusBar>
           {capabilities.log && <DamageTakenChip window={damageWindow} onOpen={viewDamage} />}
+          {capabilities.log && capabilities.lookup && <StaleStatsChip onOpen={viewStats} />}
           {capabilities.log && <StaleExportChip onOpen={viewExport} />}
         </StatusBar>
       </div>

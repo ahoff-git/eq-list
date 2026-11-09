@@ -11,17 +11,28 @@ import type { StatsRead } from "@/shared/items/stats-page";
  * when it is mounted and able to measure it against what you wear. One read waits at a time: a newer grab
  * replaces an older one nobody had picked up, because it is the one the game is showing now.
  *
+ * It remembers **when the screen was read**, because the planner may apply it minutes later (it waits for
+ * an inventory dump) and everything that happens in between — a level, a fading buff — is already
+ * missing from it. The stale-stats reminder dates the read from here, not from when it was applied
+ * ([ADR 0369](../../specs/decisions/0369-a-stale-stats-read-says-so.md)).
+ *
  * Like `toast.ts`, a bus rather than a context: the page that receives the grab and the panel that uses
  * it have no parent in common worth threading a callback through.
  */
-let pending: StatsRead | null = null;
+export interface PendingStatsRead {
+  read: StatsRead;
+  /** When the grab came in, epoch ms — within a couple of seconds of when the screen was read. */
+  at: number;
+}
+
+let pending: PendingStatsRead | null = null;
 const listeners = new Set<() => void>();
 
 const announce = () => listeners.forEach((l) => l());
 
 /** A grab came in; it waits here until something takes it. */
-export function offerStatsRead(read: StatsRead): void {
-  pending = read;
+export function offerStatsRead(read: StatsRead, at: number = Date.now()): void {
+  pending = { read, at };
   announce();
 }
 
@@ -32,8 +43,8 @@ export function clearStatsRead(): void {
   announce();
 }
 
-/** The read waiting for the planner, or null. Re-renders when one arrives or is taken. */
-export function usePendingStatsRead(): StatsRead | null {
+/** The read waiting for the planner, and when it was taken, or null. Re-renders when one arrives or is taken. */
+export function usePendingStatsRead(): PendingStatsRead | null {
   return useSyncExternalStore(
     (listener) => {
       listeners.add(listener);

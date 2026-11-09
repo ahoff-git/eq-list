@@ -6,6 +6,7 @@ import type { InventoryItem } from "./game-export-dumps";
 import type { AdminPatchResult, AdminRecord, AdminSearchHit, AdminStoreInfo } from "./admin";
 import type { CheckResult } from "./chrome/self-check";
 import type { StatsRead } from "./items/stats-page";
+import type { StatChange } from "./items/stats-drift";
 import type { MobKnowledge, MobObservation } from "./mob/mob-stats";
 import type { NpcSighting } from "./npc/npc-sightings";
 import type { KnowledgeContributor } from "./contributors";
@@ -494,6 +495,20 @@ export interface LevelEvent extends LogEventBase {
 }
 
 /**
+ * Ability points spent: `You have gained the ability "Soul Abrasion" at a cost of 3 ability points.`, or a
+ * rank bought, `You have improved Soul Abrasion 2 at a cost of 6 ability points.` (the number after the name
+ * is the rank). A cost of 0 is the free upgrade a level-up hands out. Worth knowing because some abilities
+ * move the stats the planner measures (Innate Eminence, Innate Spell Resistance, Natural Durability), and
+ * nothing else in the log says one was bought.
+ */
+export interface AbilityEvent extends LogEventBase {
+  kind: "ability";
+  name: string;
+  rank?: number;
+  cost: number;
+}
+
+/**
  * A skill going up: "You have become better at Blacksmithing! (60)". `value` is the skill **after**
  * the increase — the only place the log ever states a skill, so the latest one is the character's
  * current skill.
@@ -569,6 +584,7 @@ export type LogEvent =
   | KillEvent
   | LocEvent
   | LevelEvent
+  | AbilityEvent
   | CoinEvent
   | LoginEvent
   | SightingEvent
@@ -4379,6 +4395,15 @@ export interface EqlApi {
      * `false` for an id main doesn't know. The caller re-runs the check to show whether it worked.
      */
     selfCheckFix(id: string): Promise<boolean>;
+  };
+  statChanges: {
+    /**
+     * The levels and abilities the log says moved your stats, oldest first — what makes a stats read stale
+     * ([ADR 0369](../../specs/decisions/0369-a-stale-stats-read-says-so.md)). Kept by the main process, so
+     * a level gained while the app was closed is still here.
+     */
+    get(): Promise<StatChange[]>;
+    onChanged(cb: (changes: StatChange[]) => void): Unsubscribe;
   };
   stats: {
     /**

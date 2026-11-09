@@ -22,7 +22,11 @@ import { expectedStats } from "@/shared/items/bis-columns";
 import { effectiveStats, type LoadoutStats } from "@/shared/items/loadout-stats";
 import { applyRead, countedNow, modelledBase, statBase } from "@/shared/items/stat-base";
 import { confidentValues } from "@/shared/items/stats-page";
+import { basisOf } from "@/shared/items/stats-drift";
 import { clearStatsRead, usePendingStatsRead } from "@/lib/stats-read";
+import { acknowledgeStats, clearStatsStamp, publishBasis, stampStats } from "@/lib/items/stats-stamp";
+import { useStatsDrift } from "@/lib/items/useStatsDrift";
+import { MAX_PLAYER_LEVEL } from "@/app/components/items/ItemLevelBand";
 import { publishHeadroom } from "@/lib/combat/headroom";
 import { useLeanLoadout } from "@/lib/items/useLeanLoadout";
 import { effectiveRun, goalCount, solveGoalsAsync, type GoalOutcome } from "@/shared/items/bis-goals";
@@ -120,12 +124,29 @@ export default function BisView({
   // is made to agree with the game by comparing it with what the plan counts for what you wear. Yours only,
   // and only with a dump to measure against — until then it waits, and the goals box says so. A figure the
   // read wasn't sure of is left for the player to confirm, never applied on a guess.
-  const statsRead = usePendingStatsRead();
+  const pendingRead = usePendingStatsRead();
+  // What the plan measures your stats against — the race and classes ticked, and the Items tab's level —
+  // and whether anything is calibrated. The status bar's "re-read your stats" pill lives outside this tab,
+  // where none of that can change, so the builder says it (ADR 0369).
+  const basis = useMemo(() => basisOf(race, criteria.facets.class, criteria.levelMax ?? MAX_PLAYER_LEVEL), [race, criteria.facets.class, criteria.levelMax]);
+  const hasCalibration = Object.keys(options.calibration).length > 0;
+  const { stamp, reasons: drift } = useStatsDrift();
   useEffect(() => {
-    if (!statsRead || holder || !counted) return;
-    onOptions({ ...options, calibration: applyRead(options.calibration, confidentValues(statsRead), counted) });
+    if (!holder) publishBasis(basis, hasCalibration);
+  }, [holder, basis, hasCalibration]);
+  // A calibration that came from before the reminder existed, or in a preset, is taken as current as of now.
+  useEffect(() => {
+    if (!holder && hasCalibration && !stamp) stampStats(basis);
+  }, [holder, hasCalibration, stamp, basis]);
+  useEffect(() => {
+    if (!pendingRead || holder || !counted) return;
+    const sure = confidentValues(pendingRead.read);
+    onOptions({ ...options, calibration: applyRead(options.calibration, sure, counted) });
+    // Dated from when the screen was read, not from now: this may have waited for a dump, and anything that
+    // happened meanwhile is not in it. A read that was sure of nothing has refreshed nothing.
+    if (Object.keys(sure).length) stampStats(basis, pendingRead.at);
     clearStatsRead();
-  }, [statsRead, holder, counted, options, onOptions]);
+  }, [pendingRead, holder, counted, options, onOptions, basis]);
   const goalKey = goaled ? planKey([rows, items, procSpells], [criteria, weights, planned, rates, closedKey]) : "";
   const [, answered] = useState(0);
   const lastSteering = useRef<GoalOutcome | null>(null);
@@ -160,8 +181,15 @@ export default function BisView({
   const calibrating = {
     counted,
     calibration: options.calibration,
-    onCalibration: (calibration: BisOptions["calibration"]) => onOptions({ ...options, calibration }),
-    readWaiting: !!statsRead && !holder && !counted,
+    // A typed figure says "this is right now", so it dates the calibration as of now; clearing the last one leaves none to date.
+    onCalibration: (calibration: BisOptions["calibration"]) => {
+      onOptions({ ...options, calibration });
+      if (Object.keys(calibration).length) stampStats(basis);
+      else clearStatsStamp();
+    },
+    readWaiting: !!pendingRead && !holder && !counted,
+    drift: holder ? [] : drift,
+    onAcknowledge: acknowledgeStats,
   };
   const planWeights = steering?.weights ?? weights;
   const planMelee = steering?.melee ?? planned.melee;

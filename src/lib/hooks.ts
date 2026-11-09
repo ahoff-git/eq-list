@@ -67,6 +67,7 @@ import { knownItems, type KnownItem } from "@/shared/items/known-items";
 import { knownMobs, type KnownMob } from "@/shared/mob/known-mobs";
 import type { ItemRow } from "@/shared/items/item-search";
 import type { SpellRow } from "@/shared/spells/spell-search";
+import type { StatChange } from "@/shared/items/stats-drift";
 import { clockSkew } from "@/shared/mob/spawn-timers";
 import { runningGoalTargets } from "@/shared/goals/goal-progress";
 import { usePersistentState } from "@/lib/usePersistentState";
@@ -255,6 +256,7 @@ const LIVE = {
   xp: live<XpProgress>((a) => a.xp.get(), (a, on) => a.xp.onChanged(on)),
   tradeskills: live<SkillProgressView>((a) => a.tradeskills.progress(), (a, on) => a.tradeskills.onProgress(on)),
   hp: live<HpEstimate>((a) => a.hp.get(), (a, on) => a.hp.onChanged(on)),
+  statChanges: live<StatChange[]>((a) => a.statChanges.get(), (a, on) => a.statChanges.onChanged(on)),
   zone: live<string | null>((a) => a.zone.current(), (a, on) => a.zone.onChanged(on)),
   loc: live<LocEvent | null>((a) => a.loc.current(), (a, on) => a.loc.onChanged(on)),
   list: live<ShoppingList>((a) => a.list.get(), (a, on) => a.list.onChanged(on)),
@@ -345,6 +347,16 @@ export function useTradeskillProgress(): SkillProgressView {
  */
 export function useXpProgress(): XpProgress {
   return useLive(LIVE.xp, { intoLevel: 0, known: false });
+}
+
+const NO_STAT_CHANGES: StatChange[] = [];
+
+/**
+ * The levels and abilities the log says moved your stats, oldest first — what makes a stats read stale
+ * (`stat-changes.ts`, ADR 0369). Empty until the main process answers, and always on the web build.
+ */
+export function useStatChanges(): StatChange[] {
+  return useLive(LIVE.statChanges, NO_STAT_CHANGES);
 }
 
 /**

@@ -73,7 +73,7 @@ const MAX_ROWS = 300;
  * the two kinds of change — "what does this ask?" and "how is it arranged?" — arrive separately and
  * were previously in the same four hundred lines.
  */
-export default function ItemSearchPanel({ damage }: { damage?: DamageControl }) {
+export default function ItemSearchPanel({ damage, statsFocus }: { damage?: DamageControl; statsFocus?: number }) {
   // Re-read when a harvest run ends, not as it goes — see `useCurrentItemCatalog`.
   const { rows, loading, harvest } = useCurrentItemCatalog();
 
@@ -99,6 +99,10 @@ export default function ItemSearchPanel({ damage }: { damage?: DamageControl }) 
   useEffect(() => {
     if (statsRead) setMode("bis");
   }, [statsRead, setMode]);
+  // And the status bar's "re-read your stats" reminder (ADR 0369), where reading again is one button away.
+  useEffect(() => {
+    if (statsFocus) setMode("bis");
+  }, [statsFocus, setMode]);
   // What you've told the loadout builder. Held here rather than in `BisView` so a preset can carry it.
   const [storedBis, setBisOptions] = usePersistentState<BisOptions>(STORAGE_KEYS.itemBisOptions, normalizeBisOptions(undefined));
   const bisOptions = useMemo(() => normalizeBisOptions(storedBis), [storedBis]);

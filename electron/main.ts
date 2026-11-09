@@ -54,6 +54,7 @@ import { readIdentity } from "./identity";
 import { createOcr } from "./ocr";
 import { createLookup } from "./lookup";
 import { createStatsReader } from "./stats-reader";
+import { createStatChanges } from "./stat-changes";
 import { registerIpc } from "./ipc";
 import { createMainWindow, createMapWindow, createAdminWindow, createAlertWindow, closeAlertWindow, getAlertWindow, getMainWindow, getMapWindow, neutralizeOverlays, setOverlayProvider, showInSearch, showStatsRead } from "./windows";
 import { resetPositions, beginQuit, wasMapOpen } from "./window-state";
@@ -284,6 +285,8 @@ if (!app.requestSingleInstanceLock()) {
   const scores = createHighScores(userData);
   scores.setQuiet(true);
   const xp = createXpProgress(userData);
+  // Levels and abilities the log says moved your stats — what makes a stats read stale (ADR 0369).
+  const statChanges = createStatChanges(userData);
   // Your tradeskills as the log states them, with the log's history read once (`skill-progress.ts`).
   const skills = createSkillProgress(userData);
   // What the Tradeskills tab is told is `tradeskillView` below: this, plus the room's pooled rates.
@@ -476,6 +479,7 @@ if (!app.requestSingleInstanceLock()) {
     history,
     scores,
     xp,
+    statChanges,
     skills,
     hp,
     killLog,
@@ -771,6 +775,7 @@ if (!app.requestSingleInstanceLock()) {
   });
   watcher.onLevel((event) => {
     xp.levelUp(event.level, event.at);
+    statChanges.noteLevel(event);
     // More hit points now, so the old bounds are void — unless this is EQL's per-class numbering
     // reporting a level *below* the highest seen, which isn't a real level change (`hp-estimate.ts`).
     hp.levelUp(event.level);
@@ -900,6 +905,9 @@ if (!app.requestSingleInstanceLock()) {
     buffs.noteFightEnd(fight.endReason ?? "timeout");
   });
   xp.onChange((progress) => broadcast(CH.xpChanged, progress));
+  watcher.onAbility((event) => statChanges.noteAbility(event));
+  // A catch-up can note hundreds at once; the renderer wants the journal, not every step to it.
+  statChanges.onChange(coalesce(250, () => broadcast(CH.statChangesChanged, statChanges.all())));
   skills.onChange(() => broadcast(CH.tradeskillProgressChanged, tradeskillView()));
   watcher.onSkillUp((event) => skills.note(event));
   watcher.onCombine((event) => skills.note(event));
@@ -1108,6 +1116,7 @@ if (!app.requestSingleInstanceLock()) {
     history.flush();
     xp.flush();
     hp.flush();
+    statChanges.flush();
     killLog.flush();
     lootLog.flush();
     flushPendingFaction();

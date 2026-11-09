@@ -97,6 +97,7 @@ export const CH = {
   recordsTest: "records:test", // show a sample celebration, wearing the look records use
   recordsClear: "records:clear",
   xpGet: "xp:get",
+  statChangesGet: "stats:changes", // the journal of levels and abilities that move your stats
   tradeskillProgress: "tradeskills:progress",
   xpSet: "xp:set",
   hpGet: "hp:get",
@@ -315,6 +316,7 @@ export const CH = {
   locChanged: "evt:loc",
   combatChanged: "evt:combat",
   xpChanged: "evt:xp",
+  statChangesChanged: "evt:statChanges", // main → renderers: a level or ability was added to that journal
   tradeskillProgressChanged: "evt:tradeskill-progress",
   hpChanged: "evt:hp",
   searchPrefill: "evt:searchPrefill",
