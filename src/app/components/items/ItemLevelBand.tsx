@@ -48,7 +48,7 @@ export default function ItemLevelBand({
         max={MAX_PLAYER_LEVEL}
         step={1}
         value={criteria.levelMax ?? MAX_PLAYER_LEVEL}
-        title="Hide anything you'd have to be higher than this to use"
+        title="Hide anything you'd have to be higher than this to use. Reading your stats from the game sets it to your level."
         onChange={(e) => {
           const at = Number(e.target.value);
           onChange({ levelMax: at >= MAX_PLAYER_LEVEL ? undefined : at });

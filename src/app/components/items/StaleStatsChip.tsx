@@ -1,6 +1,6 @@
 "use client";
 import { useStatsDrift } from "@/lib/items/useStatsDrift";
-import { STATS_HOTKEY } from "@/shared/constants";
+import { useStatsHotkey } from "@/lib/items/useStatsHotkey";
 import { exportAgeText } from "@/shared/game-exports";
 import { driftLabel } from "@/shared/items/stats-drift";
 
@@ -20,10 +20,11 @@ import { driftLabel } from "@/shared/items/stats-drift";
  */
 export default function StaleStatsChip({ onOpen }: { onOpen: () => void }) {
   const { stamp, reasons } = useStatsDrift();
+  const hotkey = useStatsHotkey();
   if (!stamp || !reasons.length) return null;
   const title = [
     `Your stats were last read ${exportAgeText(Date.now() - stamp.at)}. Since then: ${reasons.map((r) => r.text).join("; ")}.`,
-    `Press ${STATS_HOTKEY.label} over your Inventory window's stats page to read them again. Click to open the loadout builder.`,
+    `${hotkey.works ? `Press ${hotkey.label} over your Inventory window and drag a box over the whole window to read them again.` : "Open your Inventory window and use the Read my stats button to read them again."} Click to open the loadout builder.`,
   ].join("\n\n");
   return (
     <button type="button" className="chip stats-chip" title={title} onClick={onOpen}>

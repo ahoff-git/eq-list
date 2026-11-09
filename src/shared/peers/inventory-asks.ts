@@ -2,11 +2,12 @@
  * inventory-asks.ts — which peers a view using holdings should ask for their inventory now.
  *
  * Inventory is a `live` kind, which nothing fetches unprompted (ADR 0309), so the view asks — once
- * per revision a peer offers. Pure so the rules can be pinned by a test: `asked` is the caller's
+ * per revision a peer offers. Any other live kind that is asked for the same way (a peer's `stats`, ADR 0371) takes
+ * the same rules: name it in `kind`. Pure so the rules can be pinned by a test: `asked` is the caller's
  * memory across renders (when each peer@revision was last asked), and this both reads and updates it.
  */
 import type { AwariPeer } from "../types";
-import type { ReceivedShare } from "./peer-share";
+import type { ReceivedShare, ShareKind } from "./peer-share";
 
 /** How long an unanswered ask waits before it's repeated — a reply can be lost on the way. */
 export const INVENTORY_REASK_MS = 2 * 60_000;
@@ -26,13 +27,14 @@ export function inventoryAsksDue(
   asked: Map<string, number>,
   now: number,
   reaskMs = INVENTORY_REASK_MS,
+  kind: ShareKind = "inventory",
 ): string[] {
   const due: string[] = [];
   for (const peer of peers) {
-    const offered = peer.offer?.inventory;
+    const offered = peer.offer?.[kind];
     if (!offered?.n || !peer.sessionId) continue;
     const key = `${peer.peerId}@${offered.rev}`;
-    const have = received.find((r) => r.peerId === peer.peerId && r.kind === "inventory");
+    const have = received.find((r) => r.peerId === peer.peerId && r.kind === kind);
     if (have && have.rev >= offered.rev) {
       asked.delete(key);
       continue;

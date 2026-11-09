@@ -24,19 +24,42 @@
  * Several OCR passes may be given — the same image prepared two ways fails in different places, so per
  * stat the cleanest read wins (a cell whose dividers all survived, then a repair that was certain, then
  * any repair), the recogniser's own confidence breaking a tie, and the first pass winning an even one.
+ * They also check each other: two passes that read a stat believably and *differ* have caught the recogniser
+ * out, and that stat is doubtful (a heavily compressed or small-scaled screenshot misreads a digit with
+ * full confidence — the red SV. Fire row first).
  *
  * What comes out is in the planner's stat keys, ready for `stat-base.ts` to turn into calibration.
  * Pure → a tested black box.
  */
 import { levenshtein } from "../fuzzy";
-import { rowsOf, typicalHeight, type OcrRow, type OcrWord } from "../chrome/ocr-rows";
+import { rowsOf, typicalHeight, UNSURE_CONFIDENCE, type OcrRow, type OcrWord } from "../chrome/ocr-rows";
 import { ATTRIBUTE_CAP } from "./character-base";
 import type { StatKey } from "./item-stats";
+import { readIdentity, type Identity } from "./stats-identity";
 
 /** What the page said, in the planner's own stat keys. */
 export type StatsValues = Partial<Record<StatKey, number>>;
 
+/** What the recogniser saw at all, so a read that found no stats can say what it found instead. */
+export interface Seen {
+  /** Words in the first pass. Zero is a blank capture (a game in exclusive fullscreen often captures black). */
+  words: number;
+  /** The first few legible words, top to bottom — "Inventory Equipment Pet Loadouts" says what window it was. */
+  sample: string;
+  /** The crop's size in screen pixels — a sliver can't be read. Filled in by whoever has the image. */
+  width?: number;
+  height?: number;
+}
+
 export interface StatsRead {
+  /** The name, level and classes in the window's corner, when the drag included it. */
+  who?: Identity;
+  /** What was in the crop, for explaining an empty or partial read. */
+  seen?: Seen;
+  /** The recogniser itself failed — not a crop that held nothing. */
+  problem?: "engine";
+  /** So many figures were in doubt that the capture as a whole is not trusted: every figure is doubtful, whatever it looked like alone. */
+  noisy?: boolean;
   values: StatsValues;
   /** Read, but a lost `/` had to be inferred from what the stat can be — cells a second look could read cleanly. */
   repaired: StatKey[];
@@ -49,7 +72,8 @@ export interface StatsRead {
 /** A resist's cap as the page prints it (`SV. Fire 19/1000`). Attributes' is `ATTRIBUTE_CAP` (`74/510`). */
 export const RESIST_CAP = 1000;
 
-type Group = "pool" | "ac" | "attribute" | "resist";
+/** `regen` is one number per tick, beside no `/` — not something a floor is set on, so never "missing". */
+type Group = "pool" | "ac" | "attribute" | "resist" | "regen";
 
 interface Field {
   key: StatKey;
@@ -77,16 +101,25 @@ const FIELDS: readonly Field[] = [
   { key: "svDisease", group: "resist", labels: ["sv disease", "disease"] },
   { key: "svPoison", group: "resist", labels: ["sv poison", "poison"] },
   { key: "svVoid", group: "resist", labels: ["sv void", "void", "sv corruption", "corruption"] },
+  // What the Deaths page asks the player to type (a regen per tick), so a read can answer it.
+  { key: "hpRegen", group: "regen", labels: ["hp regen", "hp regeneration"] },
+  { key: "manaRegen", group: "regen", labels: ["mana regen", "mana regeneration"] },
+  { key: "endRegen", group: "regen", labels: ["end regen", "endurance regen"] },
 ];
 
 /** How many numbers a cell holds: `cur/max`, and for AC `cur/softcap | evasion`. */
-const PARTS: Record<Group, number> = { pool: 2, attribute: 2, resist: 2, ac: 3 };
+const PARTS: Record<Group, number> = { pool: 2, attribute: 2, resist: 2, ac: 3, regen: 1 };
 
 /** What a number can be, for the group — outside this it is a misread, not a stat. */
-const PLAUSIBLE: Record<Group, number> = { pool: 9_999_999, ac: 99_999, attribute: 2_000, resist: 5_000 };
+const PLAUSIBLE: Record<Group, number> = { pool: 9_999_999, ac: 99_999, attribute: 2_000, resist: 5_000, regen: 9_999 };
 
-/** A word the recogniser was this unsure of (0–100) makes its stat doubtful, however tidy the number looks. */
-const UNSURE = 55;
+/**
+ * This many stats in doubt at once says the *capture* is bad — compressed, shrunk, or noisy — and a figure that
+ * looks tidy in such a capture is no more to be believed than its neighbours: on real screenshots the ones that
+ * slipped through were misreads that came out as plausible numbers. A clean lossless capture has one or two in
+ * doubt (a spent pool, a fused AC); a bad one has several.
+ */
+const NOISY = 4;
 
 /** A repaired split is believed only when this far ahead of the next-best — that takes a structural match, not a style preference. */
 const DECISIVE = 5;
@@ -337,11 +370,34 @@ export function readStatsPage(passes: readonly (readonly OcrWord[])[]): StatsRea
       return better > 0 ? o : best;
     }, undefined);
     if (!chosen) continue;
-    values[field.key] = valueOf(field.group, chosen.decoded.parts);
+    const value = valueOf(field.group, chosen.decoded.parts);
+    values[field.key] = value;
     if (!chosen.decoded.clean) repaired.push(field.key);
-    if ((!chosen.decoded.clean && !chosen.decoded.certain) || chosen.cell.confidence < UNSURE) doubtful.push(field.key);
+    // Two preparations that each read the stat believably and say different things have caught the recogniser
+    // out: one of them is wrong and nothing says which, so the figure is shown but not trusted. (A guess that
+    // loses to a cleaner read is not a disagreement — it was never believable.)
+    const contested = options.some((o) => o !== chosen && grade(o.decoded) >= 1 && valueOf(field.group, o.decoded.parts) !== value);
+    if ((!chosen.decoded.clean && !chosen.decoded.certain) || chosen.cell.confidence < UNSURE_CONFIDENCE || contested) doubtful.push(field.key);
   }
-  return { values, repaired, doubtful, missing: FIELDS.map((f) => f.key).filter((key) => values[key] === undefined) };
+  const who = readIdentity(passes);
+  const noisy = doubtful.length >= NOISY;
+  return {
+    ...(who && { who }),
+    seen: seenIn(passes[0] ?? []),
+    ...(noisy && { noisy }),
+    values,
+    repaired,
+    doubtful: noisy ? (Object.keys(values) as StatKey[]) : doubtful,
+    missing: FIELDS.filter((f) => f.group !== "regen" && values[f.key] === undefined).map((f) => f.key),
+  };
+}
+
+/** How many legible words the sample keeps — enough to name the window, not a transcript. */
+const SAMPLE_WORDS = 8;
+
+function seenIn(pass: readonly OcrWord[]): Seen {
+  const legible = rowsOf(pass).flatMap((row) => row.words.filter((w) => w.confidence >= UNSURE_CONFIDENCE && /[A-Za-z0-9]{2,}/.test(w.text)));
+  return { words: pass.length, sample: legible.slice(0, SAMPLE_WORDS).map((w) => w.text).join(" ") };
 }
 
 /**

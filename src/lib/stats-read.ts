@@ -1,6 +1,8 @@
 "use client";
 import { useSyncExternalStore } from "react";
-import type { StatsRead } from "@/shared/items/stats-page";
+import { api } from "@/lib/api";
+import { combatFigures } from "@/shared/items/stats-for-combat";
+import type { StatsRead, StatsValues } from "@/shared/items/stats-page";
 
 /**
  * stats-read.ts — a stats grab's result, waiting for the loadout planner to take it.
@@ -26,9 +28,16 @@ export interface PendingStatsRead {
 }
 
 let pending: PendingStatsRead | null = null;
+/** Figures a read was unsure of, kept after the rest was applied — until the player says yes or no. */
+let unconfirmed: StatsValues | null = null;
 const listeners = new Set<() => void>();
 
 const announce = () => listeners.forEach((l) => l());
+
+const subscribe = (listener: () => void) => {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+};
 
 /** A grab came in; it waits here until something takes it. */
 export function offerStatsRead(read: StatsRead, at: number = Date.now()): void {
@@ -45,12 +54,37 @@ export function clearStatsRead(): void {
 
 /** The read waiting for the planner, and when it was taken, or null. Re-renders when one arrives or is taken. */
 export function usePendingStatsRead(): PendingStatsRead | null {
-  return useSyncExternalStore(
-    (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    () => pending,
-    () => null,
-  );
+  return useSyncExternalStore(subscribe, () => pending, () => null);
+}
+
+/**
+ * The figures a read was unsure of, kept for the player to confirm (they are never applied unasked). A newer
+ * read replaces them — it is the game as it is now — and none left clears them.
+ */
+export function holdUnconfirmed(values: StatsValues): void {
+  unconfirmed = Object.keys(values).length ? values : null;
+  announce();
+}
+
+/** The player answered, one way or the other: nothing is held any more. */
+export function clearUnconfirmed(): void {
+  if (!unconfirmed) return;
+  unconfirmed = null;
+  announce();
+}
+
+/** The figures awaiting a yes or no, or null. */
+export function useUnconfirmedStats(): StatsValues | null {
+  return useSyncExternalStore(subscribe, () => unconfirmed, () => null);
+}
+
+/**
+ * What a read answers on the Deaths page: the maximum HP and in-combat regen it asks the player to type
+ * (`combatFigures` says which the read was sure of). Straight away rather than through the planner — these
+ * need no inventory dump to mean something, and they are the player's own figure either way.
+ */
+export function answerDeathsPage(read: StatsRead): void {
+  const { maxHp, hpRegen } = combatFigures(read);
+  if (maxHp !== undefined) void api()?.hp.set(maxHp);
+  if (hpRegen !== undefined) void api()?.hp.setRegen(hpRegen);
 }

@@ -440,6 +440,12 @@ function createWebApi(): EqlApi {
       onChanged: () => noop,
     },
 
+    // A browser has no stats read to keep, and nothing to share it with.
+    statsRecord: {
+      get: async () => null,
+      set: async () => null,
+    },
+
     search: {
       onPrefill: () => noop,
       show: async () => {},

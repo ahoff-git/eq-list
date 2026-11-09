@@ -27,7 +27,7 @@ interface Row {
   label: string;
   share: number;
   hits: number;
-  /** What your worn gear gives against it, as text — resist points, AC, or why there's no figure. */
+  /** What you have against it, as text — resist points, AC, or why there's no figure. */
   gear: string;
   /** Resist rows only: the estimated chance to fully resist, and what +30 points would cut. */
   resisted?: number;
@@ -78,7 +78,7 @@ const COLUMNS: GridColDef<Row>[] = [
   {
     field: "gear",
     headerName: "Gear",
-    description: "What your worn gear gives against it: resist points, or AC for melee",
+    description: "Your resist points against it — worn gear, plus what the game shows you have beyond it once your stats are read — or AC for melee",
     ...NUM_COL,
     flex: 1,
     renderCell: (p) => <span title={p.row.note}>{p.row.gear}</span>,
@@ -86,7 +86,7 @@ const COLUMNS: GridColDef<Row>[] = [
   {
     field: "resisted",
     headerName: "Resisted",
-    description: "Estimated chance to fully resist a spell of this type, from your gear's resist points",
+    description: "Estimated chance to fully resist a spell of this type, from your resist points",
     ...NUM_COL,
     flex: 1,
     renderCell: (p) => (p.row.resisted === undefined ? <span className="muted">—</span> : <span>{percent(p.row.resisted, { places: 1 })}</span>),
@@ -136,7 +136,7 @@ export default function BisDamageTaken({
   wearing,
   focus = 0,
 }: DamageControl & {
-  /** What your worn gear adds up to — the resist points the table compares against. */
+  /** What your worn gear adds up to, with the resists you have beyond it once your stats are read — the points the table compares against. */
   wearing: LoadoutStats;
 }) {
   const taken = useDamageTaken(window);

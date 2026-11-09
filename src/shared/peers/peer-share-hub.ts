@@ -1431,6 +1431,11 @@ export function shareSources(context: {
    * expensive enough to version.
    */
   inventory: { rows: () => unknown[] };
+  /**
+   * What the followed character's last stats read said (`electron/stats-record.ts`), already without the figures
+   * awaiting their yes. Read fresh, like `inventory`: it is one row, and cheap.
+   */
+  statsRecord: { rows: () => unknown[] };
 }): Record<ShareKind, ShareSource> {
   return {
     watches: { rows: () => context.getSettings().castAlerts?.watches ?? [] },
@@ -1484,6 +1489,7 @@ export function shareSources(context: {
       },
     },
     inventory: { rows: () => context.inventory.rows() },
+    stats: { rows: () => context.statsRecord.rows() },
     celebrations: {
       rows: () => {
         const c = context.celebrations.current();

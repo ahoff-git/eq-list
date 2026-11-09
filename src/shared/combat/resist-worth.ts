@@ -16,8 +16,9 @@
  * heavily is worth no less per point, until the cap.
  *
  * Logged damage is *landed* damage, after the resists you wear, so a hardened type reads smaller than
- * it would raw. `rawDamage` undoes that with the gear's points (the only points known here — buffs,
- * race and AA aren't), which is why the figure is an estimate.
+ * it would raw. `rawDamage` undoes that with the points it is given: the gear's, and — once the stats page has
+ * been read — everything else the game shows (race, AAs, buffs: ADR 0370). Before then they are the gear's alone,
+ * which is why the figure is an estimate.
  * See [ADR 0361](../../../specs/decisions/0361-damage-taken-is-read-over-a-window-and-priced-by-the-wikis-resist-rule.md).
  *
  * Pure → a tested black box.
@@ -68,7 +69,7 @@ export interface ResistRow {
   hits: number;
   /** Of everything taken in the window, as logged, 0–1. */
   share: number;
-  /** Resist points your worn gear gives. Absent when the gear isn't known. */
+  /** The resist points you have, as given (gear, plus what a stats read adds). Absent when they aren't known. */
   points?: number;
   /** The chance of fully resisting that `points` gives, 0–0.95. Absent with `points`. */
   resisted?: number;

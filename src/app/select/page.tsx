@@ -22,9 +22,9 @@ const WORDS: Record<GrabPurpose, { hint: string; reading: string; note: string }
     note: "(the first lookup downloads the OCR model; this closes on its own and the result still opens in Search)",
   },
   stats: {
-    hint: "Drag over Character Vitals and Stats and Resists · Esc to cancel",
+    hint: "Drag over your whole Inventory window, top-right corner too · Esc to cancel",
     reading: "Reading your stats…",
-    note: "(this closes on its own; the numbers go to the loadout planner)",
+    note: "(a few seconds; this closes on its own — the numbers go to the loadout planner, max HP to the Deaths page)",
   },
 };
 

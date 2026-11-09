@@ -1234,12 +1234,17 @@ list, hunt, search, damage, session, peers, settings.
   [ADR 0081](../decisions/0081-an-ocr-grab-is-corrected-before-it-is-searched.md).
 - **Stats grab** (`electron/stats-reader.ts` + `src/shared/items/stats-page.ts`): `Ctrl/Cmd+Shift+K` (or *Read
   my stats* in the loadout builder's goals box or Settings) opens **the same frozen-screen drag** with a different
-  purpose; the selector's hint says "Drag over Character Vitals and Stats and Resists". The crop is parsed as the
-  Inventory window's columns of labels and numbers — by position, not line order — into HP, mana, endurance, AC,
-  the seven attributes and the six resists, and handed to the control window, which opens the Items tab on the
-  loadout builder; the builder turns each figure into a calibration (what the game shows beyond what the plan
-  counts) and a toast says what was read, what it wasn't sure of (held back, never applied) and what wasn't in
-  the box. See [ADR 0368](../decisions/0368-a-stats-grab-reads-the-inventory-window.md).
+  purpose; the selector's hint says "Drag over your whole Inventory window, top-right corner too". The crop is
+  parsed — twice, prepared two ways, each checking the other — as the Inventory window's columns of labels and
+  numbers (by position, not line order) into HP, mana, endurance, AC, the seven attributes, the six resists and the
+  regen rows, and as the corner's name, level and classes; it is handed to the control window, which opens the Items
+  tab on the loadout builder. The builder measures each figure against **the character the corner says you are**
+  (the Class picker and level slider follow), turns it into a calibration, and keeps any figure it wasn't sure of
+  for a yes or no in the goals box's **stats block** (`items/StatsSource.tsx`, which also says what to press when
+  nothing has been read, how old a read is, and why it is stale). Max HP and regen go to the Deaths page, and a
+  window that isn't the followed character's is refused. A toast says what was read — or, for a grab that found
+  nothing, which kind of nothing it was. See [ADR 0368](../decisions/0368-a-stats-grab-reads-the-inventory-window.md)
+  and [ADR 0370](../decisions/0370-a-stats-read-says-who-you-are-and-a-bad-one-says-what-went-wrong.md).
 - **Client glue** (`src/lib/`): `api.ts` (null-safe access to `window.eql`),
   `hooks.ts` (`useShoppingList`, `useSettings`, `useWatcherStatus`, `useLootFeed`,
   `useMatchFlashes`, `useCurrentZone`, `useEntrySources`, `useItemCard`) — subscribe on

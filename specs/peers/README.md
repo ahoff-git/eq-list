@@ -86,7 +86,7 @@ travels peer-to-peer, on request, over that peer's own connection.
     rates per tradeskill, item and skill level, counts only, filed by `electron/peer-crafting.ts` on
     the same five rules and shown beside your own in the crafting log, never merged into it
     ([ADR 0303](../decisions/0303-a-tradeskill-guide-follows-your-skill.md)).
-  - **live** (`timers`, `buffs`, `scores`, `fight`, `celebrations`, `inventory`) — true on somebody else's machine
+  - **live** (`timers`, `buffs`, `scores`, `fight`, `celebrations`, `inventory`, `stats`) — true on somebody else's machine
     right now. Held in memory, dropped when they go, never written to disk — except `fight`, the one
     exception: a confirmed match is *pooled* into your own stored history, not only held live (see
     below). Its rows carry your current or last fight's headline figures plus the fight's own hits
@@ -238,6 +238,14 @@ travels peer-to-peer, on request, over that peer's own connection.
   flag at all, so a sender can't claim otherwise. Each row also tells apart the copies a loadout
   needs (`gear`: worn and where, graded, socketed), so the loadout builder can plan for anyone
   sharing ([ADR 0342](../decisions/0342-a-loadout-can-be-planned-for-a-peer.md)).
+- **`stats`** is the live kind after it ([ADR 0371](../decisions/0371-a-stats-record-is-kept-and-shared.md)): one row,
+  what the character's last stats read said — level, classes, race, and the figures the game's own Inventory window showed
+  (HP, mana, AC, attributes, resists, regen) — kept on the sender's disk (`electron/stats-record.ts`) and dated by the
+  read. It is **on unless switched off** ([ADR 0372](../decisions/0372-character-stats-are-shared-by-default.md)) — and
+  there is no row until a stats read has been taken — and never carries a figure the read wasn't sure of: the sender's projection drops
+  those, and the receiver's reader (the same `readStatsRecord` gate the file goes through) drops them if a peer sends them
+  anyway. It is listed on the Peers tab (`PeerStats`) rather than in the tray, and the loadout builder's *Plan as them*
+  uses it with the same person's inventory, so their floors are in their real numbers.
 - **The Peers tab** (`src/app/components/PeersPanel.tsx`, with `PeerTray`, `PeerScores` and `PeerInventories`) — **the
   one home for the whole feature** ([ADR 0146](../decisions/0146-one-home-for-the-peer-network.md) ·
 [ADR 0176](../decisions/0176-a-room-fills-itself.md) ·

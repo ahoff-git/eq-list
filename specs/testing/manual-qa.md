@@ -1211,8 +1211,8 @@ features for later in [../ideas.md](../ideas.md).
   Desktop app only, and the one thing here only run on two screenshots — never yet through the hotkey. Open the
   Inventory window with Character Vitals and Stats and Resists both showing (scroll so every row is in view). Items →
   loadout builder with a dump, a goal on INT and on SV. Fire: press *Read my stats from the game* (or Ctrl+Shift+K) and
-  drag a box over both columns. The selector says "Drag over Character Vitals and Stats and Resists", Esc cancels it
-  as it does the item lookup, and a second or two later a toast reads "Read 17 stats from your Inventory window". The
+  drag a box over both columns. The selector says "Drag over your whole Inventory window, top-right corner too", Esc
+  cancels it as it does the item lookup, and a few seconds later a toast reads "Read 20 stats from your Inventory window". The
   INT and SV. Fire boxes now show the game's numbers and each goal's "got of possible" matches the window. Then try:
   a tight drag, a loose one, one that clips the top row (the toast lists what it didn't see), the whole window, and
   one over something else (toast: "No stats found in that box"). With the Items tab closed, the hotkey opens it on
@@ -1234,6 +1234,32 @@ features for later in [../ideas.md](../ideas.md).
   the second clears the pill until something else changes. Read again: gone. Restart the app with the buffs still
   up: the pill must **not** appear (the board starts empty after a launch; that is not a change). Clear the last
   calibrated box by hand: the pill goes. A player who has never read or typed their stats never sees it.
+- **A read that says who you are, and a bad one that says what went wrong** ([ADR 0370](../decisions/0370-a-stats-read-says-who-you-are-and-a-bad-one-says-what-went-wrong.md)).
+  Desktop app, through the hotkey — only ever run on screenshots, never live. Tick one class and leave the level cap at 60,
+  open the loadout builder with a dump, and drag over the **whole** Inventory window, corner included. The toast says
+  "You're level N … " with your three classes; the Class picker now shows them, the level slider is at your level, and
+  nothing flashes in the status bar. The stats block in the goals box says the read is "as of just now — measured as
+  <classes> at level N". Check the Deaths page: max HP and regen are filled in, no longer "health unknown". Then the
+  ways it should go wrong, each with its own sentence: drag over only the stats (toast says to include the corner);
+  only the top-right corner ("Found the Inventory window, but not its stats"); only the paperdoll ("No stats found",
+  with what it read instead); a sliver ("too small"); with the game in exclusive fullscreen, a black capture ("blank");
+  while following a different character's log, your window ("That's X's window, not Y's" — and nothing changes); and
+  with the OCR model not yet downloaded and no internet ("Couldn't read your stats … needs the internet once"). Spend
+  some mana and read again: "Not sure of Mana (…?)" appears in the goals box with *Yes, use it* / *No, leave it out* —
+  the figure should be the one the game shows, and yes applies it. Press the hotkey with another program holding the
+  chord (or look at Settings if it can't register): every place that names the key says it is taken and points at
+  the button. Resists: with Fire read as 19, the damage-taken table's Gear column for Fire says 19, not what you wear.
+  A figure that is wrong **and not flagged** is still the bug.
+- **A kept, shared stats record** ([ADR 0371](../decisions/0371-a-stats-record-is-kept-and-shared.md)). Desktop app, **two
+  installs in one room**. Read your stats (whole window), then quit and relaunch: Settings is unchanged, the goals box
+  still says how old the read is and as whom, and anything it was unsure of ("Not sure of Mana 2,924?") is asked about
+  again — *Yes* is greyed with a reason until a dump exists. Clear the last calibrated box: the record is forgotten (look
+  for `stats-record.json` in `%APPDATA%/eq-list`). With the room connected and **Character stats** left at its default (on): the other install
+  sees you listed with your classes, level and HP/mana/AC and *no* unsure figure. They open Items → Loadout builder →
+  *Loadout for* you (they need your inventory too) and press *Plan as <you>*: their Class and Race pickers and level slider
+  move to yours, and a floor on HP or mana in your plan reads the number your own window shows. Re-read on your side and
+  press *Refresh from <you>'s latest* on theirs. Switch the kind off on the Peers tab: you drop out of their list. And before you have ever read your stats, nobody sees a row. Not yet run for real
+  between two machines — only through the hub in tests and a restart of one isolated copy.
 - **A floor that is enough, and everything else** ([ADR 0359](../decisions/0359-a-floor-can-be-enough-and-the-rest-is-maximised.md)).
   Tick one casting class and add Mana with *At least* 4,000 points and HP at 100%. Note the mana line,
   then tick *Stop at floor*: the Priority slider on Mana goes away, mana drops to just over 4,000, and

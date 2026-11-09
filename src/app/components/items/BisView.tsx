@@ -11,7 +11,7 @@ import BisGoals from "@/app/components/items/BisGoals";
 import { Empty, segCls } from "@/app/components/ui";
 import { DumpSection } from "@/app/components/exports/DumpParts";
 import { useInventory, type PeerInventory } from "@/lib/exports/useGameExports";
-import { useSpellCatalog } from "@/lib/hooks";
+import { useCapabilities, useSpellCatalog } from "@/lib/hooks";
 import { copyText } from "@/lib/clipboard";
 import { createPlanCache, planKey } from "@/lib/items/plan-cache";
 import { useSettled } from "@/lib/useSettled";
@@ -20,11 +20,14 @@ import { HUNT_GRADE_CHOICES, bisOptionCount, lockAll, toggleTitle, withExcluded,
 import { WORN_LAYOUT } from "@/shared/items/bis";
 import { expectedStats } from "@/shared/items/bis-columns";
 import { effectiveStats, type LoadoutStats } from "@/shared/items/loadout-stats";
-import { applyRead, countedNow, modelledBase, statBase } from "@/shared/items/stat-base";
-import { confidentValues } from "@/shared/items/stats-page";
+import { countedNow, modelledBase, statBase, withBaseResists } from "@/shared/items/stat-base";
+import { applyStatsRead } from "@/shared/items/stat-read-apply";
 import { basisOf } from "@/shared/items/stats-drift";
-import { clearStatsRead, usePendingStatsRead } from "@/lib/stats-read";
-import { acknowledgeStats, clearStatsStamp, publishBasis, stampStats } from "@/lib/items/stats-stamp";
+import { confidentValues } from "@/shared/items/stats-page";
+import type { StatKey } from "@/shared/items/item-stats";
+import { clearStatsRead, clearUnconfirmed, holdUnconfirmed, usePendingStatsRead, useUnconfirmedStats } from "@/lib/stats-read";
+import { acknowledgeStats, clearStatsStamp, stampStats } from "@/lib/items/stats-stamp";
+import { answerHeld, forgetRecord, keepRead, stampUnstamped } from "@/lib/items/stats-record";
 import { useStatsDrift } from "@/lib/items/useStatsDrift";
 import { MAX_PLAYER_LEVEL } from "@/app/components/items/ItemLevelBand";
 import { publishHeadroom } from "@/lib/combat/headroom";
@@ -79,6 +82,7 @@ export default function BisView({
   worn,
   holder,
   damage,
+  onWho,
 }: {
   rows: readonly ItemRow[];
   criteria: ItemCriteria;
@@ -98,6 +102,8 @@ export default function BisView({
   holder?: PeerInventory;
   /** The window "damage taken" is read over, shared with the status bar's pill. Without it the section isn't drawn. */
   damage?: DamageControl;
+  /** A stats read says who you are (the window's corner): move the Class picker and the level to match. */
+  onWho?: (who: { classes?: string[]; level?: number; race?: string }) => void;
 }) {
   const own = useInventory();
   const { items, at } = holder ?? own;
@@ -123,30 +129,55 @@ export default function BisView({
   // A stats grab (ADR 0368) is applied here, because here is where it can be measured: each figure it read
   // is made to agree with the game by comparing it with what the plan counts for what you wear. Yours only,
   // and only with a dump to measure against — until then it waits, and the goals box says so. A figure the
-  // read wasn't sure of is left for the player to confirm, never applied on a guess.
+  // read wasn't sure of is kept for the player to confirm, never applied on a guess.
   const pendingRead = usePendingStatsRead();
-  // What the plan measures your stats against — the race and classes ticked, and the Items tab's level —
-  // and whether anything is calibrated. The status bar's "re-read your stats" pill lives outside this tab,
-  // where none of that can change, so the builder says it (ADR 0369).
+  const unconfirmed = useUnconfirmedStats();
+  const capabilities = useCapabilities();
+  // What the plan measures your stats against — the race and classes ticked, and the Items tab's level.
+  // (The status bar's "re-read your stats" pill is told the same by the panel, which owns the live pickers.)
+  const planner = { race, classes: criteria.facets.class, level: criteria.levelMax ?? MAX_PLAYER_LEVEL };
   const basis = useMemo(() => basisOf(race, criteria.facets.class, criteria.levelMax ?? MAX_PLAYER_LEVEL), [race, criteria.facets.class, criteria.levelMax]);
   const hasCalibration = Object.keys(options.calibration).length > 0;
   const { stamp, reasons: drift } = useStatsDrift();
+  // A calibration that came from before the reminder existed, or in a preset, is taken as current as of now — unless the
+  // kept record says when it was really read, which is asked first (ADR 0371).
   useEffect(() => {
-    if (!holder) publishBasis(basis, hasCalibration);
-  }, [holder, basis, hasCalibration]);
-  // A calibration that came from before the reminder existed, or in a preset, is taken as current as of now.
-  useEffect(() => {
-    if (!holder && hasCalibration && !stamp) stampStats(basis);
+    if (!holder && hasCalibration && !stamp) void stampUnstamped(basis);
   }, [holder, hasCalibration, stamp, basis]);
   useEffect(() => {
-    if (!pendingRead || holder || !counted) return;
-    const sure = confidentValues(pendingRead.read);
-    onOptions({ ...options, calibration: applyRead(options.calibration, sure, counted) });
+    if (!pendingRead || holder || !worn) return;
+    // Measured as the character the window says you are, and the pickers told to follow (`stat-read-apply.ts`).
+    const applied = applyStatsRead({ read: pendingRead.read, planner, worn, calibration: options.calibration, measuredAs: stamp?.basis });
+    onOptions({ ...options, calibration: applied.calibration });
+    if (applied.set) onWho?.(applied.set);
     // Dated from when the screen was read, not from now: this may have waited for a dump, and anything that
     // happened meanwhile is not in it. A read that was sure of nothing has refreshed nothing.
-    if (Object.keys(sure).length) stampStats(basis, pendingRead.at);
+    if (Object.keys(applied.applied).length) stampStats(applied.basis, pendingRead.at);
+    holdUnconfirmed(applied.held);
+    // And kept, on disk and for the peer room: what the game showed, for whom, and what is still awaiting a yes (ADR 0371).
+    const figures = confidentValues(pendingRead.read);
+    if (Object.keys(figures).length || Object.keys(applied.held).length) {
+      void keepRead({ at: pendingRead.at, race, classes: applied.set?.classes ?? planner.classes, level: applied.basis.level, applied: figures, held: applied.held });
+    }
     clearStatsRead();
-  }, [pendingRead, holder, counted, options, onOptions, basis]);
+    // `planner` is rebuilt each render from the three values below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingRead, holder, worn, options, onOptions, onWho, stamp, race, criteria.facets.class, criteria.levelMax]);
+  /** The player said yes to figures the read wasn't sure of: apply them as the game's own. */
+  const confirmHeld = (keys: StatKey[]) => {
+    if (!unconfirmed || !worn || holder) return;
+    const values = Object.fromEntries(keys.flatMap((k) => (unconfirmed[k] === undefined ? [] : [[k, unconfirmed[k]]])));
+    const applied = applyStatsRead({ read: { values, repaired: [], doubtful: [], missing: [] }, planner, worn, calibration: options.calibration, measuredAs: stamp?.basis });
+    onOptions({ ...options, calibration: applied.calibration });
+    if (Object.keys(applied.applied).length) stampStats(applied.basis, stamp?.at);
+    clearUnconfirmed();
+    void answerHeld(true);
+  };
+  /** The player said no: the figures are left out, and the record forgets it was asking. */
+  const dismissHeld = () => {
+    clearUnconfirmed();
+    void answerHeld(false);
+  };
   const goalKey = goaled ? planKey([rows, items, procSpells], [criteria, weights, planned, rates, closedKey]) : "";
   const [, answered] = useState(0);
   const lastSteering = useRef<GoalOutcome | null>(null);
@@ -185,11 +216,29 @@ export default function BisView({
     onCalibration: (calibration: BisOptions["calibration"]) => {
       onOptions({ ...options, calibration });
       if (Object.keys(calibration).length) stampStats(basis);
-      else clearStatsStamp();
+      else {
+        clearStatsStamp();
+        // Taking the calibration back takes the record back: it would otherwise go on being offered to the room.
+        void forgetRecord();
+      }
     },
-    readWaiting: !!pendingRead && !holder && !counted,
-    drift: holder ? [] : drift,
-    onAcknowledge: acknowledgeStats,
+    // Yours only, and only where the desktop app can read a screen — a peer's stats aren't yours to read.
+    source:
+      holder || !capabilities.lookup
+        ? undefined
+        : {
+            haveDump: !!worn,
+            calibrated: hasCalibration,
+            readAt: stamp?.at,
+            classes: planner.classes,
+            level: planner.level,
+            drift,
+            waiting: !!pendingRead && !worn,
+            unconfirmed,
+            onAcknowledge: acknowledgeStats,
+            onConfirm: confirmHeld,
+            onDismiss: dismissHeld,
+          },
   };
   const planWeights = steering?.weights ?? weights;
   const planMelee = steering?.melee ?? planned.melee;
@@ -258,7 +307,7 @@ export default function BisView({
     <div className="bis">
       <p className="muted small">
         By your value weights, for {classes.length ? classes.join(" / ") : <b>any class</b>}
-        {classes.length ? "" : " — tick your three classes in Class above so only what you can wear counts"}.{" "}
+        {classes.length ? "" : " — tick your three classes in Class above (or read your stats from the game, which fills them in) so only what you can wear counts"}.{" "}
         {sourceText(holder, items, at)}
       </p>
 
@@ -385,8 +434,9 @@ export default function BisView({
         <BisStats wearing={plan.stats.wearing} loadout={plan.stats.loadout} rates={rates} />
       </DumpSection>
 
-      {/* The log is yours and so is the worn gear it's compared with: not offered while planning for a peer. */}
-      {damage && !holder && <BisDamageTaken {...damage} wearing={plan.stats.wearing} />}
+      {/* The log is yours and so is the worn gear it's compared with: not offered while planning for a peer. The resists
+          it prices are the ones you have in all — worn, plus what a stats read says you have beyond it (ADR 0370). */}
+      {damage && !holder && <BisDamageTaken {...damage} wearing={withBaseResists(plan.stats.wearing, base)} />}
 
       {!options.includeHunt && (
         <DumpSection title="Upgrades to hunt" aside={`${plan.hunt.length}`} defaultOpen={false}>

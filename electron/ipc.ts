@@ -30,6 +30,7 @@ import type { CombatHistory } from "./combat-history";
 import type { HighScoreKeeper } from "./high-scores";
 import type { XpTracker } from "./xp-progress";
 import type { StatChanges } from "./stat-changes";
+import type { StatsRecordStore } from "./stats-record";
 import type { SkillProgressTracker } from "./skill-progress";
 import type { HpTracker } from "./hp-estimate";
 import type { KillLog } from "./kill-log";
@@ -89,6 +90,7 @@ export interface IpcContext {
   scores: HighScoreKeeper;
   xp: XpTracker;
   statChanges: StatChanges;
+  statsRecord: StatsRecordStore;
   skills: SkillProgressTracker;
   hp: HpTracker;
   killLog: KillLog;
@@ -551,6 +553,8 @@ function registerStatsIpc(context: IpcContext, mergedFight: PeerIpc["mergedFight
   ipcMain.handle(CH.combatBests, () => history.bests());
   ipcMain.handle(CH.xpGet, () => xp.state());
   ipcMain.handle(CH.statChangesGet, () => statChanges.all());
+  ipcMain.handle(CH.statsRecordGet, () => context.statsRecord.get());
+  ipcMain.handle(CH.statsRecordSet, (_e, record: unknown) => context.statsRecord.set(record));
   ipcMain.handle(CH.tradeskillProgress, () => context.tradeskillView());
   // The one figure the log can't give us, supplied by the player (see xp-progress.ts).
   ipcMain.handle(CH.xpSet, (_e, intoLevel: number, level?: number) => xp.set(intoLevel, level));
@@ -1221,6 +1225,8 @@ function registerPeerIpc(context: IpcContext): PeerIpc {
       gameClock,
       celebrations: { current: () => celebrations.current() },
       inventory: { rows: () => inventoryShareRows(context.watcher.status().file, context.userData) },
+      // What your stats read said — the figures and who they were for, not the ones awaiting your yes.
+      statsRecord: { rows: () => context.statsRecord.shareRows() },
     }),
     // The item catalogue, which is addressed by shard rather than as a whole (ADR 0160).
     items: wiki.items,

@@ -7,6 +7,7 @@ import type { AdminPatchResult, AdminRecord, AdminSearchHit, AdminStoreInfo } fr
 import type { CheckResult } from "./chrome/self-check";
 import type { StatsRead } from "./items/stats-page";
 import type { StatChange } from "./items/stats-drift";
+import type { StatsRecord } from "./items/stats-record";
 import type { MobKnowledge, MobObservation } from "./mob/mob-stats";
 import type { NpcSighting } from "./npc/npc-sightings";
 import type { KnowledgeContributor } from "./contributors";
@@ -4395,6 +4396,17 @@ export interface EqlApi {
      * `false` for an id main doesn't know. The caller re-runs the check to show whether it worked.
      */
     selfCheckFix(id: string): Promise<boolean>;
+  };
+  statsRecord: {
+    /**
+     * What your last stats read said — the figures the game showed, the classes and level it showed them for, and any
+     * figure still awaiting your yes ([ADR 0371](../../specs/decisions/0371-a-stats-record-is-kept-and-shared.md)). Kept
+     * by the main process, so it survives a restart whatever origin the window loads from, and is what the peer room
+     * is offered. Null before any read.
+     */
+    get(): Promise<StatsRecord | null>;
+    /** Keep this record (checked in main first); null forgets it. Resolves with what is held after. */
+    set(record: StatsRecord | null): Promise<StatsRecord | null>;
   };
   statChanges: {
     /**

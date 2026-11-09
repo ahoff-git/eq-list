@@ -38,3 +38,13 @@ test("a peer offering nothing, or with no session to address, isn't asked", () =
   assert.deepEqual(inventoryAsksDue([peer(3, 0)], [], asked, 0), []);
   assert.deepEqual(inventoryAsksDue([{ peerId: "p1", offer: { inventory: { n: 5, rev: 1 } } }], [], asked, 0), []);
 });
+
+test("another live kind is asked for by the same rules, by its own offer and its own answer — a peer's stats", () => {
+  const asked = new Map<string, number>();
+  const offeringStats = { peerId: "p1", sessionId: "s1", offer: { stats: { n: 1, rev: 7 } } };
+  assert.deepEqual(inventoryAsksDue([offeringStats], [], asked, 0), [], "an inventory is not what they offer");
+  assert.deepEqual(inventoryAsksDue([offeringStats], [], asked, 0, undefined, "stats"), ["p1"]);
+  assert.deepEqual(inventoryAsksDue([offeringStats], [], asked, 1000, undefined, "stats"), [], "in flight");
+  assert.deepEqual(inventoryAsksDue([offeringStats], [{ peerId: "p1", kind: "inventory", rev: 7 }], asked, 2000 + INVENTORY_REASK_MS, undefined, "stats"), ["p1"], "an inventory answer is not a stats answer");
+  assert.deepEqual(inventoryAsksDue([offeringStats], [{ peerId: "p1", kind: "stats", rev: 7 }], new Map(), 5000, undefined, "stats"), [], "answered");
+});

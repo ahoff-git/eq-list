@@ -2,7 +2,8 @@
 import { useEffect, useState } from "react";
 import { useAppInfo, useCapabilities, useSettings } from "@/lib/hooks";
 import { api } from "@/lib/api";
-import { MAP_UI_SCALE, OVERLAY_OPACITY, STATS_HOTKEY, UI_SCALE } from "@/shared/constants";
+import { MAP_UI_SCALE, OVERLAY_OPACITY, UI_SCALE } from "@/shared/constants";
+import { useStatsHotkey } from "@/lib/items/useStatsHotkey";
 import LogSettings from "@/app/components/chrome/LogSettings";
 import SelfCheck from "@/app/components/chrome/SelfCheck";
 import DataHealth from "@/app/components/chrome/DataHealth";
@@ -22,6 +23,7 @@ import type { AutoUpdateStatus, DeepPartial, Settings } from "@/shared/types";
 export default function SettingsPanel() {
   const settings = useSettings();
   const info = useAppInfo();
+  const statsKey = useStatsHotkey();
   const capabilities = useCapabilities();
 
   if (!settings) return <p className="muted">Loading settings…</p>;
@@ -209,11 +211,13 @@ export default function SettingsPanel() {
         <div className="setting">
           <label>Read my stats from the Inventory window</label>
           <span className="hint">
-            Open the Inventory window, press <kbd>{statsGrabLabel(info)}</kbd> (or the button below), then drag
-            a box over Character Vitals and Stats and Resists. HP, mana, endurance, AC, your attributes and
-            resists are read off the screen — the same OCR as the item lookup, with its own reader for the
-            page&apos;s columns — and the loadout planner counts what you have beyond your gear in its floors. Anything
-            it isn&apos;t sure of is left for you to confirm. Scroll the rows into view first: it reads what is on screen.
+            Open the Inventory window on its Equipment tab, {statsKey.works ? <>press <kbd>{statsKey.label}</kbd> (or the button below)</> : <>click the button below (the hotkey, <kbd>{statsKey.label}</kbd>, is taken by another program)</>}, then drag
+            a box over the <b>whole window</b>. HP, mana, endurance, AC, your attributes and resists are read off the
+            screen — the same OCR as the item lookup, with its own reader for the page&apos;s columns — and the loadout
+            planner counts what you have beyond your gear in its floors. Include the top-right corner (name, level, classes)
+            and your classes and level are set for you; max HP and regen go to the Deaths page. With the peer room connected, what it read is
+            shared with the room by default (never a figure it wasn&apos;t sure of) — Peers tab → Character stats to switch that off. Anything it isn&apos;t sure of
+            is left for you to confirm. It reads what is on screen, so scroll the rows into view first.
           </span>
           <div className="row" style={{ marginTop: 6 }}>
             <button className="btn" onClick={() => api()?.lookup.open("stats")}>
@@ -228,10 +232,6 @@ export default function SettingsPanel() {
 
 function screengrabLabel(info: ReturnType<typeof useAppInfo>): string {
   return info?.hotkeys.find((h) => /screengrab/i.test(h.action))?.label ?? "Ctrl/Cmd+Shift+L";
-}
-
-function statsGrabLabel(info: ReturnType<typeof useAppInfo>): string {
-  return info?.hotkeys.find((h) => /stats/i.test(h.action))?.label ?? STATS_HOTKEY.label;
 }
 
 /** Human text for each `AutoUpdateStatus` — what `UpdateBanner` doesn't say, because here nothing is too quiet to show. */

@@ -55,6 +55,7 @@ import { createOcr } from "./ocr";
 import { createLookup } from "./lookup";
 import { createStatsReader } from "./stats-reader";
 import { createStatChanges } from "./stat-changes";
+import { createStatsRecord } from "./stats-record";
 import { registerIpc } from "./ipc";
 import { createMainWindow, createMapWindow, createAdminWindow, createAlertWindow, closeAlertWindow, getAlertWindow, getMainWindow, getMapWindow, neutralizeOverlays, setOverlayProvider, showInSearch, showStatsRead } from "./windows";
 import { resetPositions, beginQuit, wasMapOpen } from "./window-state";
@@ -287,6 +288,8 @@ if (!app.requestSingleInstanceLock()) {
   const xp = createXpProgress(userData);
   // Levels and abilities the log says moved your stats — what makes a stats read stale (ADR 0369).
   const statChanges = createStatChanges(userData);
+  // What your last stats read said, kept on disk — and offered to the peer room (ADR 0371).
+  const statsRecord = createStatsRecord(userData);
   // Your tradeskills as the log states them, with the log's history read once (`skill-progress.ts`).
   const skills = createSkillProgress(userData);
   // What the Tradeskills tab is told is `tradeskillView` below: this, plus the room's pooled rates.
@@ -480,6 +483,7 @@ if (!app.requestSingleInstanceLock()) {
     scores,
     xp,
     statChanges,
+    statsRecord,
     skills,
     hp,
     killLog,
@@ -1117,6 +1121,7 @@ if (!app.requestSingleInstanceLock()) {
     xp.flush();
     hp.flush();
     statChanges.flush();
+    statsRecord.flush();
     killLog.flush();
     lootLog.flush();
     flushPendingFaction();

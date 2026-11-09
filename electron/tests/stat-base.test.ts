@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyRead, calibrate, countedNow, modelledBase, normalizeCalibration, shownNow, statBase } from "../../src/shared/items/stat-base";
+import { applyRead, calibrate, countedNow, modelledBase, normalizeCalibration, shownNow, statBase, withBaseResists } from "../../src/shared/items/stat-base";
 import { derivedRates } from "../../src/shared/items/derived-stats";
 
 const TRIO = ["Wizard", "Druid", "Magician"];
@@ -85,4 +85,12 @@ test("a read zero is a figure, unlike a blank box: it can pull a counted number 
 test("a read ignores stats that cannot be calibrated and figures that are not numbers", () => {
   const next = applyRead({}, { hpRegen: 18, haste: 100, str: Number.NaN, sta: 137 }, { sta: 100 });
   assert.deepEqual(next, { sta: 37 });
+});
+
+test("the resists beyond the gear are added to the gear's for the damage-taken table — and nothing else is", () => {
+  const gear = { svFire: 10, svMagic: 0, hp: 500, int: 40 };
+  const base = { svFire: 9, svCold: 34, hp: 1450, int: 114 };
+  assert.deepEqual(withBaseResists(gear, base), { svFire: 19, svMagic: 0, svCold: 34, hp: 500, int: 40 }, "only the six resists");
+  assert.deepEqual(withBaseResists(gear, {}), gear, "with nothing read it is the gear alone");
+  assert.deepEqual(withBaseResists({}, { svVoid: 82 }), { svVoid: 82 });
 });

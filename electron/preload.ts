@@ -279,6 +279,10 @@ const api: EqlApi = {
     get: () => ipcRenderer.invoke(CH.statChangesGet),
     onChanged: (cb) => on(CH.statChangesChanged, cb),
   },
+  statsRecord: {
+    get: () => ipcRenderer.invoke(CH.statsRecordGet),
+    set: (record) => ipcRenderer.invoke(CH.statsRecordSet, record),
+  },
   search: {
     onPrefill: (cb) => on(CH.searchPrefill, cb),
     show: (text) => ipcRenderer.invoke(CH.searchShow, text),

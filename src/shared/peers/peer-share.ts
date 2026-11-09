@@ -36,6 +36,7 @@
  * than off a switch somewhere, since a kind added without a reader then fails closed instead of
  * arriving unchecked.
  */
+import { readStatsRecord, shareableStats } from "../items/stats-record";
 import { MAX_GRADE } from "../items/item-upgrade";
 import type {
   CastWatch,
@@ -183,6 +184,7 @@ export type ShareKind =
   | "fight"
   | "celebrations"
   | "inventory"
+  | "stats"
   | "items"
   | "spells"
   | "factions"
@@ -256,6 +258,8 @@ export interface ShareKindSpec<T = unknown> {
    * Whether this kind is shared when nobody has said either way. **On for the public mirrors and for
    * every observation; off for what you made and what is live.**
    *
+   * One live kind is the exception, by the player's own call: `stats` ([ADR 0372](../../specs/decisions/0372-character-stats-are-shared-by-default.md)).
+   *
    * Observations are on because peer data is evidence the whole room is better for
    * ([ADR 0336](../../specs/decisions/0336-peer-data-is-evidence.md)): counts, rates and kill
    * positions, nothing you authored and nothing about you right now. Authored and live kinds are
@@ -305,6 +309,9 @@ const MAX_ROWS: Record<ShareKind, number> = {
   // One row per distinct item a character holds. A full Tradeskill Depot alone is up to 5,000
   // slots, though rarely that many *distinct* things; generous, and still a bound on a hostile give.
   inventory: 6000,
+  // One character's stats: there is only ever one record, the latest read — a second row would just be a lie
+  // somebody sent, the same reasoning `gameTime` states below.
+  stats: 1,
   // One shard is about eleven pages (`item-shards.ts`); the cap is generous headroom for an uneven
   // hash while still bounding what a single hostile `give` can cost us.
   items: 64,
@@ -759,6 +766,20 @@ export const SHARE_KINDS: ShareKindSpec[] = [
     read: (rows) => readList(rows, MAX_ROWS.inventory, readInventoryRow),
     // One row per item, which is what an inventory total is (`inventoryTotals`).
     rowKey: (row) => fieldKey(row, "item"),
+  },
+  {
+    key: "stats",
+    family: "live",
+    label: "Character stats",
+    blurb:
+      "What your last stats read said — your level, classes and the figures the game's Inventory window showed (HP, mana, AC, attributes, resists) — so a group can plan your gear in your real numbers. Nothing you were unsure of, and nothing else.",
+    noun: "record",
+    // On, though it is live and about the player — their decision (ADR 0372). Nothing leaves until a stats read has been
+    // taken (no record, no row), the figures it was unsure of never go, and the toggle still wins in both directions.
+    defaultOn: true,
+    read: (rows) => readList(rows, MAX_ROWS.stats, readSharedStats),
+    // There is only ever the one record, so nothing needs a content-derived identity.
+    rowKey: () => "stats",
   },
   {
     key: "items",
@@ -1820,6 +1841,15 @@ function readInventoryRow(raw: unknown): InventoryShareRow | null {
     ...(gear?.length ? { gear } : {}),
     asOf,
   };
+}
+
+/**
+ * A peer's stats record — checked by the same gate as the file it came from (`readStatsRecord`), and **never
+ * carrying figures awaiting a yes**: those are not the sender's word yet, and a peer that sent them is lying about it.
+ */
+function readSharedStats(raw: unknown): ReturnType<typeof shareableStats> | null {
+  const record = readStatsRecord(raw);
+  return record ? shareableStats(record) : null;
 }
 
 /** A peer's one current celebration — dropped outright without an `id`, an `item` or an `at`. */

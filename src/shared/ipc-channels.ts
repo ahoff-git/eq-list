@@ -98,6 +98,8 @@ export const CH = {
   recordsClear: "records:clear",
   xpGet: "xp:get",
   statChangesGet: "stats:changes", // the journal of levels and abilities that move your stats
+  statsRecordGet: "stats:record:get", // the kept record of your stats read (what the game showed, and for whom)
+  statsRecordSet: "stats:record:set", // renderer → main: keep this record (null forgets it)
   tradeskillProgress: "tradeskills:progress",
   xpSet: "xp:set",
   hpGet: "hp:get",

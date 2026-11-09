@@ -14,6 +14,7 @@ import assert from "node:assert/strict";
 import { confidentValues, readStatsPage } from "../../src/shared/items/stats-page";
 import type { OcrWord } from "../../src/shared/chrome/ocr-rows";
 import fixtures from "./fixtures/stats-page-words.json";
+import wholeWindows from "./fixtures/stats-window-words.json";
 
 // ── hand-built pages ──
 
@@ -33,14 +34,18 @@ const REAL_SHAPE: [string, number][][] = [
   [["Attack", 0], ["Speed", 90], ["%", 190], ["100", 330], ["Dexterity", 600], ["111/510", 880]],
   [["Velocity", 0], ["0", 330], ["Charisma", 600], ["71/510", 880]],
   [["HP", 0], ["Regen", 50], ["18", 330], ["SV.", 600], ["Magic", 660], ["37/1000", 880]],
-  [["Mana", 0], ["Regen", 90], ["33", 330], ["SV.", 600], ["Fire", 660], ["19/1000", 880]],
+  [["Mana", 0], ["Regen", 70], ["33", 330], ["SV.", 600], ["Fire", 660], ["19/1000", 880]],
   [["End", 0], ["Regen", 70], ["42", 330], ["SV.", 600], ["Cold", 660], ["34/1000", 880]],
   [["Primary", 0], ["DPS", 108], ["SV.", 600], ["Disease", 660], ["32/1000", 880]],
   [["Secondary", 0], ["DPS", 150], ["SV.", 600], ["Poison", 660], ["41/1000", 880]],
   [["Ranged", 0], ["DPS", 110], ["SV.", 600], ["Void", 660], ["82/1000", 880]],
 ];
 
+const STATS_ON_THE_PAGE = 17; // the ones a floor can be set on; the regen rows beside them are extra
 const TRUTH = { hp: 1976, mana: 2840, end: 859, ac: 242, str: 74, sta: 137, int: 214, wis: 139, agi: 147, dex: 111, cha: 71, svMagic: 37, svFire: 19, svCold: 34, svDisease: 32, svPoison: 41, svVoid: 82 };
+/** The three regen rows ("HP Regen 18"): read for the Deaths page, which asks for the same figure. */
+const REGEN = { hpRegen: 18, manaRegen: 33, endRegen: 42 };
+const WHOLE = { ...TRUTH, ...REGEN };
 
 /** The real page with one row's value words swapped for `value` (the label stays). */
 function withRow(label: string, column: "left" | "right", replacement: [string, number][]): [string, number][][] {
@@ -56,7 +61,7 @@ function withRow(label: string, column: "left" | "right", replacement: [string, 
 
 test("a clean page reads every stat: a pool's max, an attribute's or resist's current, AC's mitigation", () => {
   const read = readStatsPage([page(REAL_SHAPE)]);
-  assert.deepEqual(read.values, TRUTH);
+  assert.deepEqual(read.values, WHOLE);
   assert.deepEqual([read.repaired, read.doubtful, read.missing], [[], [], []]);
 });
 
@@ -119,13 +124,13 @@ test("a crop that holds only part of the page reports what it lacks", () => {
   const read = readStatsPage([page(REAL_SHAPE.slice(0, 4))]);
   assert.deepEqual(Object.keys(read.values).sort(), ["ac", "end", "hp", "int", "mana", "sta", "str", "wis"].sort());
   assert.ok(read.missing.includes("svVoid") && read.missing.includes("cha"));
-  assert.equal(read.missing.length, 17 - 8);
+  assert.equal(read.missing.length, STATS_ON_THE_PAGE - 8);
 });
 
 test("nothing recognised is an empty read, not an error", () => {
   const read = readStatsPage([]);
   assert.deepEqual(read.values, {});
-  assert.equal(read.missing.length, 17);
+  assert.equal(read.missing.length, STATS_ON_THE_PAGE);
   assert.deepEqual(readStatsPage([[]]).values, {});
 });
 
@@ -252,7 +257,7 @@ test("between two guesses the one the recogniser was surer of wins", () => {
 test("a stat only the second pass found still comes through", () => {
   const first = page(REAL_SHAPE.slice(0, 3));
   const read = readStatsPage([first, page(REAL_SHAPE)]);
-  assert.deepEqual(read.values, TRUTH);
+  assert.deepEqual(read.values, WHOLE);
 });
 
 test("an unsure word makes a stat doubtful even when the number looks tidy", () => {
@@ -266,7 +271,7 @@ test("a doubtful figure is shown but never applied: confidentValues leaves it ou
   assert.equal(read.values.ac, 242);
   const sure = confidentValues(read);
   assert.equal(sure.ac, undefined);
-  assert.equal(Object.keys(sure).length, 16);
+  assert.equal(Object.keys(sure).length, STATS_ON_THE_PAGE - 1 + 3, "every figure but the unsure AC, regen rows included");
   assert.equal(sure.hp, 1976);
 });
 
@@ -277,25 +282,25 @@ const real = fixtures as unknown as Record<string, Words>;
 // A third real screenshot, level 32 and *damaged*: HP 946/2034, mana 555/2924 and endurance 259/885 are all below
 // their maxes, so a pool's "equal halves" are no help and the wanted figure is the max, not the current.
 const DAMAGED = "damaged, level 32 (tight drag)";
-const TRUTH_DAMAGED = { ...TRUTH, hp: 2034, mana: 2924, end: 885, ac: 243 };
+const TRUTH_DAMAGED = { ...TRUTH, hp: 2034, mana: 2924, end: 885, ac: 243, hpRegen: 18, manaRegen: 66, endRegen: 43 };
 const SCROLL_POSITIONS = ["scrolled to the equipment (tight drag)", "scrolled to the vitals (tight drag)"];
 
 for (const name of SCROLL_POSITIONS) {
   test(`real OCR, ${name}: both preparations together read all seventeen, none inferred`, () => {
     const read = readStatsPage([real[name].soft, real[name].strict]);
-    assert.deepEqual(read.values, TRUTH);
+    assert.deepEqual(read.values, WHOLE);
     assert.deepEqual([read.repaired, read.doubtful, read.missing], [[], [], []]);
   });
 
   test(`real OCR, ${name}: the strict preparation alone reads it cleanly`, () => {
     const read = readStatsPage([real[name].strict]);
-    assert.deepEqual(read.values, TRUTH);
+    assert.deepEqual(read.values, WHOLE);
     assert.deepEqual(read.repaired, []);
   });
 
   test(`real OCR, ${name}: the soft one alone fuses AC's slash — repaired, right, and flagged as unconfirmed`, () => {
     const read = readStatsPage([real[name].soft]);
-    assert.deepEqual(read.values, TRUTH, "the repair gets 242 out of 2421368");
+    assert.deepEqual(read.values, WHOLE, "the repair gets 242 out of 2421368");
     assert.deepEqual(read.repaired, ["ac"]);
     assert.deepEqual(read.doubtful, ["ac"]);
     assert.equal(confidentValues(read).ac, undefined, "so it would not be applied on that alone");
@@ -314,7 +319,7 @@ test("real OCR, noisy: the soft pass inserts a stray digit into AC and is wrong 
 test("real OCR, noisy: with both preparations the surer one's AC wins, and it is still flagged", () => {
   const noisy = real["noisy (sensor noise 30)"];
   const read = readStatsPage([noisy.soft, noisy.strict]);
-  assert.deepEqual(read.values, TRUTH);
+  assert.deepEqual(read.values, WHOLE);
   assert.ok(read.doubtful.includes("ac"));
 });
 
@@ -331,7 +336,7 @@ test("real OCR, damaged: every figure comes out right, and the spent mana's lost
   assert.deepEqual(read.repaired, ["mana"], "55512924 is 555/2924 with its slash read as a 1");
   assert.deepEqual(read.doubtful, ["mana"], "and nothing anchors that split, so it is not applied");
   assert.equal(confidentValues(read).mana, undefined);
-  assert.equal(Object.keys(confidentValues(read)).length, 16);
+  assert.equal(Object.keys(confidentValues(read)).length, STATS_ON_THE_PAGE - 1 + 3);
 });
 
 test("real OCR, damaged: the soft preparation misreads the current mana as bigger than the max and gives nothing, not a wrong figure", () => {
@@ -347,4 +352,119 @@ test("real OCR, damaged: the strict preparation alone gets the mana, as a guess,
   const read = readStatsPage([real[DAMAGED].strict]);
   assert.deepEqual(read.values, TRUTH_DAMAGED);
   assert.deepEqual(read.repaired, ["mana"]);
+});
+
+// ── regen, the corner of the window, and what the recogniser saw ──
+
+test("the three regen rows are read — they are what the Deaths page asks to be typed", () => {
+  const read = readStatsPage([page(REAL_SHAPE)]);
+  assert.deepEqual([read.values.hpRegen, read.values.manaRegen, read.values.endRegen], [18, 33, 42]);
+});
+
+test("a regen row that isn't in the box is not 'missing' — no floor is set on it", () => {
+  const read = readStatsPage([page(REAL_SHAPE.slice(0, 7))]);
+  assert.equal(read.values.hpRegen, undefined);
+  assert.ok(!read.missing.some((key) => key.endsWith("Regen")));
+});
+
+test("a page with no corner says nothing about who it is", () => {
+  assert.equal(readStatsPage([page(REAL_SHAPE)]).who, undefined);
+  assert.equal(readStatsPage([real[DAMAGED].soft]).who, undefined, "a tight drag over the stats alone");
+});
+
+test("what the recogniser saw is kept: how many words, and the first few legible ones", () => {
+  const read = readStatsPage([[word("Inventory", 0, 0), word("Equipment", 200, 0), word("x", 400, 0, 10), word("Pet", 600, 0)]]);
+  assert.equal(read.seen?.words, 4);
+  assert.equal(read.seen?.sample, "Inventory Equipment Pet", "a one-letter, low-confidence scrap is not legible");
+  assert.deepEqual(readStatsPage([]).seen, { words: 0, sample: "" });
+});
+
+// ── the whole window, as a real drag over it would be ──
+
+const windows = wholeWindows as unknown as Record<string, Words>;
+const WINDOW_TRUTH: [string, Record<string, number>, number][] = [
+  ["level 31, whole window (shot 1)", WHOLE, 31],
+  ["level 31, whole window (shot 2)", WHOLE, 31],
+  ["level 32, damaged, whole window", TRUTH_DAMAGED, 32],
+];
+
+for (const [name, truth, level] of WINDOW_TRUTH) {
+  test(`real OCR, ${name}: every stat, the regen rows, and who it is — Wizard / Druid / Magician at ${level}`, () => {
+    const read = readStatsPage([windows[name].soft, windows[name].strict]);
+    for (const [key, value] of Object.entries(truth)) assert.equal(read.values[key as keyof typeof read.values], value, key);
+    assert.deepEqual(read.missing, []);
+    assert.deepEqual(read.who, { name: "Testix", level, classes: ["Wizard", "Druid", "Magician"], unsure: [] });
+    assert.match(read.seen?.sample ?? "", /^(Inventory )?Equipment Pet Loadouts Storage/);
+  });
+
+  test(`real OCR, ${name}: either preparation alone still knows who it is`, () => {
+    for (const tone of ["soft", "strict"] as const) {
+      const who = readStatsPage([windows[name][tone]]).who;
+      assert.deepEqual([who?.level, who?.classes], [level, ["Wizard", "Druid", "Magician"]], tone);
+    }
+  });
+}
+
+// ── two preparations check each other ──
+
+test("two passes that each read a stat believably and disagree make it doubtful — one of them is wrong and nothing says which", () => {
+  const first = page(REAL_SHAPE);
+  const second = page(withRow("Strength", "right", [["71/510", 880], ["+", 990], ["0", 1040]]));
+  const read = readStatsPage([first, second]);
+  assert.equal(read.values.str, 74, "the first pass wins an even contest");
+  assert.deepEqual(read.doubtful, ["str"]);
+  assert.equal(confidentValues(read).str, undefined, "so it would not be applied on that alone");
+  assert.equal(confidentValues(read).sta, 137, "the stats they agree on are untouched");
+});
+
+test("a certain repair that disagrees with a clean read is a disagreement too", () => {
+  const clean = page(REAL_SHAPE);
+  const repaired = page(withRow("Strength", "right", [["711510", 880]])); // 71/510 with the slash read as a 1 — anchored by the cap
+  const read = readStatsPage([clean, repaired]);
+  assert.equal(read.values.str, 74);
+  assert.deepEqual(read.doubtful, ["str"]);
+});
+
+test("two passes that agree are as good as one, and a guess that loses to a cleaner read is no disagreement", () => {
+  assert.deepEqual(readStatsPage([page(REAL_SHAPE), page(REAL_SHAPE)]).doubtful, []);
+  const guessed = page(withRow("AC", "left", [["2427", 200]])); // a lone 4-digit AC: never certain
+  const read = readStatsPage([page(REAL_SHAPE), guessed]);
+  assert.equal(read.values.ac, 242);
+  assert.deepEqual(read.doubtful, []);
+});
+
+test("a stat only one pass found is not contested — there is nothing to disagree with", () => {
+  const read = readStatsPage([page(REAL_SHAPE.slice(0, 3)), page(REAL_SHAPE)]);
+  assert.deepEqual(read.doubtful, []);
+});
+
+// ── a capture too rough to trust ──
+
+/** The real page with these attributes' value cells clipped to a lone number — read, but with no cap beside it to confirm it. */
+const guessedAt = (labels: [string, "left" | "right"][]) => labels.reduce((rows, [label, column]) => withRowOn(rows, label, column, [["137", 880]]), REAL_SHAPE);
+
+/** `withRow` over a given page rather than the real one. */
+function withRowOn(rows: [string, number][][], label: string, column: "left" | "right", replacement: [string, number][]): [string, number][][] {
+  const next = rows.map((r) => r.map((c) => [...c] as [string, number]));
+  const target = next.find((r) => r.some(([t, x]) => t === label && (column === "left" ? x < 300 : x >= 300)));
+  assert.ok(target, `no row for ${label}`);
+  const labelAt = target.findIndex(([t]) => t === label);
+  const end = column === "left" ? target.findIndex(([, x]) => x >= 600) : target.length;
+  target.splice(labelAt + 1, (end < 0 ? target.length : end) - labelAt - 1, ...replacement);
+  return next;
+}
+
+test("a few figures in doubt are a few figures in doubt — the rest of a clean capture stands", () => {
+  const read = readStatsPage([page(guessedAt([["Strength", "right"], ["Stamina", "right"], ["Wisdom", "right"]]))]);
+  assert.equal(read.doubtful.length, 3);
+  assert.equal(read.noisy, undefined);
+  assert.equal(confidentValues(read).hp, 1976);
+});
+
+test("four in doubt at once says the capture is bad, and then nothing is trusted — a tidy-looking figure in it is no better than its neighbours", () => {
+  const read = readStatsPage([page(guessedAt([["Strength", "right"], ["Stamina", "right"], ["Wisdom", "right"], ["Agility", "right"]]))]);
+  assert.equal(read.noisy, true);
+  assert.deepEqual([...read.doubtful].sort(), Object.keys(read.values).sort(), "every figure, the clean ones too");
+  assert.deepEqual(confidentValues(read), {});
+  assert.equal(read.values.hp, 1976, "the figures are still shown — for the player to confirm");
 });

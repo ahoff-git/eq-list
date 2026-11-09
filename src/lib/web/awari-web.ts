@@ -141,6 +141,8 @@ export function createAwariWeb(deps: { getSettings: () => Settings; getName: () 
       celebrations: { rows: () => [] },
       // No game folder in a browser, so no inventory dump to offer.
       inventory: { rows: () => [] },
+      // No game window in a browser, so no stats read to offer.
+      stats: { rows: () => [] },
       // Addressed by shard, never as a whole kind — present so the table has no hole in it.
       items: { rows: () => [] },
       spells: { rows: () => [] },

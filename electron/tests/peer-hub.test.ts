@@ -70,7 +70,7 @@ interface Rig {
   last: (kind: string, peerId?: string) => AwariPayload | undefined;
 }
 
-const ALL_KINDS: ShareKind[] = ["watches", "styles", "lists", "pins", "mobs", "kills", "respawns", "timers", "buffs", "scores", "items", "factions", "gameTime"];
+const ALL_KINDS: ShareKind[] = ["watches", "styles", "lists", "pins", "mobs", "kills", "respawns", "timers", "buffs", "scores", "stats", "items", "factions", "gameTime"];
 
 /**
  * The roster half of `ItemShardSource`, for the tests that are about something else.
@@ -101,7 +101,7 @@ function rig(
 ): Rig {
   const share: ShareSettings = over.share ?? Object.fromEntries(ALL_KINDS.map((k) => [k, true]));
   const settings = { connectPeers: over.connectPeers ?? true, share } as unknown as Settings;
-  const rows: Record<string, unknown[]> = { watches: [], styles: [], lists: [], pins: [], mobs: [], kills: [], respawns: [], timers: [], buffs: [], scores: [], items: [], factions: [], gameTime: [], ...over.rows };
+  const rows: Record<string, unknown[]> = { watches: [], styles: [], lists: [], pins: [], mobs: [], kills: [], respawns: [], timers: [], buffs: [], scores: [], stats: [], items: [], factions: [], gameTime: [], ...over.rows };
 
   const sent: Rig["sent"] = [];
   const filed: AwariPayload[] = [];
@@ -1413,4 +1413,35 @@ test("a page's links survive the wire, and rubbish in them does not", () => {
 
   const zone = r.accepted[0]?.pages[0] as { links?: string[] } | undefined;
   assert.deepEqual(zone?.links, ["Gnoll Hide Lariat", "A Gnoll"], "trimmed, de-duped, rest dropped");
+});
+
+// ── a character's stats (ADR 0371) ──
+
+const STATS_ROW = { asOf: "2026-11-08T14:39:19.000Z", level: 31, classes: ["Wizard", "Druid", "Magician"], race: "ERU", figures: { hp: 1976, mana: 2840 } };
+
+test("your stats are offered unless you switched them off — on by default, and the switch wins", () => {
+  assert.deepEqual(line(rig({ share: {}, source: { stats: { rows: () => [STATS_ROW] } } }).hub.offer().stats), { n: 1, rev: 1 }, "nobody said either way");
+  assert.equal(rig({ share: { stats: false }, source: { stats: { rows: () => [STATS_ROW] } } }).hub.offer().stats, undefined, "switched off is absent, not zero");
+  assert.deepEqual(line(rig({ share: { stats: true }, source: { stats: { rows: () => [STATS_ROW] } } }).hub.offer().stats), { n: 1, rev: 1 });
+});
+
+test("a read nobody has taken yet offers nothing — a hollow record is not a share", () => {
+  const r = rig({ share: { stats: true }, source: { stats: { rows: () => [] } } });
+  assert.equal(r.hub.offer().stats?.n ?? 0, 0);
+});
+
+test("an ask for stats is answered with the one record, to the asker alone", () => {
+  const r = rig({ share: { stats: true }, source: { stats: { rows: () => [STATS_ROW] } } });
+  r.hub.handle("bran", { kind: AWARI_MSG.ask, what: "stats" } as unknown as AwariPayload);
+  const give = r.last(AWARI_MSG.give, "bran");
+  assert.equal(give?.what, "stats");
+  assert.deepEqual(give?.rows, [STATS_ROW]);
+  assert.equal(r.to(undefined).length, 0, "peer-routed, never broadcast");
+});
+
+test("switched off after the offer, stats are not handed over — the toggle is read when the ask arrives", () => {
+  const r = rig({ share: { stats: true }, source: { stats: { rows: () => [STATS_ROW] } } });
+  (r.settings.share as ShareSettings).stats = false;
+  r.hub.handle("bran", { kind: AWARI_MSG.ask, what: "stats" } as unknown as AwariPayload);
+  assert.equal(r.sent.length, 0);
 });

@@ -7,10 +7,9 @@
  *
  *   enlarge → make dark-on-light → read word boxes → parse
  *
- * and does it a second time, prepared differently, only when the first parse had to *repair* a cell
- * (the `/` in `242/368` read as a `1`). The two preparations fail in different places, so a second look
- * usually reads cleanly what the first could only infer — and a page that read cleanly the first time
- * never pays for it.
+ * and does it twice, prepared differently. The two preparations fail in different places, so the second
+ * usually reads cleanly what the first could only infer (the `/` in `242/368` read as a `1`) — and,
+ * where they disagree about a figure each read believably, says the figure can't be trusted.
  */
 import { nativeImage, type NativeImage } from "electron";
 import { createLogger } from "../src/shared/logging";
@@ -33,7 +32,11 @@ const SCALE = { factor: 3, maxWidth: 2400 } as const;
 const TONES: readonly Tone[] = ["soft", "strict"];
 
 export interface StatsReader {
-  /** The numbers on the stats page in this crop. An unreadable crop is an empty read, never a throw. */
+  /**
+   * The numbers on the stats page in this crop — and who the window's corner says you are, when the drag
+   * included it. An unreadable crop is an empty read, never a throw; a recogniser that fails is one that says so
+   * (`problem: "engine"`).
+   */
   read(shot: NativeImage): Promise<StatsRead>;
 }
 
@@ -53,17 +56,27 @@ export function createStatsReader(ocr: Ocr): StatsReader {
 
   return {
     async read(shot) {
-      const passes: OcrWord[][] = [];
-      let read = readStatsPage(passes);
-      for (const tone of TONES) {
-        passes.push(await pass(shot, tone));
-        read = readStatsPage(passes);
-        // Something was read and none of it had to be inferred: a second look has nothing to add. A crop
-        // that gave nothing at all still gets one — the other preparation may be the one it needed.
-        if (Object.keys(read.values).length > 0 && !read.repaired.length) break;
+      const { width, height } = shot.getSize();
+      try {
+        const passes: OcrWord[][] = [];
+        let read = readStatsPage(passes);
+        // Both preparations, always. The second is not only for what the first had to infer: it is the check on
+        // what the first read *confidently*. On real screenshots a clean-looking first pass was wrong about a
+        // digit (a red SV. Fire row, a compressed or small-scaled window) and nothing but a second, differently
+        // prepared read could say so. A read is made once per level, not per frame; a second is worth the wait.
+        for (const tone of TONES) {
+          passes.push(await pass(shot, tone));
+          read = readStatsPage(passes);
+        }
+        read = { ...read, seen: { words: 0, sample: "", ...read.seen, width, height } };
+        log.debug("stats read", JSON.stringify(read));
+        return read;
+      } catch (e) {
+        // The recogniser failing (its model couldn't load, the worker died) is not a crop with nothing in it,
+        // and the player is told differently: nothing they drag will help until it's fixed.
+        log.warn("stats read failed:", (e as Error).message);
+        return { ...readStatsPage([]), problem: "engine", seen: { words: 0, sample: "", width, height } };
       }
-      log.debug("stats read", JSON.stringify(read));
-      return read;
     },
   };
 }

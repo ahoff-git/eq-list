@@ -51,11 +51,11 @@ export default function PeerTray({
    */
   knownPeerIds: ReadonlySet<string>;
 }) {
-  // Scores are compared and inventories searched rather than listed, so they're drawn by
-  // `PeerScores` and `PeerInventories` and skipped here.
+  // Scores are compared, inventories searched and stats listed by person rather than by row, so they're drawn by
+  // `PeerScores`, `PeerInventories` and `PeerStats` and skipped here.
   const kinds = useMemo(
     () =>
-      SHARE_KINDS.filter((spec) => spec.key !== "scores" && spec.key !== "inventory" && spec.family !== "observation").map((spec) => ({
+      SHARE_KINDS.filter((spec) => spec.key !== "scores" && spec.key !== "inventory" && spec.key !== "stats" && spec.family !== "observation").map((spec) => ({
         spec,
         n: received.filter((r) => r.kind === spec.key).reduce((sum, r) => sum + r.rows.length, 0),
       })),

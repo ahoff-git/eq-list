@@ -395,7 +395,7 @@ function Deaths({ deaths }: { deaths: DeathRecap[] }) {
           />
           <AskValue
             prompt={hp.regenPerTick ? `regen ${hp.regenPerTick}` : "regen?"}
-            why="Health ticks back every ~6 seconds, which lets a long fight absorb more than you actually have — so it inflates the figures on the left. Tell me your in-combat regeneration per tick and I'll discount it. Left blank, nothing is assumed."
+            why="Health ticks back every ~6 seconds, which lets a long fight absorb more than you actually have — so it inflates the figures on the left. Tell me your in-combat regeneration per tick and I'll discount it — or read your Inventory window (Items → Loadout builder → Goals) and its HP Regen row is used. Left blank, nothing is assumed."
             suffix=" /tick"
             min={0}
             max={1000}
@@ -445,7 +445,7 @@ function hpLabel(hp: HpEstimate): string {
 
 /** Say where the figure came from — it's inferred, and the reader should know that. */
 function hpWhy(hp: HpEstimate): string {
-  if (hp.stated) return `You told me ${hp.stated}. Click to change it; levelling up clears it.`;
+  if (hp.stated) return `You told me ${hp.stated} (or a stats read did). Click to change it; levelling up clears it.`;
   const parts = [
     hp.atLeast ? `you've survived ${hp.atLeast} damage in one stretch without healing` : "",
     hp.atMost ? `${hp.atMost} has killed you from full health` : "",
@@ -454,7 +454,7 @@ function hpWhy(hp: HpEstimate): string {
   const regen = hp.regenPerTick
     ? `Discounting ${hp.regenPerTick} regen per 6s tick.`
     : "Passive regeneration is not discounted (tell me the rate and it will be).";
-  return `${evidence} ${regen} Buffs the log doesn't announce keep it approximate — click to set it outright.`;
+  return `${evidence} ${regen} Buffs the log doesn't announce keep it approximate — click to set it outright, or read your Inventory window (Items → Loadout builder → Goals) and it is filled in for you.`;
 }
 
 /** Share of your side's damage that came from the pet rather than you. */

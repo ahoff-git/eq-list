@@ -45,7 +45,7 @@ import PeerOfferToasts from "@/app/components/peers/PeerOfferToasts";
 import AchievementAlertToasts from "@/app/components/achievements/AchievementAlertToasts";
 import PeerVersionToast from "@/app/components/peers/PeerVersionToast";
 import RaceUnlockAlerts from "@/app/components/faction/RaceUnlockAlerts";
-import { useAchievementsRunning, useBuffs, useCapabilities, useGoalsRunning, useMaximized, useRendererDebug, useShoppingList, useSettings, useTradeskillProgress, useUiScale, useWindowOpacity } from "@/lib/hooks";
+import { useAchievementsRunning, useBuffs, useCapabilities, useGoalsRunning, useMaximized, useRendererDebug, useShoppingList, useSettings, useTradeskillProgress, useUiScale, useWatcherStatus, useWindowOpacity } from "@/lib/hooks";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { NavProvider, useNav } from "@/lib/chrome/nav";
@@ -57,12 +57,14 @@ import { PASS_THROUGH, useClickThrough } from "@/lib/chrome/clickThrough";
 import { useWindowPin } from "@/lib/chrome/windowToggles";
 import AwariHost from "@/lib/awari/host";
 import { OVERLAY_HOTKEY, UI_SCALE } from "@/shared/constants";
-import { offerStatsRead } from "@/lib/stats-read";
+import { answerDeathsPage, offerStatsRead } from "@/lib/stats-read";
+import { restoreStatsRecord } from "@/lib/items/stats-record";
+import { characterFromLogFile } from "@/shared/log-parser";
 import { useStatsStore } from "@/lib/items/stats-stamp";
 import StaleStatsChip from "@/app/components/items/StaleStatsChip";
 import StatBuffWatcher from "@/app/components/items/StatBuffWatcher";
 import { showToast } from "@/lib/toast";
-import { readNotice } from "@/shared/items/stats-read-notice";
+import { readNotice, wrongCharacter } from "@/shared/items/stats-read-notice";
 
 type Tab = "overview" | "list" | "hunt" | "timers" | "goals" | "achievements" | "buffs" | "loot" | "faction" | "search" | "items" | "spells" | "stances" | "aa" | "tradeskills" | "crafting" | "combat" | "session" | "exports" | "alerts" | "peers" | "settings";
 
@@ -254,16 +256,25 @@ function ControlWindow() {
   // The other screengrab: the Inventory window's stats page, read as numbers. What a figure means is only
   // known to the loadout planner (how far it is from what the plan counts), so the read waits for it and
   // the Items tab opens on the planner; what was read, and what wasn't sure, is said here either way.
+  // What the last read left behind — figures still awaiting a yes, and the stamp if this window lost it (ADR 0371).
+  useEffect(() => {
+    void restoreStatsRecord();
+  }, []);
+
+  // A window that isn't the followed character's is refused outright (their HP is not yours to file), and the
+  // toast says whose it was. What the read answers on the Deaths page — max HP, regen — goes straight there.
+  const followed = characterFromLogFile(useWatcherStatus().file) ?? undefined;
   useEffect(
     () =>
       api()?.stats.onRead((read) => {
-        if (read && Object.keys(read.values).length) {
+        if (read && !wrongCharacter(read, followed) && Object.keys(read.values).length) {
           offerStatsRead(read);
+          answerDeathsPage(read);
           openTab("items");
         }
-        showToast({ ...readNotice(read), key: "stats-read", ms: 7000 });
+        showToast({ ...readNotice(read, { followed }), key: "stats-read", ms: 8000 });
       }),
-    [openTab],
+    [openTab, followed],
   );
 
   // A caller elsewhere already knows the exact title (a map marker naming a mob eqlwiki or the

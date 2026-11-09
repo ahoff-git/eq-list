@@ -10,6 +10,7 @@ import { CheckField } from "@/app/components/ui";
 import PeerTray from "@/app/components/peers/PeerTray";
 import PeerScores from "@/app/components/peers/PeerScores";
 import PeerInventories from "@/app/components/peers/PeerInventories";
+import PeerStats from "@/app/components/peers/PeerStats";
 import type { AwariPeer, AwariStatus, Settings } from "@/shared/types";
 
 /**
@@ -95,6 +96,7 @@ export default function PeersPanel({
       />
       <PeerScores received={share.received} />
       <PeerInventories received={share.received} />
+      <PeerStats received={share.received} />
     </div>
   );
 }

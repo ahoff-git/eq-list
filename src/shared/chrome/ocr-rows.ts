@@ -32,6 +32,9 @@ export interface OcrRow {
 const heightOf = (w: OcrWord) => w.y1 - w.y0;
 const centreOf = (w: OcrWord) => (w.y0 + w.y1) / 2;
 
+/** A word the recogniser was this unsure of (0–100) is not taken as read, however tidy it looks. */
+export const UNSURE_CONFIDENCE = 55;
+
 /** The middle word height — the unit gaps and row tolerances are measured in. 0 for no words. */
 export function typicalHeight(words: readonly OcrWord[]): number {
   if (!words.length) return 0;

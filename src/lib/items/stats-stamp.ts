@@ -73,6 +73,9 @@ export function stampStats(basis: Basis, at: number = Date.now()): void {
   set({ ...held, stamp: { at, basis }, basisNow: basis });
 }
 
+/** Whether a stamp is held — for a restore that should only fill a gap. */
+export const hasStamp = (): boolean => !!held.stamp;
+
 /** There is no calibration any more, so there is nothing to go stale. */
 export function clearStatsStamp(): void {
   if (!held.stamp) return;

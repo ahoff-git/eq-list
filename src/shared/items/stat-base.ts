@@ -111,5 +111,17 @@ export function applyRead(calibration: Calibration, shown: StatTotals, counted: 
   return next;
 }
 
+/**
+ * The worn gear's totals with the resists you have **beyond** the gear added in — what the game's own window
+ * shows against each type once the stats have been read. A resist is worked out from the points you have in all,
+ * not just those on your back, so the damage-taken suggestions are given these (ADR 0370). With nothing read the
+ * base holds no resist, and this is the gear alone, as before.
+ */
+export function withBaseResists(gear: StatTotals, base: StatTotals): StatTotals {
+  const out: StatTotals = { ...gear };
+  for (const key of RESISTS) if (base[key]) out[key] = (out[key] ?? 0) + base[key]!;
+  return out;
+}
+
 /** What the game should show for a stat now, by the model and the calibration. */
 export const shownNow = (counted: StatTotals, calibration: Calibration, key: Calibrated): number => (counted[key] ?? 0) + (calibration[key] ?? 0);

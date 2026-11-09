@@ -4228,6 +4228,9 @@ select optgroup {
 .bis-tag { margin-left: 6px; padding: 0 6px; border-radius: 8px; font-size: 11px; color: var(--good); border: 1px solid color-mix(in oklab, var(--good) 45%, transparent); }
 .bis-choices { display: flex; flex-direction: column; gap: 4px; }
 .bis-goals { display: flex; flex-direction: column; gap: 8px; }
+.bis-goals .stats-source p { margin: 0 0 4px; }
+.bis-goals .stats-steps { margin: 2px 0 6px; padding-left: 20px; }
+.bis-goals .stats-steps li { margin: 2px 0; }
 .bis-goal { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
 .bis-goal-name { min-width: 92px; }
 .bis-goal-box { width: 84px; }

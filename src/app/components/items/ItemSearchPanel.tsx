@@ -3,9 +3,11 @@ import { useCallback, useEffect, useMemo } from "react";
 import { useClosedZones, useCurrentItemCatalog } from "@/lib/hooks";
 import { useItemQuery } from "@/lib/items/useItemQuery";
 import { useHeldGrades, useInventory, useOwnedItems } from "@/lib/exports/useGameExports";
-import { loadoutStats } from "@/shared/items/loadout-stats";
+import { wornStats } from "@/shared/items/worn-stats";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { usePendingStatsRead } from "@/lib/stats-read";
+import { publishBasis } from "@/lib/items/stats-stamp";
+import { basisOf } from "@/shared/items/stats-drift";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import CatalogueHarvest from "@/app/components/items/CatalogueHarvest";
 import ItemFacetRow from "@/app/components/items/ItemFacetRow";
@@ -133,6 +135,24 @@ export default function ItemSearchPanel({ damage, statsFocus }: { damage?: Damag
     (key: string, values: string[]) => set({ facets: { ...active.facets, [key]: values } }),
     [active.facets, set],
   );
+  // A stats read says who you are — the window's corner, "31 WIZ/DRU/MAG" (ADR 0370) — and the pickers follow.
+  // At the cap the slider means "no cap", not 60.
+  const followRead = useCallback(
+    (who: { classes?: string[]; level?: number; race?: string }) =>
+      set({
+        ...((who.classes || who.race) && { facets: { ...active.facets, ...(who.classes && { class: who.classes }), ...(who.race && { race: [who.race] }) } }),
+        ...(who.level !== undefined && { levelMax: who.level >= MAX_PLAYER_LEVEL ? undefined : who.level }),
+      }),
+    [active.facets, set],
+  );
+  // What the plan measures a stats read against, said to the status bar's "re-read your stats" pill as the
+  // pickers move — from the live criteria rather than the settled ones, so a read that moves them doesn't
+  // flash a "classes changed" reminder for the moment before they settle (ADR 0369).
+  const liveRace = active.facets.race.length === 1 ? active.facets.race[0] : undefined;
+  const calibrated = Object.keys(bisOptions.calibration).length > 0;
+  useEffect(() => {
+    publishBasis(basisOf(liveRace, active.facets.class, active.levelMax ?? MAX_PLAYER_LEVEL), calibrated);
+  }, [liveRace, active.facets.class, active.levelMax, calibrated]);
 
   // Which of the eras this server *has* are actually open — the live half of the era judgement, and
   // the only half a window can't work out for itself (`item-era.ts`).
@@ -183,16 +203,7 @@ export default function ItemSearchPanel({ damage, statsFocus }: { damage?: Damag
    * (an AGI point below 75 is worth fifteen above it; ADR 0331).
    */
   const { items: dump } = useInventory();
-  const worn = useMemo(() => {
-    if (!dump) return undefined;
-    const byTitle = new Map(rows.map((r) => [normalizeItemName(r.item.title), r]));
-    return loadoutStats(
-      dump.filter((it) => it.area === "worn").flatMap((it) => {
-        const row = byTitle.get(normalizeItemName(it.baseName));
-        return row ? [gradedItemStats(row.stats, it.grade)] : [];
-      }),
-    );
-  }, [dump, rows]);
+  const worn = useMemo(() => (dump ? wornStats(dump, rows) : undefined), [dump, rows]);
   // One ticked race is yours, the way the ticked classes are; none, or several, says nothing about it.
   // The controls follow the hand; the work they steer (filtering eleven thousand rows, planning a
   // loadout) waits for them to hold still. `settling` is the gap between the two.
@@ -318,6 +329,7 @@ export default function ItemSearchPanel({ damage, statsFocus }: { damage?: Damag
           rates={rates}
           worn={worn}
           damage={damage}
+          onWho={followRead}
         />
       )}
 

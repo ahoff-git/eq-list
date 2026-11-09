@@ -1,12 +1,9 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ComponentProps } from "react";
 import { statMeta } from "@/shared/items/item-stats";
 import { LOADOUT_STATS } from "@/shared/items/loadout-stats";
 import { CheckField } from "@/app/components/ui";
-import { api } from "@/lib/api";
-import { useCapabilities } from "@/lib/hooks";
-import { STATS_HOTKEY } from "@/shared/constants";
-import type { Reason } from "@/shared/items/stats-drift";
+import StatsSource from "@/app/components/items/StatsSource";
 import type { DerivedRate } from "@/shared/items/derived-stats";
 import { GOAL_PRESETS, goalCount, goalsWithoutBase, goalsWithoutPools, priorityOnly, withGoal, type BisGoals, type GoalKey, type GoalRow, type StatGoal } from "@/shared/items/bis-goals";
 import { calibrate, isCalibrated, shownNow, type Calibration, type StatTotals } from "@/shared/items/stat-base";
@@ -23,7 +20,8 @@ const num = (n: number) => Math.round(n).toLocaleString();
  *
  * Floors are in the game's own numbers (ADR 0366): what the gear gives plus what you have without it. The
  * race and classes account for some of that; the rest — class HP, AAs, buffs — is what the game's Inventory
- * window shows: read off the screen in one go (ADR 0368), or typed, once, and the planner keeps the difference.
+ * window shows: read off the screen in one go (ADR 0368; `StatsSource` says how), or typed, once, and the planner
+ * keeps the difference.
  *
  * The solver's work lives in `bis-goals.ts`; this only sets goals and shows how each one came out.
  */
@@ -34,9 +32,7 @@ export default function BisGoals({
   driven = true,
   counted,
   calibration = {},
-  readWaiting = false,
-  drift = [],
-  onAcknowledge,
+  source,
   onGoals,
   onCalibration,
 }: {
@@ -48,12 +44,8 @@ export default function BisGoals({
   /** What the model counts for you now — race and class base plus what you wear. Absent (no dump, or planning for a peer) hides the boxes that calibrate it. */
   counted?: StatTotals;
   calibration?: Calibration;
-  /** A stats grab has been read but can't be applied yet — it is measured against what you wear, which needs your dump. */
-  readWaiting?: boolean;
-  /** Why the stats you read can no longer be trusted (`stats-drift.ts`) — empty while they can. */
-  drift?: readonly Reason[];
-  /** "Nothing has changed": keep the stats as they are and stop saying so until something else does. */
-  onAcknowledge?: () => void;
+  /** Where your real stats stand and what to do about it. Absent for a peer's plan, and where nothing can be read off a screen. */
+  source?: ComponentProps<typeof StatsSource>;
   onGoals: (next: BisGoals) => void;
   onCalibration?: (next: Calibration) => void;
 }) {
@@ -61,8 +53,6 @@ export default function BisGoals({
   const poolless = goalsWithoutPools(goals, rates);
   const baseless = goalsWithoutBase(goals, rates, calibration);
   const calibratable = keys.filter(isCalibrated);
-  // Reading the stats page off the screen needs the desktop app's screen capture.
-  const capabilities = useCapabilities();
   const addable = [...QUICK, ...LOADOUT_STATS.filter((k) => !QUICK.includes(k))].filter((k) => !goals[k]);
   const rowOf = (key: GoalKey) => rows.find((r) => r.key === key);
   // A new goal starts as a priority, which is always satisfiable; the floor is the second slider's job.
@@ -99,7 +89,7 @@ export default function BisGoals({
       )}
       {poolless.length > 0 && (
         <p className="small warn">
-          Tick your class(es) in the Class picker: {poolless.map(labelOf).join(" and ")} also come from {poolless.map((k) => (k === "hp" ? "STA" : "INT/WIS")).join(" and ")}, and the plan only counts that once it knows your classes.
+          Tick your class(es) in the Class picker — or read your stats from the game, which fills them in: {poolless.map(labelOf).join(" and ")} also come from {poolless.map((k) => (k === "hp" ? "STA" : "INT/WIS")).join(" and ")}, and the plan only counts that once it knows your classes.
         </p>
       )}
       {baseless.length > 0 && (
@@ -107,55 +97,23 @@ export default function BisGoals({
           Tick your race in the Race picker: a floor on {baseless.map(labelOf).join(" and ")} is in the game&apos;s numbers, and the attributes your race and classes start with count toward it only once the plan knows your race. Until then it counts gear alone.
         </p>
       )}
-      {drift.length > 0 && (
-        <p className="small warn">
-          Your stats may have changed since you last read them — {drift.map((r) => r.text).join("; ")}. Floors count what you have beyond your gear from that read, so they are off until it is read again.{" "}
-          {capabilities.lookup && (
-            <button className="btn sm" onClick={() => void api()?.lookup.open("stats")} title={`Open your Inventory window's stats page, then drag over it (or press ${STATS_HOTKEY.label})`}>
-              Read my stats again
-            </button>
-          )}{" "}
-          {onAcknowledge && (
-            <button className="btn ghost sm" onClick={onAcknowledge} title="Keep the stats as they are, and stop saying this until something else changes">
-              Nothing&apos;s changed
-            </button>
-          )}
-        </p>
-      )}
-      {readWaiting && (
-        <p className="small warn">
-          A stats read is waiting for your inventory dump: it is measured against what you wear, so it can&apos;t be applied until the app has seen what that is.
-        </p>
-      )}
-      {counted && onCalibration && (capabilities.lookup || calibratable.length > 0) && (
+      {source && <StatsSource {...source} />}
+      {counted && onCalibration && calibratable.length > 0 && (
         <div className="row wrap small bis-calibrate">
-          {capabilities.lookup && (
-            <button
-              className="btn sm"
-              onClick={() => void api()?.lookup.open("stats")}
-              title={`Open your Inventory window's stats page, press ${STATS_HOTKEY.label} (or this), and drag a box over Character Vitals and Stats and Resists. The numbers are read off the screen and the plan keeps the difference from what it counts for what you wear — HP, mana, AC, endurance, attributes and resists in one go. Anything it isn't sure of is left for you to confirm.`}
-            >
-              Read my stats from the game · {STATS_HOTKEY.label}
-            </button>
-          )}
-          {calibratable.length > 0 && (
-            <>
-              <span className="muted" title="Floors count the whole character, as the game's Inventory window shows it. The plan knows what your race, classes and gear give; read or type what the game shows for the rest — class and level HP, AAs, a standing buff — and it keeps the difference, so it stays right when your gear changes. Clear a box to go back to what the plan counts.">
-                The game shows you, in what you wear now:
-              </span>
-              {calibratable.map((key) => (
-                <label key={key} className="row small">
-                  <span className="muted">{labelOf(key)}</span>
-                  <Points
-                    label={`${labelOf(key)} the game shows`}
-                    value={calibration[key] ? shownNow(counted, calibration, key) : ""}
-                    placeholder={num(counted[key] ?? 0)}
-                    onCommit={(shown) => onCalibration(calibrate(calibration, key, shown, counted[key] ?? 0))}
-                  />
-                </label>
-              ))}
-            </>
-          )}
+          <span className="muted" title="Floors count the whole character, as the game's Inventory window shows it. The plan knows what your race, classes and gear give; read or type what the game shows for the rest — class and level HP, AAs, a standing buff — and it keeps the difference, so it stays right when your gear changes. Clear a box to go back to what the plan counts.">
+            What the game shows you, wearing what you wear now — type to correct:
+          </span>
+          {calibratable.map((key) => (
+            <label key={key} className="row small">
+              <span className="muted">{labelOf(key)}</span>
+              <Points
+                label={`${labelOf(key)} the game shows`}
+                value={calibration[key] ? shownNow(counted, calibration, key) : ""}
+                placeholder={num(counted[key] ?? 0)}
+                onCommit={(shown) => onCalibration(calibrate(calibration, key, shown, counted[key] ?? 0))}
+              />
+            </label>
+          ))}
         </div>
       )}
       <div className="row wrap">

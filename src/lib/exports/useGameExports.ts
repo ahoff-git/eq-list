@@ -7,6 +7,7 @@ import { heldGrades, inventoryTotals, ownedItems, parseInventoryDump, type Inven
 import { holdingsOf, type Holdings } from "@/shared/tradeskills/held-materials";
 import { offeredCount, rowsOf, shortId, usePeerShare, type PeerShareView } from "@/lib/peers/usePeerShare";
 import type { InventoryShareRow } from "@/shared/peers/peer-share";
+import type { StatsRecord as StatsShare } from "@/shared/items/stats-record";
 import { inventoryAsksDue } from "@/shared/peers/inventory-asks";
 import { peerInventoryItems } from "@/shared/peers/peer-inventory";
 import { normalizeItemName } from "@/shared/items/grouping";
@@ -140,6 +141,36 @@ export function usePeersHolding(name: string): { holders: PeerHolder[]; sharing:
     () => ({ holders: peerHoldersOf(rows, name), sharing: new Set(rows.map((r) => r.peerId)).size }),
     [rows, name],
   );
+}
+
+/** One person sharing their stats with you: who, and what the game showed them — what planning as them is measured by. */
+export interface PeerStats {
+  name: string;
+  record: StatsShare;
+  /** When their screen was read, ms. */
+  at: number;
+}
+
+/**
+ * Everyone sharing their stats with you (the **Character stats** kind, off by default), by name — asked for the way
+ * inventories are (`inventoryAsksDue`, `kind` "stats"), since a live kind nothing fetches unprompted. Only what has
+ * arrived: a peer offering one is not listed until it does ([ADR 0371](../../../specs/decisions/0371-a-stats-record-is-kept-and-shared.md)).
+ */
+export function usePeerStats(): PeerStats[] {
+  const { peers, received, ask } = usePeerShare();
+  const asked = useRef(new Map<string, number>());
+  useEffect(() => {
+    for (const peerId of inventoryAsksDue(peers, received, asked.current, Date.now(), undefined, "stats")) ask(peerId, "stats");
+  }, [peers, received, ask]);
+  return useMemo(() => {
+    const out: PeerStats[] = [];
+    for (const r of received) {
+      if (r.kind !== "stats") continue;
+      const [row] = rowsOf<StatsShare>([r], "stats").map((x) => x.row);
+      if (row) out.push({ name: r.from || shortId(r.peerId), record: row, at: Date.parse(row.asOf) });
+    }
+    return out.sort((a, b) => a.name.localeCompare(b.name));
+  }, [received]);
 }
 
 /** One person sharing their inventory with you: who, and what it reads as — null until it arrives. */
