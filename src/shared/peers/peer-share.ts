@@ -38,6 +38,7 @@
  */
 import { readStatsRecord, shareableStats } from "../items/stats-record";
 import { MAX_GRADE } from "../items/item-upgrade";
+import { isRosterNpc } from "../zones/zone-roster";
 import type {
   CastWatch,
   FightHeal,
@@ -2283,7 +2284,7 @@ function readSharedPage(raw: unknown): SharedItemPage | null {
             if (!isRecord(row)) return null;
             const who = text(row.name);
             const level = text(row.level);
-            return who && level ? { name: who, level } : null;
+            return who && level && isRosterNpc({ name: who, level }) ? { name: who, level } : null;
           })
           .filter((row): row is { name: string; level: string } => !!row)
       : undefined,

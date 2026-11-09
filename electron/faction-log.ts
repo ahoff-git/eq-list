@@ -73,13 +73,19 @@ const WRITE_DEBOUNCE_MS = 3000;
 export type FactionAdded = "added" | "known";
 
 /**
- * A faction hit's identity: the log line behind it, the same rule a drop is keyed by (ADR 0033).
- * Two hits against the same faction, in the same direction, for the same amount, in the same
- * logged second collapse into one — the same trade loot's own key makes, and under-counting is the
- * safer way to be wrong. Deliberately excludes `causedBy`: it's a guess about the same line, not
- * part of what the line *is*, so it must never make one hit look like two.
+ * A faction hit's **signature**: the log line behind it, the same rule a drop is keyed by (ADR 0033). Deliberately
+ * excludes `causedBy`: it's a guess about the same line, not part of what the line *is*, so it must never make one
+ * hit look like two.
+ *
+ * Not the key on its own. Two hits against one faction, in one direction, for one amount, in one logged second share
+ * a signature — and that is what two mobs dying together look like ("Storm Guard raised 5", twice), so a key made of
+ * the signature alone kept one and dropped the other: 3,937 of 28,656 hits (14%) in one real log, every one a genuine
+ * hit. Kills and loot tell them apart with an ordinal; this does the same (ADR 0376).
  */
-const factionKey = (e: FactionRecord): string => `${e.at} ${e.faction.toLowerCase()} ${e.direction} ${e.delta ?? ""}`;
+const baseFactionKey = (e: FactionRecord): string => `${e.at} ${e.faction.toLowerCase()} ${e.direction} ${e.delta ?? ""}`;
+
+/** The key for the `ordinal`th hit with a signature. The first has no suffix, so every row stored before ordinals existed is still its own key. */
+const factionKeyAt = (base: string, ordinal: number): string => (ordinal ? `${base}#${ordinal}` : base);
 
 export const FACTION_LOG_MIGRATIONS: readonly Migration[] = [
   {
@@ -344,6 +350,13 @@ export interface FactionLog {
    * replayed gap — or a log eaten twice — can't file the same hit twice (ADR 0033).
    */
   add(event: FactionRecord): FactionAdded;
+  /**
+   * Call before re-reading a log whose lines may already be on record (eating a log, an unattended re-read). Live,
+   * every `add` is a new line, so two identical hits in one second are two hits; in a replay the Kth identical line is
+   * new only once fewer than K are already recorded — the same contract as `KillLog.startReplay` and
+   * `LootLog.startReplay`.
+   */
+  startReplay(): void;
   /** The most recent hits, newest first (at most `limit`). */
   recent(limit?: number): FactionRecord[];
   /**
@@ -437,6 +450,13 @@ export function createFactionLog(db: Database, userDataDir: string): FactionLog 
        @causedByText, @causedByQuests, @causedByQuestsMatched,
        @unmatchedNpc, @unmatchedText, @unmatchedGapSec, @raw, @logId)
   `);
+  // Every ordinal of one signature: the bare key plus its `#N` siblings, which sort together between "<base>#" and
+  // "<base>$" — a range the primary key's index answers directly (the same trick `loot-log.ts` uses).
+  const countSignature = db.prepare(`SELECT COUNT(*) as n FROM faction_hits WHERE key = ? OR (key >= ? AND key < ?)`);
+  const hasKey = db.prepare(`SELECT 1 FROM faction_hits WHERE key = ?`);
+  const recordedCount = (base: string): number => (countSignature.get(base, `${base}#`, `${base}$`) as { n: number }).n;
+  /** `null` outside a replay — see `startReplay`. */
+  let replay: Map<string, number> | null = null;
   const selectRecent = db.prepare(`SELECT * FROM faction_hits ORDER BY at DESC, rowid DESC LIMIT ?`);
   const selectAll = db.prepare(`SELECT * FROM faction_hits ORDER BY at DESC, rowid DESC`);
   const countHits = db.prepare(`SELECT COUNT(*) as n FROM faction_hits`);
@@ -559,10 +579,10 @@ export function createFactionLog(db: Database, userDataDir: string): FactionLog 
     WHERE key = ?
   `);
 
-  function paramsOf(event: FactionRecord) {
+  function paramsOf(event: FactionRecord, key: string) {
     const c = causeToRow(event.causedBy);
     return {
-      key: factionKey(event),
+      key,
       at: event.at,
       faction: event.faction,
       direction: event.direction,
@@ -671,12 +691,24 @@ export function createFactionLog(db: Database, userDataDir: string): FactionLog 
 
   return {
     add(event) {
-      const info = insertHit.run(paramsOf(event));
-      if (info.changes > 0) {
-        rev++;
-        saver.save();
-      }
-      return info.changes === 0 ? "known" : "added";
+      const base = baseFactionKey(event);
+      const already = recordedCount(base);
+      // Which occurrence of this signature the line is: live, always the next one (see `startReplay`).
+      const occurrence = replay ? (replay.get(base) ?? 0) + 1 : already + 1;
+      replay?.set(base, occurrence);
+      // A line already on record — a re-read, or a log eaten twice. Not another hit.
+      if (occurrence <= already) return "known";
+      // Normally `already` is free; stepping past a taken one covers a lower ordinal the admin panel removed.
+      let ordinal = already;
+      while (hasKey.get(factionKeyAt(base, ordinal))) ordinal++;
+      insertHit.run(paramsOf(event, factionKeyAt(base, ordinal)));
+      rev++;
+      saver.save();
+      return "added";
+    },
+
+    startReplay() {
+      replay = new Map();
     },
 
     recent: (limit = DEFAULT_LIMIT) => (selectRecent.all(limit) as HitRow[]).map(rowToRecord),
@@ -869,7 +901,7 @@ function migrateFromLegacyJson(db: Database, userDataDir: string, file: string):
     for (const e of hits) {
       const c = causeToRow(e.causedBy);
       insertHit.run({
-        key: factionKey(e),
+        key: baseFactionKey(e),
         at: e.at,
         faction: e.faction,
         direction: e.direction,

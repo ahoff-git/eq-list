@@ -30,7 +30,7 @@ shown a countdown: applying the formula needs a caster level the log never state
 can't stand behind would make every other figure here look like a guess too." **EQBuddy** solves the
 same problem a different way: it learns a spell's duration from the player's own confirmed fades,
 the same technique this app already uses for a respawn window
-([spawn-timers.ts](../../src/shared/spawn-timers.ts)). That is not the refused formula-based guess —
+([spawn-timers.ts](../../src/shared/mob/spawn-timers.ts)). That is not the refused formula-based guess —
 it is a measurement, sourced the way [ADR 0025](./0025-observation-over-the-wiki.md) already prefers
 observation to a claim — so it is a different decision, not a reversal of the one `BuffPanel` states.
 
@@ -45,10 +45,10 @@ pet, or a named player keeps the bare `instanceKey` it always had — none of th
 name with something else worth telling apart, so slotting them would be solving a problem they don't
 have.
 
-- **Slot assignment** (`enemySlot`, pure, in [buff-tracking.ts](../../src/shared/buff-tracking.ts)):
+- **Slot assignment** (`enemySlot`, pure, in [buff-tracking.ts](../../src/shared/buffs/buff-tracking.ts)):
   reuse the lowest **lapsed** sibling's slot first — "the mez that just broke got recast" — and only
   once none is lapsed does a rise open the lowest slot not already up. Mirrors `timerId`'s `key#slot`
-  in [spawn-timers.ts](../../src/shared/spawn-timers.ts), the same problem solved there for two
+  in [spawn-timers.ts](../../src/shared/mob/spawn-timers.ts), the same problem solved there for two
   spawn-timer clocks on one camp.
 - **Which slot a fade closes** (`matchingInstances`, in [electron/buff-tracker.ts](../../electron/buff-tracker.ts)):
   a fade names the mob, never which instance, when more than one is up. The **oldest** by `since`

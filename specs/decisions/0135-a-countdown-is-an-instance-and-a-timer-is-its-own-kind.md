@@ -32,7 +32,7 @@ harder question than the one a camper actually asks. They do not need the app to
 share a spawn point; they need **three clocks for one camp**.
 
 **A hand-typed figure cannot exceed 30 minutes.** Both interval fields parse with `parseDelay`
-([alert-schedule.ts](../../src/shared/alert-schedule.ts)), whose contract is an *alert cue*: units
+([alert-schedule.ts](../../src/shared/alerts/alert-schedule.ts)), whose contract is an *alert cue*: units
 `s` and `m` only, silently **clamped to `MAX_DELAY_SECONDS`**. So `4h` is refused as unreadable and
 `240m` saves as 30m without a word — while `formatInterval` prints `6h 30m`, so the figure the panel
 shows cannot be typed back into the field that shows it. The reuse looked free and it wasn't: this is

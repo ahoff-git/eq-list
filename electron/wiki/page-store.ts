@@ -45,6 +45,7 @@ import path from "node:path";
 import type { Database } from "better-sqlite3";
 import { shardOf } from "../../src/shared/items/item-shards";
 import { itemGrade } from "../../src/shared/names";
+import { cleanRoster } from "../../src/shared/zones/zone-roster";
 import { createLogger } from "../../src/shared/logging";
 import type { Migration } from "../sqlite-store";
 import type { WikiPage } from "../../src/shared/types";
@@ -130,13 +131,26 @@ const legacyKey = (title: string): string => title.replace(/[^a-z0-9]+/gi, "_").
  * v2+ wrote an envelope `{version, page}`; entries from before that were the bare `WikiPage`, and
  * some of those can still be on disk in a cache that's been carried a long way forward.
  */
+/**
+ * A page as read back from disk. A zone page cached before the parser learned to leave item cards out of the
+ * roster (`zone-roster.ts`) is cleaned here, so no reader of a stored page ever sees them — and nothing has to be fetched
+ * again to be rid of 168 "NPCs" that are loot.
+ */
+function tidy(page: WikiPage): WikiPage {
+  if (page.kind === "zone" && page.npcs?.length) {
+    const npcs = cleanRoster(page.npcs);
+    if (npcs.length !== page.npcs.length) return { ...page, npcs };
+  }
+  return page;
+}
+
 function decodePage(json: string): StoredPage | null {
   try {
     const parsed = JSON.parse(json) as { version?: number; page?: WikiPage } & Partial<WikiPage>;
     const enveloped = typeof parsed.version === "number" && !!parsed.page;
     const page = (enveloped ? parsed.page : (parsed as WikiPage)) as WikiPage;
     if (!page || typeof page.title !== "string") return null;
-    return { page, version: enveloped ? (parsed.version as number) : 1 };
+    return { page: tidy(page), version: enveloped ? (parsed.version as number) : 1 };
   } catch {
     return null;
   }
@@ -192,7 +206,7 @@ export function createPageStore(db: Database, legacyDir: string): PageStore {
   function decodeRow(row: { version: number; page_json: string } | undefined): StoredPage | null {
     if (!row) return null;
     try {
-      return { version: row.version, page: JSON.parse(row.page_json) as WikiPage };
+      return { version: row.version, page: tidy(JSON.parse(row.page_json) as WikiPage) };
     } catch {
       return null;
     }

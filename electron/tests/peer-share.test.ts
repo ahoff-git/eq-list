@@ -1141,3 +1141,22 @@ test("the protocol is a hand-bumped number, not the app version", () => {
   assert.equal(typeof SHARE_PROTOCOL, "number");
   assert.ok(Number.isInteger(SHARE_PROTOCOL) && SHARE_PROTOCOL >= PROTOCOL_UNSTATED);
 });
+
+// A peer's old cache may still hold a zone page parsed before the parser left item cards out of the roster (Kael's
+// came back with 168 of them among 508 "NPCs"); receiving it mustn't put them in this install's cache.
+test("a peer's zone roster arrives without the item cards that wandered into it", () => {
+  const zone = readPage({
+    kind: "zone",
+    title: "Kael",
+    npcs: [
+      { name: "A Drakkel Dire Wolf", level: "52-56" },
+      { name: "A Giant's BroomA Giant's Broom LORE ITEM NO DROP Slot: PRIMARY Atk Delay: 40 DMG: 15 WT: 0.0 Size: TINY", level: "Atk Delay: 40 DMG: 15 WT: 0.0 Size: TINY Class: ALL Race: ALL" },
+      { name: "Antlered MaskAntlered Mask MAGIC ITEM Slot: FACE AC: 7 WT: 0.2 Size: SMALL", level: "AC: 7 STR: +3 WT: 0.2 Size: SMALL" },
+      { name: "Zlirron Windchill", level: "60" },
+    ],
+  }) as { npcs?: { name: string; level: string }[] };
+  assert.deepEqual(zone.npcs, [
+    { name: "A Drakkel Dire Wolf", level: "52-56" },
+    { name: "Zlirron Windchill", level: "60" },
+  ]);
+});

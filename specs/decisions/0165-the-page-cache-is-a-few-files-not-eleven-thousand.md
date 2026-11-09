@@ -46,7 +46,7 @@ path of one small page at a time and a cold read path of "give me everything".
 - **256 buckets**, at about 75 KB each. The two costs pull opposite ways — reading everything is one
   open per bucket, reading one page loads its whole bucket — and 256 puts a full read at 45× fewer
   opens while keeping a bucket a few milliseconds to load.
-- **The bucket is `shardOf(title) % 256`**, reusing [item-shards](../../src/shared/item-shards.ts)
+- **The bucket is `shardOf(title) % 256`**, reusing [item-shards](../../src/shared/items/item-shards.ts)
   rather than inventing a second hash. Because 1024 shards divide evenly by 256 buckets, every page
   of a peer shard lands in one file.
 - **A torn line costs one page.** An append can be cut short by a power cut; a line that does not

@@ -48,7 +48,7 @@ item count from 572 to 1,901; 226 individual mob pages had produced 572.
 **An item's level is derived from the best available evidence, and always says which.**
 
 - **A hierarchy, mob → quest → zone**, each answer carrying `from` and a sentence naming the evidence
-  (`a festering hag is level 28–30`). The same shape [drop-truth](../../src/shared/drop-truth.ts)
+  (`a festering hag is level 28–30`). The same shape [drop-truth](../../src/shared/mob/drop-truth.ts)
   uses, and for the same reason: a number whose quality varies must not be shown as if it didn't.
 - **The *lowest* mob wins** where several drop it. The question is "can I get this yet", and the
   easiest source is what answers it.

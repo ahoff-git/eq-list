@@ -24,7 +24,7 @@ Reported from the app, about the two surfaces a lapsed buff appears on
 **The banner names one alternative and counts the rest; the ✕ leads the row.**
 
 - Ambiguity is worded in one place, `alternativesLabel` in
-  [buff-tracking.ts](../../src/shared/buff-tracking.ts) (pure, tested), with a `cap` on how many
+  [buff-tracking.ts](../../src/shared/buffs/buff-tracking.ts) (pure, tested), with a `cap` on how many
   candidates get named before the remainder becomes `+N more`. The panel row calls it uncapped — it
   has the room and is read at leisure. The banner caps it at **one**: past the first alternative the
   fact worth having mid-fight is *that* the name is uncertain, and a count says that as well as a

@@ -29,7 +29,7 @@ things no test could reach, because reaching them meant standing up Electron.
 
 ## Decision
 
-**A one-time conversion makes the implicit explicit.** [watch-upgrade.ts](../../src/shared/watch-upgrade.ts)
+**A one-time conversion makes the implicit explicit.** [watch-upgrade.ts](../../src/shared/alerts/watch-upgrade.ts)
 is pure; `migrations.ts` runs it once against `settings.json` behind its own schema stamp, having
 copied the file aside first. It:
 

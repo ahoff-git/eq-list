@@ -39,7 +39,7 @@ a bar a fresh alt should be measured against.
 
 ## Decision
 
-A **scoreboard** of personal bests, in [src/shared/high-scores.ts](../../src/shared/high-scores.ts)
+A **scoreboard** of personal bests, in [src/shared/high-scores.ts](../../src/shared/combat/high-scores.ts)
 (the categories and every comparison, pure) and
 [electron/high-scores.ts](../../electron/high-scores.ts) (the board, which needs memory). Six rules:
 

@@ -60,7 +60,7 @@ other half of the same transport fact, and neither becomes an identity.
 The [ADR 0132](./0132-a-contribution-is-keyed-by-who-made-it.md) split — a thing a window draws and
 forgets, versus a thing main files and keeps — was right and is kept. Sharing adds a third, and the
 three are worth naming because every rule below follows from which one a kind is in
-([`peer-share.ts`](../../src/shared/peer-share.ts) `SHARE_KINDS` is the table).
+([`peer-share.ts`](../../src/shared/peers/peer-share.ts) `SHARE_KINDS` is the table).
 
 **Authored** — `watches`, `styles`, `lists`, `pins`. Somebody *made* these. They are asked for by a
 person, arrive in a **received tray**, and are **never applied automatically**: you look at what
@@ -92,7 +92,7 @@ the slot is local bookkeeping ([ADR 0135](./0135-a-countdown-is-an-instance-and-
 meaningless across machines. Its `key` (one mob, one place) is not. So two peers at one camp are
 merged by `key`, and two timers under one key are **the same spawn when their `dueAt` are close
 enough** (`SAME_SPAWN_MS`). Which of them survives is decided by the evidence, in the order
-[`spawn-timers.ts`](../../src/shared/spawn-timers.ts) already argues for: a `seenAt` (somebody can
+[`spawn-timers.ts`](../../src/shared/mob/spawn-timers.ts) already argues for: a `seenAt` (somebody can
 *see* it — an observation outranks any countdown's opinion), then more `samples`, then the earlier
 `dueAt`, because the estimate is a bound that only falls and the tightest honest one wins.
 
@@ -114,7 +114,7 @@ the reader draws their own conclusion. This is [ADR 0132](./0132-a-contribution-
 
 ### Everything inbound is untrusted, and there is one place that says so
 
-[`watch-share.ts`](../../src/shared/watch-share.ts) already worked out what reading a stranger's
+[`watch-share.ts`](../../src/shared/alerts/watch-share.ts) already worked out what reading a stranger's
 artifact means — unknown keys dropped, every value checked against what the type allows, strings
 clamped, lists capped, **ids regenerated** so an import can never overwrite something you already
 have. That is the same problem for every kind here, arriving over a socket instead of a clipboard,

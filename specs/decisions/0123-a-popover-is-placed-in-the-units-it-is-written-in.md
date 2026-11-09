@@ -7,7 +7,7 @@ Accepted
 ## Context
 
 Hovering an item name anywhere in the app pops the wiki's stat card, and
-[`tooltip.ts`](../../src/shared/tooltip.ts) has said since it was written that the card goes
+[`tooltip.ts`](../../src/shared/chrome/tooltip.ts) has said since it was written that the card goes
 **beside** the name and never over it — right of it, left of it near the right edge, below/above only
 when the window is too narrow for either side. That rule is pure, tested, and correct.
 

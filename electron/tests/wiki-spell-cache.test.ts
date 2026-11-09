@@ -35,7 +35,7 @@ const seededDbs = new Map<string, Database>();
  * explicit `db` (see `createWikiClient`'s own doc), so the two see the same rows — and, one store per
  * directory, so seeding twice doesn't open a second connection to the same file.
  */
-function seed(dir: string, page: Record<string, unknown> & { kind: string; title: string }) {
+function seed(dir: string, page: Record<string, unknown> & { kind: string; title: string }, key: string = page.title) {
   let store = seeders.get(dir);
   if (!store) {
     const db = openAppDatabase(dir, WIKI_PAGE_MIGRATIONS);
@@ -45,7 +45,7 @@ function seed(dir: string, page: Record<string, unknown> & { kind: string; title
   }
   const full = { sources: [], components: [], rewards: [], fetchedAt: new Date().toISOString(), ...page };
   // A version well above every kind's floor — this test isn't about version gating.
-  store.put(page.title, 99, full as unknown as WikiPage);
+  store.put(key, 99, full as unknown as WikiPage);
 }
 
 async function cleanup(dir: string): Promise<void> {
@@ -133,6 +133,44 @@ test("rows built before the game install was known pick up its categories once t
     wiki.spellCategoriesChanged();
     const rows = JSON.parse(await wiki.spellCatalogueJson()) as SpellRow[];
     assert.deepEqual(rows[0].category, install.now, "the rows were rebuilt against the install now set");
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+// A page can be cached under more than one name — asking for "Circle of Karana" fetched the page whose own title is
+// "Circle of North Karana" and stored it under both. The item catalogue folds those to one row; the spell catalogue
+// did not, so the Spells grid (which keys a row by its title) got two rows with one key. 9 such pages in a real cache.
+test("a spell cached under an alias is one row, and the newest copy is the one kept", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-spellcat-alias-"));
+  try {
+    const spell = (mana: number, fetchedAt: string) => ({
+      kind: "spell",
+      title: "Circle of North Karana",
+      wikiPath: "/Circle_of_North_Karana",
+      fetchedAt,
+      card: { title: "Circle of North Karana", lines: [`Mana: ${mana}`] },
+    });
+    seed(dir, spell(100, "2026-10-26T04:19:08.914Z")); // held under its own name
+    seed(dir, spell(120, "2026-10-28T06:48:34.936Z"), "Circle of Karana"); // and again, under the name it was asked for as
+    const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
+    const spells = JSON.parse(await wiki.spellCatalogueJson()) as SpellRow[];
+    assert.deepEqual(spells.map((s) => s.spell.title), ["Circle of North Karana"], "one row, so one grid key");
+    assert.equal(spells[0].stats.mana, 120, "the newest copy wins");
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test("pages for one spell that differ only in case are one row", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-spellcat-case-"));
+  try {
+    seed(dir, { kind: "spell", title: "Skin like Wood", wikiPath: "/Skin_like_Wood", card: { title: "Skin like Wood", lines: ["Mana: 10"] } });
+    seed(dir, { kind: "spell", title: "Skin Like Wood", wikiPath: "/Skin_Like_Wood", card: { title: "Skin Like Wood", lines: ["Mana: 10"] } });
+    seed(dir, { kind: "spell", title: "Spirit of Wolf", wikiPath: "/Spirit_of_Wolf", card: { title: "Spirit of Wolf", lines: ["Mana: 40"] } });
+    const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
+    const titles = (JSON.parse(await wiki.spellCatalogueJson()) as SpellRow[]).map((s) => s.spell.title.toLowerCase());
+    assert.deepEqual(titles, ["skin like wood", "spirit of wolf"], "folded, sorted, and the other spell untouched");
   } finally {
     await cleanup(dir);
   }

@@ -223,3 +223,27 @@ test("elemental damage is its own stat, never the weapon's DMG", () => {
   assert.equal(dagger.dmg, 3);
   assert.equal(dagger.poisonDmg, 1);
 });
+
+// Two real cards (verbatim, from the app's own page cache) whose stats were read as nothing: one writes an attribute out
+// in full, one has the wiki's own typo for a resist. Found by tallying every "LABEL: +N" on 9,510 cached cards.
+test("a card that spells an attribute out is read: Scalp of the Ghoul Lord's Charisma", () => {
+  const { stats } = parseItemStats(["Lore Equipped, No Trade", "Slot: HEAD", "AC: 7", "Charisma: +4", "Size: Tiny WT: 0.4", "Class: WAR CLR SHD", "Race: ALL"]);
+  assert.equal(stats.cha, 4);
+  assert.equal(stats.ac, 7, "and what was already read still is");
+});
+
+test("every attribute reads under its full name as well as its abbreviation", () => {
+  const { stats } = parseItemStats(["Strength: +1 Stamina: +2 Agility: +3 Dexterity: +4 Wisdom: +5 Intelligence: +6 Charisma: +7"]);
+  assert.deepEqual([stats.str, stats.sta, stats.agi, stats.dex, stats.wis, stats.int, stats.cha], [1, 2, 3, 4, 5, 6, 7]);
+});
+
+test("the wiki's 'SV POISION' typo still reads as poison resist, and the resists beside it are unharmed", () => {
+  const { stats } = parseItemStats(["SV FIRE: +5 SV DISEASE: +5 SV COLD: +5 SV MAGIC: +5 SV POISION: +5"]);
+  assert.deepEqual([stats.svFire, stats.svDisease, stats.svCold, stats.svMagic, stats.svPoison], [5, 5, 5, 5, 5]);
+});
+
+test("a full name inside a longer word isn't a stat: 'Wisdom' as prose, 'Intelligence' in an effect, aren't read", () => {
+  const { stats } = parseItemStats(["Effect: Wisdom of the Ages (Must Equip, Casting Time: Instant)", "Focus Effect: Intelligence Boost"]);
+  assert.equal(stats.wis ?? 0, 0);
+  assert.equal(stats.int ?? 0, 0);
+});

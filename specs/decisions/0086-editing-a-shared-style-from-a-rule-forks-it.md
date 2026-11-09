@@ -36,7 +36,7 @@ differently depending on where you opened them from.
 a picker that leaves an invisible layer behind is a picker that lies.
 
 **Changing a look from inside a rule can never change another rule.** Which of three things that
-means is decided by `plan` in [alert-styles.ts](../../src/shared/alert-styles.ts), stated in the
+means is decided by `plan` in [alert-styles.ts](../../src/shared/alerts/alert-styles.ts), stated in the
 drawer *before* the change rather than reported after it:
 
 | what it's wearing | what an edit does |

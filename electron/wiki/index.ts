@@ -2028,8 +2028,23 @@ export function createWikiClient(
       questGivers.size, "quest givers,", questDialogue.size, "quests with dialogue;",
       placed, "items placed", `in ${Date.now() - startedAt}ms`,
     );
-    spells.sort((a, b) => a.title.localeCompare(b.title));
-    spellCatalogue = spells;
+    // **One row per spell, however many files hold it** — the fold items get above, for the same reason. Asking
+    // for "Circle of Karana" fetched the page whose own title is "Circle of North Karana" and cached it under both
+    // names, so the walk found it twice; the Spells grid keys a row by its title, and two rows with one key is
+    // React's "duplicated and/or omitted" warning on a real launch (9 such pages in a real cache). Pages that
+    // differ only in case — "Skin like Wood", "Skin Like Wood" — are the same spell and fold the same way. The
+    // newest copy wins.
+    const spellsByName = new Map<string, CachedSpell>();
+    for (const spell of spells) {
+      const key = spell.title.trim().toLowerCase();
+      if (!key) continue;
+      const held = spellsByName.get(key);
+      if (!held || spell.fetchedAt > held.fetchedAt) spellsByName.set(key, spell);
+    }
+    const foldedSpells = [...spellsByName.values()];
+    if (foldedSpells.length !== spells.length) log.debug("catalogue: folded", spells.length - foldedSpells.length, "duplicate spell pages (aliases)");
+    foldedSpells.sort((a, b) => a.title.localeCompare(b.title));
+    spellCatalogue = foldedSpells;
     catalogue = items;
     return items;
   }

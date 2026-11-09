@@ -18,6 +18,7 @@
  */
 import { parse, HTMLElement, type Node } from "node-html-parser";
 import { WIKI_BASE } from "./api";
+import { isRosterNpc } from "../../src/shared/zones/zone-roster";
 import { htmlToLines } from "../html-text";
 import { parseQuestSteps } from "./quest-steps";
 import type {
@@ -185,7 +186,9 @@ function parseZoneNpcs(content: HTMLElement): { name: string; level: string }[] 
       if (cells.length <= Math.max(name, level)) continue;
       const who = cellText(cells[name]);
       const lvl = cellText(cells[level]);
-      if (who && lvl) npcs.push({ name: who, level: lvl });
+      // The loot a zone page lists beside its mobs can come back as more rows of this table (Kael: 168 item cards
+      // among 508 "NPCs") — see `zone-roster.ts`.
+      if (who && lvl && isRosterNpc({ name: who, level: lvl })) npcs.push({ name: who, level: lvl });
     }
     if (npcs.length) return npcs;
   }

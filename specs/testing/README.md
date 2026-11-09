@@ -833,6 +833,17 @@ unit-tested.
 - `src/shared/help/guide.ts` → `electron/tests/guide.test.ts` (how guide text is read, and what makes a guide
   trustworthy): a hotkey is a token resolved from the constant main registers, a tab is a key checked against the nav,
   and a registered chord typed by hand — or markup left open — is a failure.
+- `electron/tests/faction-log.test.ts` (ordinals): two mobs dying together give two identical hits in one second, and the ledger
+  used to keep one — 14% of a real log's hits ([ADR 0376](../decisions/0376-identical-faction-hits-in-one-second-are-each-a-hit.md)).
+  Live repeats count; a replay adds only the ones it is missing; eating a log twice, or after a restart, adds none; and an
+  amount that is a prefix of another (5 and 50) is not mistaken for a repeat.
+- `src/shared/zones/zone-roster.ts` → `electron/tests/zone-roster.test.ts` (a roster holds only NPCs — rows are verbatim from
+  Kael's cached page, where 168 of 508 were item cards): real mobs are kept, including unknown levels; a mob whose name only
+  *sounds* like a card is still a mob; and a page already cached is read back clean, with only a zone page's roster touched
+  ([ADR 0377](../decisions/0377-a-cached-page-is-read-back-tidy.md)). `page-store-walk.test.ts` holds two overlapping walks of
+  the cache to both finishing; `wiki-spell-cache.test.ts` folds an aliased spell page to one row.
+- `electron/tests/spec-links.test.ts`: every relative link in the specs resolves, and every decision record a source comment
+  cites exists — the October reorganisation left 23 links across 17 records pointing at moved files.
 - **Guides' labels** (`guides.test.ts`): every `**bold**` UI label in a guide must be spelled somewhere in the app's own source
   (not tests, generated data, or the guides themselves), so renaming a button fails the guide that names it. It already caught a
   guide quoting "Yes, use it" for a button that reads "Yes, use them" when several figures are in doubt. It cannot catch a wrong

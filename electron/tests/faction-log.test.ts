@@ -52,9 +52,10 @@ const raised = (faction: string, sec: number, delta: number, mob?: string) =>
 const lowered = (faction: string, sec: number, delta: number, mob?: string) =>
   hit(faction, sec, delta, "lowered", mob ? { kind: "kill", mob, gapSec: 1 } : undefined);
 
-test("the same faction line twice is one hit — a replayed gap isn't a second adjustment", () => {
+test("the same faction line read twice is one hit — a replayed gap isn't a second adjustment", () => {
   const l = freshLog();
   assert.equal(l.add(lowered("Agents of Mistmoore", 1, -3)), "added");
+  l.startReplay(); // the log is eaten again: it may hold lines already on record
   assert.equal(l.add(lowered("Agents of Mistmoore", 1, -3)), "known", "the same line says so rather than landing twice");
   assert.deepEqual(l.recent().map((e) => e.faction), ["Agents of Mistmoore"]);
   // A genuinely later hit against the same faction is a different line, and counts.
@@ -788,4 +789,73 @@ test("the admin store's counts() matches a plain list().length, without scanning
 
   assert.deepEqual(l.admin.counts!(), { total: 3, edited: 0 });
   assert.equal(l.admin.counts!().total, l.admin.list().length);
+});
+
+// ── two mobs dying together give two identical hits in one second ──
+//
+// "Storm Guard raised 5", twice, in one logged second, is what killing two of their enemies at once looks like. A key
+// made of the signature alone kept one: 3,937 of 28,656 hits (14%) in a real 94 MB log. Kills and loot already tell
+// repeats apart with an ordinal and a per-replay pass; faction does the same (ADR 0376).
+
+test("two identical hits in the same second, live, are two hits", () => {
+  const l = freshLog();
+  assert.equal(l.add(raised("Storm Guard", 5, 5)), "added");
+  assert.equal(l.add(raised("Storm Guard", 5, 5)), "added", "a second mob died in the same second");
+  assert.equal(l.recent().length, 2);
+  assert.equal(l.standings().find((s) => s.faction === "Storm Guard")?.net, 10, "and the standing moves by both");
+});
+
+test("a replay adds only the repeats a ledger is missing", () => {
+  const l = freshLog();
+  l.add(raised("Storm Guard", 5, 5)); // a ledger from before ordinals: the second hit was dropped
+  l.startReplay();
+  assert.equal(l.add(raised("Storm Guard", 5, 5)), "known", "the first is already on record");
+  assert.equal(l.add(raised("Storm Guard", 5, 5)), "added", "the second never was");
+  assert.equal(l.standings().find((s) => s.faction === "Storm Guard")?.net, 10);
+});
+
+test("eating a log twice doesn't double its repeats", () => {
+  const l = freshLog();
+  for (let pass = 0; pass < 3; pass++) {
+    l.startReplay();
+    l.add(raised("Storm Guard", 5, 5));
+    l.add(raised("Storm Guard", 5, 5));
+    l.add(raised("Storm Guard", 5, 5));
+  }
+  assert.equal(l.recent().length, 3, "three lines in the log, three hits, however often it is read");
+});
+
+test("hits differing in faction, direction or amount are not repeats of each other", () => {
+  const l = freshLog();
+  l.add(raised("Storm Guard", 5, 5));
+  l.add(raised("Storm Guard", 5, 50)); // 5 is a prefix of 50 — the count mustn't mistake one for the other
+  l.add(lowered("Storm Guard", 5, -5));
+  l.add(raised("Faydarks Champions", 5, 5));
+  l.startReplay();
+  assert.equal(l.add(raised("Storm Guard", 5, 5)), "known");
+  assert.equal(l.add(raised("Storm Guard", 5, 50)), "known");
+  assert.equal(l.add(lowered("Storm Guard", 5, -5)), "known");
+  assert.equal(l.add(raised("Faydarks Champions", 5, 5)), "known");
+  assert.equal(l.recent().length, 4);
+});
+
+test("a hit of the ledger's own — a ceiling, which has no amount — repeats the same way", () => {
+  const l = freshLog();
+  assert.equal(l.add(hit("Storm Guard", 5, null, "ceiling")), "added");
+  assert.equal(l.add(hit("Storm Guard", 5, null, "ceiling")), "added");
+  assert.equal(l.recent().length, 2);
+});
+
+test("a restart remembers the repeats, so a re-read afterwards still adds nothing", () => {
+  const dir = tempDir();
+  const db = openAppDatabase(dir, FACTION_LOG_MIGRATIONS);
+  const first = createFactionLog(db, dir);
+  first.add(raised("Storm Guard", 5, 5));
+  first.add(raised("Storm Guard", 5, 5));
+  first.flush?.();
+  const again = createFactionLog(db, dir);
+  again.startReplay();
+  assert.equal(again.add(raised("Storm Guard", 5, 5)), "known");
+  assert.equal(again.add(raised("Storm Guard", 5, 5)), "known");
+  assert.equal(again.recent().length, 2);
 });

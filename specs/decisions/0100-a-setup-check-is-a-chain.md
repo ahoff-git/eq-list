@@ -48,7 +48,7 @@ Four rules follow from that, and they are the whole design:
 - **Every step says what it found, on a pass too.** `Following eqlog_Kainos_pq.proj.txt` is a green
   row nobody would think to ask for, and it is the sentence that solves the fifth case above.
 
-The judging is pure and shared ([self-check.ts](../../src/shared/self-check.ts)): the step table,
+The judging is pure and shared ([self-check.ts](../../src/shared/chrome/self-check.ts)): the step table,
 the skip rule, the verdict and the pasteable report. The looking is one probe per step in
 [electron/self-check.ts](../../electron/self-check.ts), with the filesystem the only thing it
 touches directly — the network and the windows are injected, so the whole thing is testable against

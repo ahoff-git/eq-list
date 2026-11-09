@@ -12,13 +12,7 @@ lines; the reasoning lives in the ADR it links. Everything else has a neighbour:
 
 ## Bugs
 
-- **Identical same-second faction hits collapse into one row.** In the real 94 MB log 3,937 of 28,656 faction
-  lines (14%, 526 groups) repeat an earlier line's second, faction, direction and amount — two mobs dying together
-  each give "Storm Guard raised 5" — and `faction-log.ts`'s key (`at faction direction delta`) keeps one. Kills and
-  loot already tell such repeats apart with an ordinal and a per-replay pass (`ordinalFor`, `startReplay`); faction
-  needs the same, a migration for existing keys, and a decision about standings a player has already corrected
-  ([ADR 0229](./decisions/0229-a-faction-correction-is-a-stated-offset.md)). Found alongside
-  [ADR 0375](./decisions/0375-a-kills-coin-and-experience-belong-to-the-kill-that-follows.md).
+_No open bugs._
 
 ## Maps, zones and travel
 

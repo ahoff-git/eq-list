@@ -24,6 +24,16 @@ export const BEFORE_NOTES = "0.1.0";
 
 export const CHANGELOG: readonly ReleaseNote[] = [
   {
+    line: "0.4",
+    date: "2026-11-08",
+    title: "Data fixes found by replaying real logs",
+    changes: [
+      { kind: "fixed", text: "Faction standings count every hit: two mobs dying in the same second give two identical hits, and the ledger used to keep only one (14% of the hits in one real log). A re-read of your log recovers them." },
+      { kind: "fixed", text: "A zone's page no longer lists item cards as NPCs (Kael had 168 of them), and a spell can't appear twice in the Spells catalogue." },
+      { kind: "fixed", text: "An item card that spells a stat out (Charisma: +4) or misspells a resist (SV POISION) now counts that stat." },
+    ],
+  },
+  {
     line: "0.3",
     date: "2026-11-08",
     title: "What's new, and how-to guides",

@@ -120,6 +120,7 @@ export function importLog(
   // (ADR 0207, `KillLog.startReplay`).
   killLog.startReplay();
   lootLog?.startReplay();
+  factionLog?.startReplay(); // two mobs dying together give two identical hits in one second (ADR 0376)
   const lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
   let zone: string | null = null;
   let logId = 0;

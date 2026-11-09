@@ -50,7 +50,7 @@ than a second toggle, because one field is the entire appeal of the feature and 
 really do differ by an order of magnitude. It is derived, documented, and said in the field's tooltip.
 
 **The split is a pure decision and a small holder.**
-[alert-schedule.ts](../../src/shared/alert-schedule.ts) is "what should fire, and when" — the syntax,
+[alert-schedule.ts](../../src/shared/alerts/alert-schedule.ts) is "what should fire, and when" — the syntax,
 the cap, the combat-cue rule — pure and tested beside `cast-alerts.ts`, which stays about *matching*.
 [alert-queue.ts](../../electron/alert-queue.ts) is the timer that carries it out and the only state
 involved: what is still waiting, so a death can drop the cues it makes pointless and switching alerts

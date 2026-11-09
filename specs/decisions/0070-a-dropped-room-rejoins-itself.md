@@ -32,7 +32,7 @@ longer reach the room". It is the library saying it has already tried everything
   which is exactly what "flaky" feels like from the outside.
 
 Two smaller holes sat behind the same door. A join that **failed** (a bootstrap cold start timing
-out, say — [`BOOTSTRAP_TIMEOUT_MS`](../../src/shared/awari-bootstrap.ts) is 8s) logged a warning
+out, say — [`BOOTSTRAP_TIMEOUT_MS`](../../src/shared/peers/awari-bootstrap.ts) is 8s) logged a warning
 and ended the effect, equally terminal. And teardown called `session.close()`, which for a peer
 that happens to be the room's **leader** skips the leadership handoff that `leaveRoom()` performs.
 Room traffic routes through the leader, so a leader closing abruptly means every remaining peer

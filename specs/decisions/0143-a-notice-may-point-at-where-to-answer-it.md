@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-[`toasts.ts`](../../src/shared/toasts.ts) states three invariants, and the first is flat: **a toast
+[`toasts.ts`](../../src/shared/chrome/toasts.ts) states three invariants, and the first is flat: **a toast
 is read, never acted on** — "anything with a decision in it is a panel, or a dialog". That rule has
 held for every notice the app raises, because every one of them has been an *answer*: the item went
 on the list, the log was eaten, the style was saved. There is nothing to do about an answer.

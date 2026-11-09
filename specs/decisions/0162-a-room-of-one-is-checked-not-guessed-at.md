@@ -24,7 +24,7 @@ them**, in two processes, that did not know about each other:
 - `REJOIN_DELAYS_MS` in [`host.tsx`](../../src/lib/awari/host.tsx) — three jittered re-joins at 20s,
   45s and 90s, then give up ([ADR 0070](./0070-a-dropped-room-rejoins-itself.md): being alone is a
   normal resting state and must settle).
-- `ALONE_REJOIN_MS` in [`peer-share.ts`](../../electron/peer-share.ts) — five minutes of an empty
+- `ALONE_REJOIN_MS` in [`peer-share.ts`](../../src/shared/peers/peer-share.ts) — five minutes of an empty
   room means re-join, unbounded ([ADR 0145](./0145-a-room-checks-itself-and-needs-no-game.md), added
   precisely because the ladder above gives up).
 - `RECONNECT_DELAYS_MS`, for a drop or a failed join, which is a different problem and is fine.
@@ -87,7 +87,7 @@ always-alive main window anyway. One home for the whole policy
 ([ADR 0146](./0146-one-home-for-the-peer-network.md) applied to a retry rule rather than a control).
 Main keeps everything that is genuinely its own — the catalogue, the reconcile, the tray.
 
-**The policy is pure and the looking is not.** [`room-watch.ts`](../../src/shared/room-watch.ts)
+**The policy is pure and the looking is not.** [`room-watch.ts`](../../src/shared/peers/room-watch.ts)
 holds no clock, no socket and no awari: it says when a look is due and reads the answer.
 [`net.ts`](../../src/lib/awari/net.ts) does the looking, sharing the one PeerJS peer the session
 already has. So every rule above is exercised in

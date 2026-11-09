@@ -416,6 +416,8 @@ finished, so a number is claimed before a second author can reach for it.
 - [0373: Release notes are a release line, and how-to guides are checked against the code — a player is shown every line since the one they last saw, and the process is a CLAUDE.md rule held up by tests](./0373-release-notes-are-a-release-line-and-guides-are-checked-against-the-code.md)
 - [0374: History before release notes is read, never announced — dated periods rebuilt from the project's log, less detail the further back; and an update from before tracking is counted from the baseline (amends 0373)](./0374-history-before-release-notes-is-read-never-announced.md)
 - [0375: A kill's coin and experience belong to the kill that follows — this server writes them *before* the slain line, so the kill ledger's per-kill coin was right for 27% of kills and the meter credited no mob for 61% of XP; a kill now claims the rewards that led it](./0375-a-kills-coin-and-experience-belong-to-the-kill-that-follows.md)
+- [0376: Identical faction hits in one second are each a hit — two mobs dying together give two identical lines and the ledger kept one (14% of hits); a signature-plus-ordinal key and a per-replay pass, as kills and loot have (completes 0375)](./0376-identical-faction-hits-in-one-second-are-each-a-hit.md)
+- [0377: A cached page is read back tidy — one row per spell however many names hold it, a zone roster holds only NPCs (Kael had 168 item cards in it), the store's walks queue, and a stat reads under its full name; each found by running the app over a copy of the real page cache](./0377-a-cached-page-is-read-back-tidy.md)
 
 ## Open Questions
 

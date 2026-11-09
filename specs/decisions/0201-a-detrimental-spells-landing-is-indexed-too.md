@@ -30,7 +30,7 @@ indexed exactly like a beneficial spell's now.
 
 - The reasoning the old gate stood on — "a debuff's landing is somebody else's business" — is still
   right, and still enforced. It was just never the lexicon's job: `worthWatching`/`castByYou` in
-  [buff-tracking.ts](../../src/shared/buff-tracking.ts) already refuse a debuff row unless the log
+  [buff-tracking.ts](../../src/shared/buffs/buff-tracking.ts) already refuse a debuff row unless the log
   showed *you* casting it ([ADR 0149](./0149-a-debuff-is-only-tracked-if-it-is-yours.md)), and that
   gate is unchanged. Widening the lexicon does not widen what gets shown to anyone; it only widens
   what the app is capable of *noticing*.

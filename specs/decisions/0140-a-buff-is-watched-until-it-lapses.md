@@ -68,7 +68,7 @@ A buff **ending** was already well served. [log-watching](../log-watching/README
 shapes on a real 15 MB log, and two name the spell outright — `Your Thorns spell has worn off of
 Bloop.` (134 lines) and `Your pet's Burst of Strength spell has worn off.` (63). The third is the
 majority and names nothing: `The spirit of wolf leaves you.`, 248 lines of per-spell flavour text.
-[cast-alerts.ts](../../src/shared/cast-alerts.ts) recorded that as an honest limit — and it was a
+[cast-alerts.ts](../../src/shared/alerts/cast-alerts.ts) recorded that as an honest limit — and it was a
 **missing input**, not a property of the log. Every one of those sentences was sitting in the player's
 own install. [neighbours.md](../neighbours.md) noted that nobody has read a fade line back to its
 spell from `spells_us_str.txt`; EQBuddy hand-maintains the mapping instead.

@@ -68,5 +68,5 @@ row carries it for good.
 
 **Nothing gates on the target.** It would have been tempting to keep a debuff row when the target is
 a mob and drop it when the target is you — but a *named*'s log name is written exactly like a
-player's ([`isEnemyTarget`](../../src/shared/buff-tracking.ts) already pays for that), and a rule
+player's ([`isEnemyTarget`](../../src/shared/buffs/buff-tracking.ts) already pays for that), and a rule
 that leaned on the target would inherit that ambiguity. Who cast it has no such problem.

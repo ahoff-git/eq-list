@@ -172,7 +172,8 @@ const STAT_ALIASES: readonly (readonly [StatKey, readonly string[]])[] = [
   ["svCold", ["SV COLD", "SV CR", "CR"]],
   ["svMagic", ["SV MAGIC", "SV MR", "MR"]],
   ["svDisease", ["SV DISEASE", "SV DR", "DR"]],
-  ["svPoison", ["SV POISON", "SV PR", "PR"]],
+  // `SV POISION` is the wiki's own typo, on Paebala Fetish — one card, and every other resist on it reads.
+  ["svPoison", ["SV POISON", "SV POISION", "SV PR", "PR"]],
   ["delay", ["ATK DELAY", "DELAY"]],
   ["backstab", ["BACKSTAB"]],
   ["haste", ["HASTE"]],
@@ -199,13 +200,15 @@ const STAT_ALIASES: readonly (readonly [StatKey, readonly string[]])[] = [
   ["dmg", ["DMG"]],
   ["ac", ["AC"]],
   ["hp", ["HP"]],
-  ["str", ["STR"]],
-  ["sta", ["STA"]],
-  ["agi", ["AGI"]],
-  ["dex", ["DEX"]],
-  ["wis", ["WIS"]],
-  ["int", ["INT"]],
-  ["cha", ["CHA"]],
+  // The full names too: some cards write them out (`Charisma: +4` on Scalp of the Ghoul Lord, an item a real player
+  // wears), and a spelling nothing reads is a stat that silently isn't there.
+  ["str", ["STRENGTH", "STR"]],
+  ["sta", ["STAMINA", "STA"]],
+  ["agi", ["AGILITY", "AGI"]],
+  ["dex", ["DEXTERITY", "DEX"]],
+  ["wis", ["WISDOM", "WIS"]],
+  ["int", ["INTELLIGENCE", "INT"]],
+  ["cha", ["CHARISMA", "CHA"]],
   ["wt", ["WT"]],
 ];
 
