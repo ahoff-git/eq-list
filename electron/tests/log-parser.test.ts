@@ -219,6 +219,12 @@ test("an auto-sell states the item's price, which is parsed off the loot line it
   assert.equal(stack!.soldFor, 14);
   assert.equal(stack!.qty, 2);
 
+  // "Sold it for free" is a price too — nothing — and the one the real log writes for 441 of its sales
+  // (a Micro Servo, a Sealed Note). It used to come out with no price, which left the item off the price table.
+  const free = parseLogLine("[Fri Jul 17 18:41:14 2026] You looted a Micro Servo from a clockwork's corpse and sold it for free.");
+  assert.equal(free!.fate, "sold");
+  assert.equal(free!.soldFor, 0);
+
   // Every other fate: the log states no price, so there isn't one to invent.
   const kept = parseLogLine("[Fri Jul 17 18:41:14 2026] --You have looted a Bone Chips from a skeleton's corpse.--");
   assert.equal(kept!.soldFor, undefined);

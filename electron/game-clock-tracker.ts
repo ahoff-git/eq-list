@@ -53,6 +53,14 @@ const log = createLogger("game-clock-tracker");
 
 /** A game minute is 3 real seconds; a second's granularity is finer than anything that matters. */
 const SWEEP_MS = 1000;
+
+/**
+ * The longest silence between two sweeps that still counts as a hiccup (a slow tick, a busy main process)
+ * rather than the machine having slept. A game minute is three real seconds, so this is ten of them — an
+ * alarm crossed inside a stall this short is still news, one crossed inside a sleep is not
+ * ([ADR 0380](../specs/decisions/0380-alarms-the-clock-passed-while-asleep-are-history.md)).
+ */
+const MAX_SWEEP_GAP_MS = 30_000;
 const WRITE_DEBOUNCE_MS = 2000;
 
 interface Stored extends PinFields {
@@ -159,12 +167,25 @@ export function createGameClockTracker({
     });
   }
 
+  /** When the sweep last ran, so a long silence between two sweeps can be told from a quiet second. */
+  let lastSweepAt = now();
+
   function sweep(): void {
+    const at = now();
+    const gap = at - lastSweepAt;
+    lastSweepAt = at;
     if (!state.anchor) return;
-    const cur = currentGameMinutes(state.anchor, now(), state.rate);
+    const cur = currentGameMinutes(state.anchor, at, state.rate);
     const prev = lastMinutes;
     lastMinutes = cur;
     if (prev === null) return; // nothing to compare against yet — never alert about the past
+    if (gap > MAX_SWEEP_GAP_MS) {
+      // The machine slept (or the process was frozen): the clock ran on without anyone looking, and what it
+      // crossed meanwhile is history, not news. Firing for it spoke about an arbitrary few of the crossings —
+      // an 8 PM alarm after a three-hour sleep, but not a 3 AM one the clock passed just the same.
+      log.debug("sweep after a long gap — alarms in it are history", { gapMs: gap });
+      return;
+    }
     for (const alarm of state.alarms) {
       if (alarm.enabled && crossedMinute(prev, cur, alarm.minute)) fire(alarm);
     }

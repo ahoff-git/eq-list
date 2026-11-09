@@ -24,6 +24,17 @@ export const BEFORE_NOTES = "0.1.0";
 
 export const CHANGELOG: readonly ReleaseNote[] = [
   {
+    line: "0.5",
+    date: "2026-11-09",
+    title: "Fixes found by stress-testing the app",
+    changes: [
+      { kind: "fixed", text: "Closing the app, or shutting down or restarting your PC, no longer loses what you did in the last few seconds — an achievement you just ticked or a setting you just changed is kept." },
+      { kind: "fixed", text: "A game-time alarm no longer goes off for a time the clock passed while your computer was asleep." },
+      { kind: "fixed", text: "Items the game auto-sells for nothing (a Micro Servo, a Sealed Note) now show in Sells for at 0c, instead of being missing from it." },
+      { kind: "fixed", text: "Pasting a very long line into a search box no longer freezes the app — a search reads only the first 120 characters, and a pasted page of text used to hold everything up, the overlay's alerts included, for seconds or much longer." },
+    ],
+  },
+  {
     line: "0.4",
     date: "2026-11-08",
     title: "Data fixes found by replaying real logs",

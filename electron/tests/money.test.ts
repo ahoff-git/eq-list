@@ -8,7 +8,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { coinBreakdown, describeCoins, formatCoins, parseCoins } from "../../src/shared/money";
+import { coinBreakdown, describeCoins, formatCoins, parseCoins, parseSalePrice } from "../../src/shared/money";
 
 test("parseCoins reads one denomination", () => {
   assert.equal(parseCoins("4 copper"), 4);
@@ -32,6 +32,23 @@ test("parseCoins returns null when there is no coin in the text", () => {
   assert.equal(parseCoins(undefined), null);
   // A number with no denomination is not money.
   assert.equal(parseCoins("7 of them"), null);
+});
+
+test("a sale's price is its coins — or zero when the game says the vendor paid nothing", () => {
+  // "...and sold it for free." is what 441 lines of a real log say, and every one was read as no price at all.
+  assert.equal(parseSalePrice("free"), 0);
+  assert.equal(parseSalePrice("  Free "), 0, "the game's spelling isn't the only one a stored row can hold");
+  // Anything with coin is just its coin.
+  assert.equal(parseSalePrice("1 gold and 4 copper"), 104);
+  assert.equal(parseSalePrice("4 copper"), 4);
+});
+
+test("a sale's price is still absent when the tail names no price, and 'free' is not matched loosely", () => {
+  assert.equal(parseSalePrice(undefined), null);
+  assert.equal(parseSalePrice(""), null);
+  assert.equal(parseSalePrice("a tradeskill depot"), null);
+  assert.equal(parseSalePrice("freely given"), null, "only the whole word is the game's zero");
+  assert.equal(parseSalePrice("for free"), null, "the tail starts after 'sold it for'");
 });
 
 test("coinBreakdown splits copper into denominations without losing any", () => {

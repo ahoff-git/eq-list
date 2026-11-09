@@ -9,7 +9,7 @@
  * connection of its own.
  */
 import type { Database } from "better-sqlite3";
-import { parseCoins } from "../src/shared/money";
+import { parseSalePrice } from "../src/shared/money";
 import { ratio } from "../src/shared/numbers";
 import type { ItemPrice } from "../src/shared/types";
 
@@ -25,9 +25,11 @@ interface SoldRow {
  * One sold row's price, in copper — from the stored figure, falling back to re-reading the
  * detail text for a row written before `soldFor` existed. The fallback is the only reason this
  * isn't a plain column read: the ledger outlives the parser (mirrors the pre-SQLite `saleCopper`).
+ * It is also what prices the rows stored while "sold it for free" read as no price at all (a `NULL`
+ * `soldFor` with `free` in `detail`), so the fix needed no migration of the ledger.
  */
 function priceOfRow(r: SoldRow): ItemPrice | null {
-  const copper = r.soldFor ?? parseCoins(r.detail ?? undefined);
+  const copper = r.soldFor ?? parseSalePrice(r.detail ?? undefined);
   if (copper === null) return null;
   return { item: r.item, unitCopper: 0, qty: r.qty, copper, sales: 1, lastAt: r.at };
 }

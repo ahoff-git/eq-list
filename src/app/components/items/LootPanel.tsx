@@ -496,7 +496,8 @@ function DropTable({
         ...NUM_COL,
         flex: 1,
         cellClassName: "lt-num",
-        renderCell: (p) => (p.row.soldFor ? formatCoins(p.row.soldFor) : "—"),
+        // A price of zero is a price ("sold it for free"); only a row with none is the dash.
+        renderCell: (p) => (p.row.soldFor !== undefined ? formatCoins(p.row.soldFor) : "—"),
       },
       {
         field: "raw",

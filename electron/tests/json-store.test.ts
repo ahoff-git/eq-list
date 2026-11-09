@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createChangeNotifier, createSaver, readJson, writeJson } from "../json-store";
+import { createChangeNotifier, createSaver, flushPendingSavers, readJson, writeJson } from "../json-store";
 
 function tempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "eql-json-store-"));
@@ -153,6 +153,66 @@ test("`restart` waits for the changes to stop; the default doesn't", async () =>
 
   await new Promise((r) => setTimeout(r, 60)); // let go
   assert.deepEqual(readJson(path.join(dir, "dragged.json"), null), { n: 5 }, "where it landed");
+});
+
+/**
+ * Quitting. `main.ts` flushed a hand-written list of stores, and the achievements and the panel settings were
+ * never on it — close the app right after ticking an achievement and the tick was gone. Proved on the real app
+ * with a change made through each store's own API and a `Browser.close` straight after: the game clock (on the
+ * list) reached disk, the achievement and the setting (not on it) did not. A saver now registers itself while
+ * it has a write waiting, so there is nothing to forget. ADR 0379.
+ */
+test("quitting writes every save that was still waiting, whether or not anyone listed it", () => {
+  flushPendingSavers(); // other tests in this process leave far-off timers behind; start from none
+  const dir = tempDir();
+  const slow = createSaver(path.join(dir, "slow.json"), "slow", () => ({ ticked: true }), 60_000); // the 2 s achievements
+  const typed = createSaver(path.join(dir, "typed.json"), "typed", () => ({ value: "kept" }), 60_000, { restart: true });
+  slow.save();
+  typed.save();
+  assert.equal(readJson(path.join(dir, "slow.json"), null), null, "still waiting on its timer");
+
+  assert.equal(flushPendingSavers(), 2);
+  assert.deepEqual(readJson(path.join(dir, "slow.json"), null), { ticked: true });
+  assert.deepEqual(readJson(path.join(dir, "typed.json"), null), { value: "kept" });
+});
+
+test("quitting writes only what is waiting: a store with nothing changed is left alone", () => {
+  flushPendingSavers();
+  const dir = tempDir();
+  const changed = createSaver(path.join(dir, "changed.json"), "changed", () => ({ n: 1 }), 60_000);
+  createSaver(path.join(dir, "idle.json"), "idle", () => ({ n: 2 }), 60_000); // never saved
+  changed.save();
+
+  assert.equal(flushPendingSavers(), 1);
+  assert.deepEqual(fs.readdirSync(dir), ["changed.json"], "no write for a store that had nothing to say");
+});
+
+test("a save that was already written, or flushed by hand, is not waiting any more", async () => {
+  flushPendingSavers();
+  const dir = tempDir();
+  const timed = createSaver(path.join(dir, "timed.json"), "timed", () => ({ n: 1 }), 10);
+  const byHand = createSaver(path.join(dir, "hand.json"), "hand", () => ({ n: 2 }), 60_000);
+  timed.save();
+  byHand.save();
+  byHand.flush(); // what `main.ts` still does for the stores whose order matters
+  await new Promise((r) => setTimeout(r, 40)); // `timed` writes on its own
+
+  assert.equal(flushPendingSavers(), 0, "both are already on disk — quitting has nothing to add");
+  assert.equal(flushPendingSavers(), 0, "and calling it twice is harmless");
+});
+
+test("a saver is waiting again after the next change", () => {
+  flushPendingSavers();
+  const file = path.join(tempDir(), "again.json");
+  let state = "first";
+  const saver = createSaver(file, "again", () => ({ state }), 60_000);
+  saver.save();
+  assert.equal(flushPendingSavers(), 1);
+
+  state = "second"; // changed after the first write, as a store is all session
+  saver.save();
+  assert.equal(flushPendingSavers(), 1);
+  assert.deepEqual(readJson(file, null), { state: "second" });
 });
 
 /**

@@ -57,6 +57,24 @@ export function parseCoins(text: string | undefined): Copper | null {
   return found ? total : null;
 }
 
+/** What the game writes for a vendor price of nothing: "…and sold it for free." */
+const FREE_RE = /^free$/i;
+
+/**
+ * What an auto-sell line's tail fetched, in copper: its coins, or **zero** for the word the game uses when
+ * the vendor pays nothing ("sold it for free"), or null when the tail says neither.
+ *
+ * `parseCoins` alone reads "free" as no price — and an item with no price is left off the Sells-for table
+ * entirely, though the log has said exactly what it fetches. In one real 94 MB log that was 441 sales, 62
+ * item names that only ever sold for nothing, none of which could be listed as worth 0c. A zero is a
+ * finding, not a gap ("Nothing at all reads as 0c" — `formatCoins`), so it is carried as one
+ * ([ADR 0381](../../specs/decisions/0381-a-sale-for-free-is-a-price-of-zero.md)).
+ */
+export function parseSalePrice(tail: string | undefined): Copper | null {
+  if (tail && FREE_RE.test(tail.trim())) return 0;
+  return parseCoins(tail);
+}
+
 /** Copper split into denominations. Negative input is treated as zero — coin isn't owed. */
 export function coinBreakdown(copper: Copper): Money {
   let left = Math.max(0, Math.round(copper));

@@ -46,6 +46,25 @@ function sold(item: string, sec: number, copper: number, qty = 1): LootEvent {
   return { ...drop(item, sec), qty, fate: "sold", soldFor: copper, detail: `${copper} copper` };
 }
 
+test("an item that always auto-sells for free is priced at nothing, not left off the table", () => {
+  // Measured on a real ledger: 62 item names only ever sold "for free", so none of them could be listed.
+  const l = freshLog();
+  l.add({ ...sold("Micro Servo", 1, 0), soldFor: 0, detail: "free" });
+  l.add({ ...sold("Micro Servo", 2, 0), soldFor: 0, detail: "free" });
+  l.add(sold("Snake Egg", 3, 4));
+  assert.deepEqual(l.prices().map((p) => [p.item, p.unitCopper, p.sales]), [["Snake Egg", 4, 1], ["Micro Servo", 0, 2]]);
+});
+
+test("rows stored while 'free' read as no price are priced too, with no migration", () => {
+  // A NULL soldFor with `free` in the detail is exactly what the ledger holds for those 441 real sales.
+  const db = new Database(":memory:");
+  for (const m of LOOT_LOG_MIGRATIONS) m.up(db);
+  const l = createLootLog(db, tempDir());
+  l.add({ ...sold("Sealed Note", 1, 0), detail: "free", soldFor: undefined });
+  assert.equal((db.prepare("SELECT soldFor FROM loot_records").get() as { soldFor: number | null }).soldFor, null, "stored the old way");
+  assert.deepEqual(l.prices().map((p) => [p.item, p.unitCopper, p.sales]), [["Sealed Note", 0, 1]]);
+});
+
 test("the same loot line twice is one drop — a replayed gap isn't a second Bone Chips", () => {
   const l = freshLog();
   assert.equal(l.add(drop("Bone Chips", 1)), "added");

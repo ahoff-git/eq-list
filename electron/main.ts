@@ -10,7 +10,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { registerAppProtocolScheme, handleAppProtocol } from "./protocol";
 import { createStore } from "./store";
-import { setAppVersion, currentAppVersion } from "./json-store";
+import { setAppVersion, currentAppVersion, flushPendingSavers } from "./json-store";
 import { createWikiClient } from "./wiki";
 import { WIKI_PAGE_MIGRATIONS } from "./wiki/page-store";
 import { createLucyClient } from "./lucy";
@@ -1112,7 +1112,7 @@ if (!app.requestSingleInstanceLock()) {
 
   // Don't lose the last pull on the way out: close the fight in progress, then get it
   // (and any debounced writes) to disk.
-  app.on("before-quit", () => {
+  const saveEverything = (): void => {
     webSnapshotJob?.dispose();
     clearInterval(settleTimer);
     if (updateCheckTimer) clearInterval(updateCheckTimer);
@@ -1144,9 +1144,31 @@ if (!app.requestSingleInstanceLock()) {
     gameClock.flush();
     gameClock.dispose();
     damageOverlay.flush();
+    // Whatever still has a write waiting — the stores above are the ones whose order matters, this is the
+    // rest, so a store left off the list can't lose its last seconds (ADR 0379).
+    const leftover = flushPendingSavers();
+    if (leftover) log.debug("quit wrote saves nothing above flushed", leftover);
     watcher.stop(); // records the read position, so the next run resumes exactly here
     cursor.flush();
-  });
+  };
+  app.on("before-quit", saveEverything);
+
+  // Windows ending the session — a shutdown, a restart for updates, a log-off — never emits `before-quit`
+  // (Electron's own documentation says so) and ends the process a moment later, so without this the last
+  // seconds of every store were lost while the log position, written straight through, said they were
+  // done: reproduced by sending the window `WM_ENDSESSION` and ending the process (ADR 0379). The window
+  // is what hears it, once per window; the first is enough, and the rest must not redo the same writes.
+  let sessionEnding = false;
+  const onSessionEnd = (): void => {
+    if (sessionEnding) return;
+    sessionEnding = true;
+    log.debug("session ending — saving everything");
+    beginQuit();
+    saveEverything();
+  };
+  const hearSessionEnd = (win: BrowserWindow): void => void win.on("session-end", onSessionEnd);
+  BrowserWindow.getAllWindows().forEach(hearSessionEnd);
+  app.on("browser-window-created", (_e, win) => hearSessionEnd(win));
   })
   .catch((err: unknown) => {
     // Startup threw before it got a window up, so there is nothing on screen and nothing on the way:

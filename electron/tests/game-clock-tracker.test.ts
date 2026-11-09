@@ -22,8 +22,10 @@ const settings = (enabled = true) => ({ enabled, color: "#e5534b", position: "to
 interface Harness {
   tracker: GameClockTracker;
   raised: CastAlertEvent[];
-  /** Move the wall clock and run the sweep the interval would have run. */
+  /** Move the wall clock forward the way a running app does: one sweep a second until `toMs`. */
   tick(toMs: number): void;
+  /** Move it with no sweeps in between — the machine slept — then run the one sweep that wakes it. */
+  jump(toMs: number): void;
 }
 
 function harness(options: { dir?: string; startMs?: number; settings?: CastAlertSettings } = {}): Harness {
@@ -47,6 +49,15 @@ function harness(options: { dir?: string; startMs?: number; settings?: CastAlert
     tracker,
     raised,
     tick(toMs) {
+      // The real interval runs every second, so a long wait is many sweeps, not one big one.
+      while (nowMs + 1000 < toMs) {
+        nowMs += 1000;
+        sweep?.();
+      }
+      nowMs = toMs;
+      sweep?.();
+    },
+    jump(toMs) {
       nowMs = toMs;
       sweep?.();
     },
@@ -113,6 +124,55 @@ test("restoring an existing reading never alerts about a game day already passed
   const second = harness({ dir, startMs: 10 * 60_000 });
   second.tick(10 * 60_000 + 1000);
   assert.equal(second.raised.length, 0);
+});
+
+/**
+ * The machine sleeps. Windows timers stand still, the clock does not: the first sweep after waking sees the
+ * game clock hours further on. The tracker fired for whatever alarms that jump happened to land past — an
+ * 8 PM alarm after a three-hour sleep, noon and 6 PM after a night — and not for the ones it landed short of,
+ * though the clock passed those just the same. Measured with this harness's `jump`, before the gap rule.
+ */
+test("alarms the clock passed while the machine slept are history, not news", () => {
+  const h = harness();
+  h.tracker.noteReading(10, T0); // 10:30 AM
+  h.tracker.add(20 * 60, "8 PM"); // the clock reads 10:30 PM three real hours later, so it passed 8 PM
+  h.tracker.add(12 * 60, "noon");
+  h.tick(5_000);
+
+  h.jump(3 * 3600_000); // asleep for three hours, then the next sweep
+  assert.deepEqual(h.raised, [], "nothing was crossed while anyone was looking");
+});
+
+test("after waking, the clock goes on alarming as usual", () => {
+  const h = harness();
+  h.tracker.noteReading(10, T0); // 10:30 AM
+  h.tick(5_000);
+  h.jump(3 * 3600_000); // asleep; the clock now reads 10:30 PM
+  h.tracker.add(23 * 60, "11 PM"); // half an hour of game time ahead — 90 real seconds
+  h.tick(3 * 3600_000 + 80_000);
+  assert.equal(h.raised.length, 0, "not yet");
+  h.tick(3 * 3600_000 + 100_000);
+  assert.deepEqual(h.raised.map((a) => a.message), ["11 PM"]);
+});
+
+test("a hiccup is not a sleep: an alarm crossed in a short stall still fires", () => {
+  const h = harness();
+  h.tracker.noteReading(18, T0); // 6:30 PM
+  h.tracker.add(19 * 60, "7 PM"); // 90 real seconds away
+  h.tick(80_000);
+  h.jump(100_000); // a 20-second freeze across the alarm — late, but still news
+  assert.deepEqual(h.raised.map((a) => a.message), ["7 PM"]);
+});
+
+test("a long wait for the first reading does not read as a sleep once it arrives", () => {
+  // No reading means no sweep work, but the sweeps are still running; an hour of them before `/time` is
+  // said must not leave the first sweep after it looking like the end of a long gap.
+  const h = harness();
+  h.tick(3600_000);
+  h.tracker.noteReading(18, T0 + 3600_000); // 6:30 PM, an hour in
+  h.tracker.add(19 * 60, "7 PM");
+  h.tick(3600_000 + 100_000);
+  assert.deepEqual(h.raised.map((a) => a.message), ["7 PM"]);
 });
 
 test("alerts respect the enabled switch on cast-alert settings, same as every other alert", () => {

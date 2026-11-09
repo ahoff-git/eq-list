@@ -153,6 +153,19 @@ export interface Saver {
 }
 
 /**
+ * Every saver with a write still waiting on its timer — what a quitting app has not yet put on disk.
+ *
+ * Quitting used to flush a list of stores written out by hand in `main.ts`, and a list is only as good as
+ * whoever last remembered to extend it: the achievements and the panel settings (`ui-state.ts`) were never
+ * on it, so a change made in the last two seconds (a ticked achievement) or the last 400 ms (a setting)
+ * before closing was silently lost — and, for an achievement progressed by the log, lost for good, since
+ * the log's read position *was* flushed and says those lines are done
+ * ([ADR 0379](../specs/decisions/0379-quitting-writes-every-pending-save.md)). Each saver registers itself
+ * here while it has something to write, so a store can't be forgotten by being left off a list.
+ */
+const waiting = new Set<Saver>();
+
+/**
  * Coalesce a store's writes: a burst of changes becomes one write, `afterMs` after the first of them.
  *
  * Seven stores had this, six of them character for character — a `timer`, a `write` that nulls it, and a
@@ -176,6 +189,7 @@ export function createSaver(
 
   function write(): void {
     timer = null;
+    waiting.delete(saver);
     writeJson(typeof file === "string" ? file : file(), snapshot(), {
       what,
       pretty: opts?.pretty,
@@ -185,7 +199,7 @@ export function createSaver(
     });
   }
 
-  return {
+  const saver: Saver = {
     save() {
       // The one axis these stores genuinely differ on. By default the timer is *not* restarted, so a
       // steady stream of changes still reaches disk every `afterMs` instead of being postponed for ever
@@ -194,12 +208,21 @@ export function createSaver(
       if (opts?.restart && timer) clearTimeout(timer);
       else if (timer) return;
       timer = setTimeout(write, afterMs);
+      waiting.add(saver);
     },
     flush() {
       if (timer) clearTimeout(timer);
       write();
     },
   };
+  return saver;
+}
+
+/** Write every pending save now. Returns how many there were. For quitting; harmless to call twice. */
+export function flushPendingSavers(): number {
+  const pending = [...waiting];
+  for (const saver of pending) saver.flush();
+  return pending.length;
 }
 
 /** A store's "something changed" signal, and whoever is listening for it. */

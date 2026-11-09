@@ -842,6 +842,24 @@ unit-tested.
   *sounds* like a card is still a mob; and a page already cached is read back clean, with only a zone page's roster touched
   ([ADR 0377](../decisions/0377-a-cached-page-is-read-back-tidy.md)). `page-store-walk.test.ts` holds two overlapping walks of
   the cache to both finishing; `wiki-spell-cache.test.ts` folds an aliased spell page to one row.
+- `src/shared/search-query.ts` → `electron/tests/search-query.test.ts` (a typed search is capped): only a string is a query, and only its
+  first 120 characters count; and over a cache whose title index is already fresh (nothing fetched), a 20,000-character query is
+  answered at once (it took ~15 s), a `null`/number/object term is the empty search rather than a rejection, and an ordinary
+  misspelling still finds its page ([ADR 0378](../decisions/0378-a-typed-search-is-capped-before-it-searches.md)).
+- `electron/tests/json-store.test.ts` (quitting): a saver registers while it has a write waiting and `flushPendingSavers()` writes every one,
+  whether or not anyone listed it — a store with nothing changed is not written, a save already written (or flushed by hand) is not waiting,
+  and a saver is waiting again after its next change ([ADR 0379](../decisions/0379-quitting-writes-every-pending-save.md)).
+  **The `session-end` wiring in `main.ts` is not unit-testable, so it was proved on the real app**: change something through each store's own
+  API (`achievements.setManual`, `ui.set`, `gameClock.add`), send the window `WM_ENDSESSION` (`SendMessageTimeout`, wParam 1, lParam
+  `ENDSESSION_LOGOFF`; it makes Electron emit `session-end` without ending the session), end the process, and read the files. All three were
+  missing before, and present after. Do both from one script, quickly: the stores' debounce is 0.4–2 s. Never match processes by a debug-port
+  string in a command line — it matches the shell that launched them.
+- `electron/tests/game-clock-tracker.test.ts` (sleep): the harness's `tick` runs one sweep a second, as the interval does, and `jump` moves the
+  clock with no sweeps between — a machine asleep. Alarms the clock passed during a jump are not announced; a stall shorter than the gap still
+  announces; the first sweep after a long wait for the first `/time` is not a gap ([ADR 0380](../decisions/0380-alarms-the-clock-passed-while-asleep-are-history.md)).
+- `electron/tests/money.test.ts`, `log-parser.test.ts`, `loot-log.test.ts` (a free sale): `free` is a price of zero (and only the whole word); the
+  loot line carries `soldFor: 0`; an item that only ever sold for free is on the price table at 0c; and rows already stored with a NULL price and
+  `free` in their detail are priced too, with no migration ([ADR 0381](../decisions/0381-a-sale-for-free-is-a-price-of-zero.md)).
 - `electron/tests/spec-links.test.ts`: every relative link in the specs resolves, and every decision record a source comment
   cites exists — the October reorganisation left 23 links across 17 records pointing at moved files.
 - **Guides' labels** (`guides.test.ts`): every `**bold**` UI label in a guide must be spelled somewhere in the app's own source

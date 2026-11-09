@@ -26,7 +26,7 @@
 
 import { SELF } from "./combat/combat-parser";
 import { to24Hour } from "./gameclock/game-clock";
-import { parseCoins } from "./money";
+import { parseCoins, parseSalePrice } from "./money";
 import type {
   CoinEvent,
   CombineEvent,
@@ -188,7 +188,7 @@ export function parseLoot(line: LogLine): LootEvent | null {
         // An auto-sell is the only place the log ever prices an item, so the coins are
         // read here rather than left as prose in `detail` — this line is where "what does
         // this item fetch" comes from, and it's the only loot line that names both.
-        soldFor: fate === "sold" ? (parseCoins(detail) ?? undefined) : undefined,
+        soldFor: fate === "sold" ? (parseSalePrice(detail) ?? undefined) : undefined,
         logId: line.logId,
         raw: line.raw,
         at: line.at,

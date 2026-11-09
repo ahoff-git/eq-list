@@ -32,6 +32,7 @@ import { fetchItemNameList, itemList, itemPage, itemUrlFor } from "./api";
 import { parseItemNameList, parseLucyItem, parseLucyItemList } from "./parse";
 import { fuzzyRank } from "../../src/shared/fuzzy";
 import { itemBaseName } from "../../src/shared/names";
+import { cleanQuery } from "../../src/shared/search-query";
 import { normalizeItemName } from "../../src/shared/items/grouping";
 import { createLogger } from "../../src/shared/logging";
 import type { CachedItem, LucyItem, LucySearchResult } from "../../src/shared/types";
@@ -338,7 +339,7 @@ export function createLucyClient(cacheDir: string): LucyClient {
     async search(term) {
       // Fold the grade off the query, exactly as the wiki client does: Lucy has "Dragoon Dirk", and
       // a literal substring search for "Dragoon Dirk +2" matches nothing at all.
-      const q = itemBaseName(term.trim());
+      const q = itemBaseName(cleanQuery(term));
       if (q.length < 2) return [];
 
       /**

@@ -52,6 +52,7 @@ import { fuzzyRank } from "../../src/shared/fuzzy";
 import { normalizeItemName } from "../../src/shared/items/grouping";
 import { bestReading } from "../../src/shared/chrome/ocr-variants";
 import { itemBaseName, zoneBaseName } from "../../src/shared/names";
+import { cleanQuery } from "../../src/shared/search-query";
 import { createLogger } from "../../src/shared/logging";
 import type { CachedItem, CachedSpell, SearchResult, WikiPage, WikiPageKind } from "../../src/shared/types";
 import { forTransfer, itemRows, type ItemRow } from "../../src/shared/items/item-search";
@@ -2331,7 +2332,7 @@ export function createWikiClient(
       // A grade is dropped from the query as well as from the index side of a match: a name read
       // off a tooltip ("Dragoon Dirk +2") has to find the page the wiki actually has, and the
       // stray "+2" token was enough to drag a good fuzzy match under the threshold (`names.ts`).
-      const q = itemBaseName(term.trim());
+      const q = itemBaseName(cleanQuery(term));
       if (q.length < 2) return [];
       const local = fuzzyOver(titleIndex, q);
       if (local.length) return flagOutOfEra(local);
@@ -2348,7 +2349,7 @@ export function createWikiClient(
 
     async searchZones(term) {
       // Same for a zone's difficulty: one wiki page describes Blackburrow at every difficulty.
-      const q = zoneBaseName(term.trim());
+      const q = zoneBaseName(cleanQuery(term));
       if (q.length < 2) return [];
       // Zones aren't era-flagged — the picker runs per keystroke and you may want to
       // browse any zone regardless of era.
@@ -2358,7 +2359,7 @@ export function createWikiClient(
     },
 
     async searchFactions(term) {
-      const q = term.trim();
+      const q = cleanQuery(term);
       if (q.length < 2) return [];
       // `Category:Factions` is the whole namespace (258 pages, mirrored in `factionIndex`), so
       // there's no fallback to a wider search the way `search`/`searchZones` have one — a miss here
