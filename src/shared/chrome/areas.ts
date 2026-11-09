@@ -32,8 +32,10 @@ export const AREAS: readonly AreaDef[] = [
   { key: "craft", label: "Craft", sections: ["tradeskills", "crafting"] },
   // What already happened: fights, the evening's rates, what dropped.
   { key: "history", label: "History", sections: ["combat", "session", "loot"] },
-  // Places you go to decide something and leave — the room you share with is one of them.
-  { key: "settings", label: "Settings", sections: ["settings", "peers"] },
+  // Places you go to decide something and leave — the room you share with is one of them — and where you go
+  // when something isn't working: how to use the parts people miss, and what each update changed (ADR 0373).
+  // Not an area of their own: an eighth label pushes Settings into the » menu at the default window width.
+  { key: "settings", label: "Settings", sections: ["settings", "peers", "help", "updates"] },
 ];
 
 /** The area a section belongs to, or undefined for a key no area has (a section since dropped). */

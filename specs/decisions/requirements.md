@@ -32,6 +32,7 @@ Superseded records are not cited. A rule that a later decision reversed is not a
 [Windows and the interface](#windows-and-the-interface) ·
 [Peers](#peers) ·
 [Stored data](#stored-data) ·
+[Release notes and guides](#release-notes-and-guides) ·
 [Build and diagnostics](#build-and-diagnostics)
 
 ## Recording a decision
@@ -800,6 +801,21 @@ reading like a measurement, and they are shared code
   rewritten on a debounce. ([0056](./0056-a-dropped-record-keeps-what-it-taught.md))
 - **A ledger needs filters and a column to sort by**, one filter object applied by one function so the
   tallies and the rows describe the same set, and a stable sort because the log stamps to the second. ([0058](./0058-a-ledger-needs-filters-and-a-column-to-sort-by.md))
+
+## Release notes and guides
+
+- **A release note is a release line** (`major.minor`), added by the change that bumps `package.json` to it; every build of the
+  line carries the same notes. The patch is the build counter and is never a key. ([0373](./0373-release-notes-are-a-release-line-and-guides-are-checked-against-the-code.md), [0064](./0064-every-build-has-a-number.md))
+- **A player is shown every line after the one they last saw, up to the one running**, newest first; the same line on a later
+  build shows nothing; nothing remembered shows the newest note only. ([0373](./0373-release-notes-are-a-release-line-and-guides-are-checked-against-the-code.md))
+- **The remembered version is written when the notes are answered, not at launch, and never goes backwards.** ([0373](./0373-release-notes-are-a-release-line-and-guides-are-checked-against-the-code.md))
+- **The announcement is a strip, never a dialog**; the history stays readable in the app. ([0373](./0373-release-notes-are-a-release-line-and-guides-are-checked-against-the-code.md), [0052](./0052-an-error-goes-to-the-log-not-the-screen.md))
+- **A hotkey in a guide is a token read from the constant that registers it; the tab it is about is a checked section key.**
+  A pushed note is not edited. ([0373](./0373-release-notes-are-a-release-line-and-guides-are-checked-against-the-code.md))
+- **History before release notes is its own dated list, shown but never announced**, less detailed the further back, and not added to
+  after: a new change is a release note. ([0374](./0374-history-before-release-notes-is-read-never-announced.md))
+- **An install with no remembered marker but other saved UI state is counted from the baseline version** (`0.1.0`) and owed every
+  note since; a blank slate is shown the newest alone. ([0374](./0374-history-before-release-notes-is-read-never-announced.md))
 
 ## Build and diagnostics
 

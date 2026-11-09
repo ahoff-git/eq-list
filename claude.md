@@ -60,3 +60,30 @@ add any relevant `## Open Questions`.
 you finish an item, record the outcome where it belongs (an ADR, a README, or the
 code) and then **delete it from the todo in the same session, without being
 asked**. Leave a `_No open items._` note when the list is empty.
+
+## Release notes & how-to guides
+
+Players are shown what changed when they update (Settings → What's new) and learn the parts of the app people miss from
+Settings → How-to. Both are **code that ships in the build**, not docs beside it — see
+[ADR 0373](specs/decisions/0373-release-notes-are-a-release-line-and-guides-are-checked-against-the-code.md) and
+[specs/help/](specs/help/README.md).
+
+- **A user-visible change gets a release note, in the same change.** A new thing a player can do, something that works
+  differently, a bug a player would have noticed. Not refactors, tests, or plumbing nobody sees.
+  - Notes live in `src/shared/releases/changelog.ts`, newest first. One sentence per change, in the player's words (what
+    they can do now — not what the code does), `kind` `new` | `better` | `fixed`, and `guide: "<id>"` when a how-to
+    teaches it.
+  - **A release is a `major.minor` line.** A new note's line is `package.json`'s version with the minor bumped, and you
+    bump `package.json` to `<major>.<minor>.0` in the same change (CI stamps the patch). A test fails if the two disagree.
+  - **A pushed note is not edited.** If the newest note's line is already on `origin/main`, the change is a *new* line;
+    extend the newest note only while it is still unpushed. (A player who has answered a line is never re-shown it.)
+  - `history.ts` ("Before release notes") is **closed**: it is the app's past, rebuilt once. A change goes in `changelog.ts`, never there.
+- **A change to something a guide describes updates that guide, in the same change.** Guides are `src/shared/help/guides.ts`.
+  Write a hotkey as `{hotkey:stats}` (never the chord) and a tab as the section key it opens — tests fail on a renamed tab,
+  an unknown hotkey, or a chord typed by hand — and every `**bold label**` must be spelled somewhere in the source, so a renamed
+  button fails too. That catches renames, **not wrong steps**: when you add or change a guide, walk it in the running app (press
+  what it says, in the order it says) and fix what the walk shows. Add a guide when you ship a multi-step flow, a hotkey, or a tab
+  people won't find by looking.
+- **Before calling a task done, ask:** does a player notice this (release note)? Does a guide say anything it changes
+  (update the guide)? Is it a new capability worth a walkthrough (add one)? The tests pin what can be pinned — they cannot
+  know a change *needs* a note, so this question is the check.

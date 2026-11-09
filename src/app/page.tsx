@@ -36,6 +36,11 @@ import OpacityButton from "@/app/components/chrome/OpacityButton";
 import ClickThroughButton from "@/app/components/chrome/ClickThroughButton";
 import CastAlerts from "@/app/components/alerts/CastAlerts";
 import UpdateBanner from "@/app/components/chrome/UpdateBanner";
+import ReleaseBanner from "@/app/components/chrome/ReleaseBanner";
+import WhatsNewPanel from "@/app/components/help/WhatsNewPanel";
+import HowToPanel from "@/app/components/help/HowToPanel";
+import { useReleases } from "@/lib/releases/useReleases";
+import { MAP_WINDOW } from "@/shared/help/guide";
 import WebDownloadBanner from "@/app/components/chrome/WebDownloadBanner";
 import Toasts from "@/app/components/chrome/Toasts";
 import TabBar, { type TabItem } from "@/app/components/chrome/TabBar";
@@ -66,7 +71,7 @@ import StatBuffWatcher from "@/app/components/items/StatBuffWatcher";
 import { showToast } from "@/lib/toast";
 import { readNotice, wrongCharacter } from "@/shared/items/stats-read-notice";
 
-type Tab = "overview" | "list" | "hunt" | "timers" | "goals" | "achievements" | "buffs" | "loot" | "faction" | "search" | "items" | "spells" | "stances" | "aa" | "tradeskills" | "crafting" | "combat" | "session" | "exports" | "alerts" | "peers" | "settings";
+type Tab = "overview" | "list" | "hunt" | "timers" | "goals" | "achievements" | "buffs" | "loot" | "faction" | "search" | "items" | "spells" | "stances" | "aa" | "tradeskills" | "crafting" | "combat" | "session" | "exports" | "alerts" | "peers" | "settings" | "help" | "updates";
 
 /**
  * The app. This route *is* the app now, in Electron and in a plain browser tab alike — `api()`
@@ -189,6 +194,25 @@ function ControlWindow() {
   useEffect(() => {
     if (nav.tab !== "items") setFocusStats(0);
   }, [nav.tab]);
+  /**
+   * Which release notes the player is owed (ADR 0373). Owned here, not by either panel: the banner in
+   * the frame and the What's new panel answer to the same record, and the tab label counts what is unread.
+   */
+  const releases = useReleases();
+  /** The guide a release note's "How-to →" sent us to — the same pattern again, on the How-to section. */
+  const [focusGuide, setFocusGuide] = useState<{ id: string } | null>(null);
+  const viewGuide = useCallback(
+    (id: string) => {
+      setFocusGuide({ id });
+      openTab("help");
+    },
+    [openTab],
+  );
+  useEffect(() => {
+    if (nav.tab !== "help") setFocusGuide(null);
+  }, [nav.tab]);
+  /** Where a guide's button goes: a tab, or the map, which is a window of its own. */
+  const openGuideTarget = useCallback((target: string) => (target === MAP_WINDOW ? openMapWindow() : openTab(target)), [openTab]);
   // Only someone with a stats read needs the buff board watched for stat buffs coming and going — the
   // reminder compares a buff then against now — and watching means loading the spell catalogue.
   const { stamp: statsStamp } = useStatsStore();
@@ -316,6 +340,8 @@ function ControlWindow() {
     session: { key: "session", label: "Session", ...logged },
     loot: { key: "loot", label: "Loot", ...logged },
     settings: { key: "settings", label: "General" },
+    help: { key: "help", label: "How-to" },
+    updates: { key: "updates", label: updatesLabel(releases.answered ? 0 : releases.fresh.length) },
     peers: { key: "peers", label: peersLabel(peers.length, settings?.connectPeers) },
   };
   const usable = (section: string) => !sectionItems[section as Tab]?.disabled;
@@ -395,6 +421,7 @@ function ControlWindow() {
         </Titlebar>
 
         <UpdateBanner />
+        <ReleaseBanner releases={releases} onOpen={() => openTab("updates")} />
         <WebDownloadBanner />
 
         <TabBar items={areaItems} active={area.key} onSelect={openArea} />
@@ -440,6 +467,8 @@ function ControlWindow() {
           {tab === "alerts" && <AlertsPanel />}
           {tab === "peers" && <PeersPanel focusPeer={focusPeer} onViewPeer={viewPeer} />}
           {tab === "settings" && <SettingsPanel />}
+          {tab === "help" && <HowToPanel focus={focusGuide} sectionLabel={(k) => sectionItems[k as Tab]?.label} onOpen={openGuideTarget} />}
+          {tab === "updates" && <WhatsNewPanel releases={releases} onGuide={viewGuide} />}
         </div>
 
         {statsStamp && <StatBuffWatcher />}
@@ -505,6 +534,11 @@ function peersLabel(peers: number, connected: boolean | undefined): string {
  */
 function goalsLabel(running: number): string {
   return running ? `Goals (${running})` : "Goals";
+}
+
+/** What the What's new section says about itself: how many releases are waiting to be read, while any are. */
+function updatesLabel(unread: number): string {
+  return unread ? `What's new (${unread})` : "What's new";
 }
 
 function achievementsLabel(running: number): string {

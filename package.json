@@ -1,6 +1,6 @@
 {
   "name": "eq-list",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "description": "EQ Legends loot shopping-list overlay — watches your EverQuest log and lights up when items on your list drop. Data sourced from eqlwiki.com.",
   "author": "Ka1n0s",

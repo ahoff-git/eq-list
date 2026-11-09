@@ -818,6 +818,29 @@ unit-tested.
   overwrite them before the child ever reads them. `quests_by_zone` has no on-disk cache to seed
   (`zoneQuestsCache` is in-memory only, per-client), so its test pins the *offline* contract instead:
   an unreachable wiki is an empty list, never a hang or a throw.
+- `src/shared/releases/release-notes.ts` → `electron/tests/release-notes.test.ts` (which release notes a player is owed
+  — [ADR 0373](../decisions/0373-release-notes-are-a-release-line-and-guides-are-checked-against-the-code.md)). The
+  case the rule exists for is **v1 to v5 shows v2, v3, v4 and v5**, newest first, with the first not repeated; around it
+  the ones that are easy to get wrong: the build counter never outranks the line (`0.2.1` is newer than `0.1.999`), a
+  later build of the same line shows nothing, nothing remembered shows the newest note alone (not the history), a note
+  written ahead of its build or a rolled-back install announces nothing, and the remembered version **never goes
+  backwards** (an unstamped dev build over an installed one must not make the next real launch re-announce everything).
+  Plus where owed notes are counted from (`countFrom`: a used install updating from before tracking is owed everything, a
+  blank slate the newest alone), the way a history period is written (`periodText`: a whole month, part of one, across
+  months and years), `historyProblems` (real dates, newest first, no overlap, stops where the numbered releases start),
+  the banner's headline and `changelogProblems`, which says in words what is wrong with a changelog (a February 30th
+  included — `Date.parse` allows it).
+- `src/shared/help/guide.ts` → `electron/tests/guide.test.ts` (how guide text is read, and what makes a guide
+  trustworthy): a hotkey is a token resolved from the constant main registers, a tab is a key checked against the nav,
+  and a registered chord typed by hand — or markup left open — is a failure.
+- **Guides' labels** (`guides.test.ts`): every `**bold**` UI label in a guide must be spelled somewhere in the app's own source
+  (not tests, generated data, or the guides themselves), so renaming a button fails the guide that names it. It already caught a
+  guide quoting "Yes, use it" for a button that reads "Yes, use them" when several figures are in doubt. It cannot catch a wrong
+  *step* — that is what walking the guide in the app is for (CLAUDE.md).
+- **The real notes and guides held to those rules** — `changelog.test.ts` and `guides.test.ts` are checks on data, not
+  black boxes: the newest note's line is `package.json`'s (a version bump without a note, or a note without a bump,
+  fails), every note-to-guide link resolves, every guide is about a tab that exists, and a player several releases behind
+  is owed exactly the ones they missed. Re-run when the changelog, the guides, the nav or the version change.
 - **Runner**: Node's built-in test runner, no extra dependency. `npm test` compiles
   the Electron/shared TS (`tsconfig.electron.json`) then runs
   `node --test "dist-electron/electron/tests/**/*.test.js"`. Needs **Node 22+**

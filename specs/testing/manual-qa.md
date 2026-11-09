@@ -2738,6 +2738,40 @@ all eleven cultural pages come back dimmed with an "out of era" badge whose hove
   worst case at the guides' stats, and a character with much lower INT/WIS should note how far past it
   they ran.
 
+## Release notes and how-to guides (ADR 0373)
+
+- **A skipped-version update shows every release missed.** In a scratch install, set `eqlist.main.releaseSeen` in
+  `ui-state.json` to a version on an older line than the build (the installed `0.1.x` before this shipped), launch: the
+  strip under the title bar reads `Updated 0.1.x → <this build>: <newest title>, and N more updates.` **What's new**
+  opens Settings → What's new with the missed releases first, marked **new**, and the rest under **Earlier**. The
+  strip is gone, and `releaseSeen` in `ui-state.json` is this build's version a moment later.
+- **It doesn't come back.** Relaunch: no strip, and the section label has no count. Dismiss with ✕ instead of opening:
+  same — and the notes are still under Settings → What's new.
+- **A window closed unanswered still announces.** Launch an updated build and quit without touching the strip: the next
+  launch shows it again.
+- **A first install shows the newest note only** — a blank `userData`, nothing saved yet — worded `EQ List <version> — <title>.`, not the history.
+- **An update from before tracking shows every note** (the case the first rollout is): in a scratch install that has been used
+  (a `ui-state.json` with other keys in it, as any `0.1.x` install has) but has no `releaseSeen`, launch: the strip reads
+  `EQ List <version> — <newest title>, and N more updates.` (no "from" — it doesn't know) and the panel lists every note under
+  **New since you last looked**. Check this on a real install updating from an older installed build.
+- **"Before release notes" reads as history, not news.** At the foot of What's new, newest first, collapsed: periods such as
+  `Sep 2026` and `26–31 Oct 2026`, each opening to a few lines. None is marked **new**, none ever appears in the strip, and the
+  oldest is the web page from `10 Aug 2025 – 12 Jan 2026`.
+- **How-to → on a note opens that guide**, scrolled to it. Every guide's button opens the tab it names (and the map one
+  opens the map window); no card shows a literal `{hotkey…}` or `**`, and the hotkeys shown are the ones in Settings → General.
+- **The web build** has no strip (it has no installed version) but the history and the guides are all there.
+- **The first update after this ships** shows existing players the newest note (nothing was remembered) — check it reads
+  right on a real upgrade from an older installed build, not just a seeded one.
+- **Each guide, followed for real, still works.** The tests catch a renamed tab, an unknown hotkey and a bold label that is no
+  longer spelled anywhere — not a step that is wrong. Walked live on 2026-11-08 in an isolated install, and corrected where the
+  walk disagreed: title-bar controls and Alt+←/→ (guide 1); the screengrab with a real drag over on-screen text, and Esc (2);
+  Search → List with a real log drop, the gold flash and the 🔔 banner (3); Hunt (4); Alerts, ringing a rule, the ✓ drawer and Tab
+  completion (5); the stats read with a real drag over a real Inventory-window screenshot (6); the planner, goals, lock and Copy
+  loadout (7); the peer toggles and their defaults, with outside DNS blocked so it could not join the room (8, steps 1–3 only);
+  the map follows the log's zone, /loc, pins and a real route (9). **Not walked, and needing two installs on the real room:** the
+  rest of guide 8 — Who's here, What's arrived, asking a peer, Plan as. Do those once with a friend, and re-walk any guide you
+  change. A step that has drifted is a guide edit (and a release note if it changed behaviour).
+
 ## Areas and sections (ADR 0320)
 
 - **The top row fits at the default window width.** Open the app at its default size: Now, List,

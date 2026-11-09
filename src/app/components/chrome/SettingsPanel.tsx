@@ -9,6 +9,7 @@ import SelfCheck from "@/app/components/chrome/SelfCheck";
 import DataHealth from "@/app/components/chrome/DataHealth";
 import { percent } from "@/shared/format";
 import { CheckField } from "@/app/components/ui";
+import { useNav } from "@/lib/chrome/nav";
 import type { AutoUpdateStatus, DeepPartial, Settings } from "@/shared/types";
 
 /**
@@ -260,6 +261,7 @@ function updateStatusText(status: AutoUpdateStatus | null): string {
  * again on the spot rather than waiting for the six-hourly timer.
  */
 function UpdateSettings({ version }: { version: string | undefined }) {
+  const nav = useNav();
   const [status, setStatus] = useState<AutoUpdateStatus | null>(null);
 
   useEffect(() => {
@@ -280,6 +282,9 @@ function UpdateSettings({ version }: { version: string | undefined }) {
       <div className="row" style={{ marginTop: 6 }}>
         <button className="btn" disabled={busy} onClick={() => void api()?.update.check()}>
           Check for updates
+        </button>
+        <button className="btn ghost" onClick={() => nav.openTab("updates")}>
+          What&apos;s new
         </button>
         {ready && (
           <button className="btn primary" onClick={() => void api()?.update.restart()}>

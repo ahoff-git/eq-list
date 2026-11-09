@@ -200,6 +200,13 @@ export const STORAGE_KEYS = {
   /** Exports tab: which view is showing — the commands, or one dump's contents (its `fileType`). */
   exportsView: "eqlist.main.exportsView",
   /**
+   * Main window: the newest version whose release notes the player has been shown (ADR 0373) — a full
+   * version, `0.4.17`, so "updated from" can say it. Never goes backwards (`nextSeen`). Read and written
+   * straight through main's store (`useReleases`), not `usePersistentState`: the banner has to know
+   * whether this is *absent* or *not loaded yet*, and that hook can't say.
+   */
+  releaseSeen: "eqlist.main.releaseSeen",
+  /**
    * Any resizable panel (`ResizablePanel`), by the id it was given: the height its reader dragged it
    * to, as a % of its window. Absent means "as the panel was designed" — a default is a real answer
    * rather than a missing one, so it is stored as nothing at all rather than as a number.

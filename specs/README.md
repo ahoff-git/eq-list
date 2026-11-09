@@ -15,6 +15,7 @@ Start here, then branch out by area:
 - [map](./map/README.md) — the sibling map window that plots your live location.
 - [peers](./peers/README.md) — what one install hands another, and what it takes on the way in.
 - [travel](./travel/README.md) — the zone-line graph behind "how do I get from here to there?".
+- [help](./help/README.md) — what changed when you updated, and how to use the parts people miss.
 - [testing](./testing/README.md) — what's a tested black box and how to run it.
 
 Decisions are logged as ADRs in [decisions/](./decisions/README.md), and
