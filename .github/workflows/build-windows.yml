@@ -30,6 +30,19 @@ jobs:
           node-version: 22
           cache: npm
 
+      # Packaging pulls the Electron zip and the NSIS/winCodeSign tooling from github.com release
+      # downloads (~120 MB, a handful of requests). Those endpoints 504 now and then, and a build
+      # that needs the network for them is hostage to it — so keep them between runs. Both are
+      # versioned by what package-lock.json pins (electron, electron-builder), hence the key. This
+      # step precedes `npm ci` because electron's own postinstall fetches the same zip.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+          key: electron-tools-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-tools-${{ runner.os }}-
+
       - run: npm ci
 
       # Don't ship a broken "latest": gate the build on the same checks we run locally.
@@ -60,7 +73,20 @@ jobs:
       # the fetch has to happen here instead, right before packaging.
       - run: npm run rebuild:electron
 
-      - run: npx electron-builder --publish never
+      # On a cold cache electron-builder still downloads the Electron zip and NSIS tooling from
+      # github.com, which occasionally 5xx (run 42568505883: 504s on the Electron zip, then on
+      # nsis-3.0.4.1.7z, with every check before it green). Retry the packaging rather than fail a
+      # good commit over a CDN blip; a genuine packaging error fails all three attempts and still
+      # fails the build.
+      - name: Package the installer
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            npx electron-builder --publish never && exit 0
+            echo "::warning::electron-builder failed (attempt $attempt of 3)"
+            [ "$attempt" -lt 3 ] && sleep $((attempt * 20))
+          done
+          exit 1
 
       # Point the rolling tag at this commit so the published release isn't stale.
       - name: Move "latest" tag to this commit
