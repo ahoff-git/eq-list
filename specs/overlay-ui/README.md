@@ -292,13 +292,27 @@ list, hunt, search, damage, session, peers, settings.
     `src/shared/grouping.ts` (`groupByOrigin`). Entries are keyed by **name + origin**, so
     the same item can appear under **several headings** (e.g. rat ears wanted by a recipe
     *and* a quest); each entry reads **"5 of 3 (10)"** — you have 5, this group wants 3,
-    and 10 are wanted across every group (shown only when it differs). A drop credits
-    *every* group that wants the item, so the combined figure is the one that says whether
-    you can stop farming — and **hovering the count breaks it down**, naming each
+    and 10 are wanted across every group (shown only when it differs). One pile is shared by
+    every group that wants the item — a loot line is **split** across them and what you hold is handed
+    out in list order, never given whole to each ([ADR 0387](../decisions/0387-rows-wanting-the-same-item-share-what-you-hold.md))
+    — so the combined figure is the one that says whether you can stop farming, and **hovering the
+    count breaks it down**, naming each
     quest/recipe behind the total and what it wants (with "×N runs" where that's why).
     `itemDemands` produces that breakdown and `itemTotals` sums it, so the number and its
     explanation come from one place. The entry's **+/− adjust
     how many you've acquired** (`obtained`); `needed` comes from the turn-in qty × runs.
+    **A row counts what you hold** ([ADR 0382](../decisions/0382-the-shopping-list-counts-what-you-hold.md)):
+    `useCountedList` raises each item's figure to what your last inventory dump plus the ledger since it says
+    (`items/held-count.ts`), unless you typed it (`countedByHand`, handed back with **↺**), so the row's tick,
+    its group's tally and order and the Hunt tab all read one number. A `🎒 12 held · need 8 more` note says where
+    it came from — hover for the sum, amber when the dump is old — and a row the log can't count says why.
+    **The order is the player's, and so is which groups are folded**
+    ([ADR 0388](../decisions/0388-the-order-of-the-list-is-the-players.md)): each group and each row has a **⠿**
+    grip — drag it, or focus it and press Alt with ↑/↓ (`useReorder`, native drag-and-drop) — and a move sends the whole
+    new order as one array (`list.reorder`, built by `list-order.ts`). A row stays in its group and "Other items"
+    stays last; finished groups and rows still sink below unfinished ones. The stored order of `entries` is the
+    order, and it is what hands a pile out first (ADR 0387), so moving a quest up is how you say which quest
+    your chips are for. Folded groups are kept across restarts (`STORAGE_KEYS.listCollapsed`, shut ones only).
     Entries flash on match; the name navigates in-app, and an ↗ button opens its eqlwiki
     page (`wiki.openInBrowser`, host-validated in main). A row can also be **armed** — the 🔔/🔕
     toggle (`notify`) raises a banner on the alert overlay the moment a loot line satisfies it

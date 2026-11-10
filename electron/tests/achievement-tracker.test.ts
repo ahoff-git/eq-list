@@ -11,7 +11,7 @@ import path from "node:path";
 import { createAchievementTracker, type AchievementTracker } from "../achievement-tracker";
 import { BUILT_IN_STYLES } from "../../src/shared/alerts/alert-styles";
 import { CURATED_ZONES } from "../../src/shared/zones/gazetteer";
-import type { CastAlertEvent, CastAlertSettings, CombatEvent, HighScore, KillEvent, LogLine } from "../../src/shared/types";
+import type { AchievementDefinition, CastAlertEvent, CastAlertSettings, CombatEvent, HighScore, KillEvent, LogLine } from "../../src/shared/types";
 
 const T0 = Date.parse("2026-08-17T12:00:00.000Z");
 
@@ -41,7 +41,9 @@ interface Harness {
   dir: string;
 }
 
-function harness(options: { settings?: CastAlertSettings; dir?: string; zone?: string | null } = {}): Harness {
+function harness(
+  options: { settings?: CastAlertSettings; dir?: string; zone?: string | null; stock?: readonly AchievementDefinition[] } = {},
+): Harness {
   const raised: CastAlertEvent[] = [];
   const dir = options.dir ?? tempDir();
   const tracker = createAchievementTracker({
@@ -50,6 +52,7 @@ function harness(options: { settings?: CastAlertSettings; dir?: string; zone?: s
     getZone: () => options.zone ?? null,
     raise: (a) => raised.push(a),
     now: () => T0,
+    stock: options.stock,
   });
   return { tracker, raised, dir };
 }
@@ -124,23 +127,35 @@ test("a fallen high score completes a threshold criterion, and a lower one doesn
   assert.equal(raised.length, 1);
 });
 
+/** A two-zone custom tour — the shape a player builds in the wizard, so one zone is progress, not completion. */
+function createTour(tracker: AchievementTracker): AchievementDefinition {
+  return tracker.create({
+    title: "My Tour",
+    criteria: [
+      { label: CURATED_ZONES[0].name, trigger: { text: CURATED_ZONES[0].name, zone: true } },
+      { label: CURATED_ZONES[1].name, trigger: { text: CURATED_ZONES[1].name, zone: true } },
+    ],
+  })!;
+}
+
+const doneOf = (tracker: AchievementTracker, id: string) => tracker.view().achievements.find((a) => a.definition.id === id)!.done;
+
 test("a zone criterion is folded, so a difficulty variant of a known zone still checks it off", () => {
   const zoneName = CURATED_ZONES[0].name;
   const { tracker, raised } = harness();
+  const tour = createTour(tracker);
   tracker.zone(`${zoneName} 2 (Adaptive)`);
-  const tour = tracker.view().achievements.find((a) => a.definition.id === "stock:grand-tour")!;
-  assert.equal(tour.done.length, 1);
-  // Grand Tour has many criteria, so one zone is progress, not completion.
+  assert.equal(doneOf(tracker, tour.id).length, 1);
   assert.equal(raised.length, 1);
-  assert.equal(raised[0].achievement?.kind, "criterion");
+  assert.equal(raised[0].achievement?.kind, "criterion"); // one zone of two: progress, not completion
   assert.equal(raised[0].achievement?.criterionLabel, zoneName);
 });
 
 test("an unrecognised zone name checks off nothing", () => {
   const { tracker, raised } = harness();
+  const tour = createTour(tracker);
   tracker.zone("Not A Real Place At All");
-  const tour = tracker.view().achievements.find((a) => a.definition.id === "stock:grand-tour")!;
-  assert.equal(tour.done.length, 0);
+  assert.equal(doneOf(tracker, tour.id).length, 0);
   assert.equal(raised.length, 0);
 });
 
@@ -242,43 +257,39 @@ test("dying completes the silly \"Oops\" achievement from the player's own death
   assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:die")!.done.length, 1);
 });
 
-test("a named-mob kill-line criterion fires on the player's own kill credit", () => {
-  const { tracker } = harness();
-  tracker.line(line("You have slain King Xorbb!", 1));
-  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:king-xorbb")!.done.length, 1);
-});
+/** A custom "kill 25 hill giants" — the counted shape the wizard builds with a × count. */
+function createGiantCount(tracker: AchievementTracker, atLeast = 25): AchievementDefinition {
+  return tracker.create({
+    title: "Giant Trouble",
+    criteria: [{ label: `Kill ${atLeast} hill giants`, trigger: { text: "hill giant", count: atLeast } }],
+  })!;
+}
 
-test("a \"count\" criterion tallies each match, banners progress below its goal, and completes at the threshold", () => {
+const tallyOfFirstCriterion = (tracker: AchievementTracker, def: AchievementDefinition) =>
+  tracker.view().achievements.find((a) => a.definition.id === def.id)!.tally[def.criteria[0].id];
+
+test("a \"count\" criterion tallies every match in silence, and banners once — on completing at the threshold (ADR 0383)", () => {
   const { tracker, raised } = harness();
-  // "You have slain a hill giant!" also satisfies the independent "First Blood" achievement on its
-  // first occurrence — banners for this test only care about "Beanstalk Problem"'s own.
-  const own = () => raised.filter((a) => a.achievement?.title === "Beanstalk Problem");
+  const def = createGiantCount(tracker);
+  const own = () => raised.filter((a) => a.achievement?.title === "Giant Trouble");
 
   for (let i = 1; i <= 24; i++) tracker.line(line("You have slain a hill giant!", i));
-  const before = tracker.view().achievements.find((a) => a.definition.id === "stock:hill-giants")!;
-  assert.equal(before.done.length, 0);
-  assert.equal(before.tally["hill-giants"], 24);
-  assert.equal(own().length, 24);
-  assert.equal(own()[0].achievement?.tally, 1);
-  assert.equal(own()[0].achievement?.tallyGoal, 25);
-  assert.equal(own()[23].achievement?.tally, 24);
+  assert.equal(doneOf(tracker, def.id).length, 0);
+  assert.equal(tallyOfFirstCriterion(tracker, def), 24, "every match is counted, and saved");
+  assert.equal(own().length, 0, "no progress report on the way");
 
   tracker.line(line("You have slain a hill giant!", 25));
-  const after = tracker.view().achievements.find((a) => a.definition.id === "stock:hill-giants")!;
-  assert.equal(after.done.length, 1);
-  assert.equal(own().length, 25);
-  assert.equal(own()[24].achievement?.kind, "completed");
-  assert.equal(own()[24].achievement?.tally, undefined); // the completion banner, not a tally one
+  assert.equal(doneOf(tracker, def.id).length, 1);
+  assert.equal(own().length, 1);
+  assert.equal(own()[0].achievement?.kind, "completed");
 });
 
 test("a \"count\" criterion's variant mobs count too, generously, the same way a farming goal's mob target does", () => {
   const { tracker } = harness();
+  const def = createGiantCount(tracker);
   tracker.line(line("You have slain a corrupted hill giant!", 1));
   tracker.line(line("You have slain a tainted hill giant!", 2));
-  assert.equal(
-    tracker.view().achievements.find((a) => a.definition.id === "stock:hill-giants")!.tally["hill-giants"],
-    2,
-  );
+  assert.equal(tallyOfFirstCriterion(tracker, def), 2);
 });
 
 test("a wizard-created cast criterion is self-scoped exactly like a stock one", () => {
@@ -308,36 +319,67 @@ test("a wizard-created criterion with a count > 1 becomes a tallying \"count\" c
   assert.equal(tracker.view().achievements.find((a) => a.definition.id === def.id)!.done.length, 1);
 });
 
-// ── ADR 0215: raceKill criteria, and the rest of this batch's stock content ─────────────────────
+// ── ADR 0215: raceKill criteria ─────────────────────────────────────────────────────────────────
+// No shipped achievement uses one any more (the game's own Slayer achievements cover race kills,
+// ADR 0383), so these inject the definitions they need rather than reading the stock library.
+
+const raceKills = (id: string, race: string, atLeast = 50): AchievementDefinition => ({
+  id,
+  title: `Kill ${race}`,
+  category: "Kill Count",
+  isOfficial: true,
+  criteria: [{ id: "kills", label: `Kill ${atLeast} ${race}`, kind: "raceKill", race, count: { atLeast } }],
+});
+const DWARVES = raceKills("test:dwarves", "Dwarf");
+const OGRES = raceKills("test:ogres", "Ogre");
 
 test("a raceKill criterion tallies only the player's own kill credit, never a bystander's", () => {
-  const { tracker } = harness();
+  const { tracker } = harness({ stock: [DWARVES] });
   tracker.kill(kill("Peg Leg", "Bob", 1)); // real Dwarf mob, but Bob got the credit, not the player
-  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:kill-dwarf")!.tally["dwarves"] ?? 0, 0);
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === DWARVES.id)!.tally["kills"] ?? 0, 0);
   tracker.kill(kill("Peg Leg", "You", 2));
-  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:kill-dwarf")!.tally["dwarves"], 1);
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === DWARVES.id)!.tally["kills"], 1);
 });
 
 test("a raceKill criterion never credits a kill of the wrong race", () => {
-  const { tracker } = harness();
+  const { tracker } = harness({ stock: [DWARVES, OGRES] });
   tracker.kill(kill("Marda", "You", 1)); // a real mob, but an Ogre, not a Dwarf
-  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:kill-dwarf")!.tally["dwarves"] ?? 0, 0);
-  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:kill-ogre")!.tally["ogres"], 1);
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === DWARVES.id)!.tally["kills"] ?? 0, 0);
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === OGRES.id)!.tally["kills"], 1);
 });
 
-test("50 real dwarf-race kills complete Short Fuse", () => {
-  const { tracker, raised } = harness();
+test("50 real dwarf-race kills complete the achievement, saying nothing on the way", () => {
+  const { tracker, raised } = harness({ stock: [DWARVES] });
   for (let i = 1; i <= 49; i++) tracker.kill(kill("Peg Leg", "You", i));
-  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:kill-dwarf")!.done.length, 0);
+  assert.equal(doneOf(tracker, DWARVES.id).length, 0);
+  assert.equal(raised.length, 0);
   tracker.kill(kill("Peg Leg", "You", 50));
-  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:kill-dwarf")!.done.length, 1);
+  assert.equal(doneOf(tracker, DWARVES.id).length, 1);
   assert.equal(raised.at(-1)?.achievement?.kind, "completed");
 });
 
-test("reaching level 50 completes Half Century", () => {
+// ── ADR 0383: a line criterion is the game's own sentence, never another player's chat ──────────
+
+test("another player's chat that quotes a level-up doesn't complete The Long Road", () => {
+  const { tracker, raised } = harness();
+  // The shape of the line that completed the old Half Century by mistake, in a real log.
+  tracker.line(line("Ramada tells General1:2, 'You have gained a level! Welcome to level 60! woohoo!'", 1));
+  assert.equal(doneOf(tracker, "stock:level-60").length, 0);
+  assert.equal(raised.length, 0);
+  tracker.line(line("You have gained a level! Welcome to level 60!", 2));
+  assert.equal(doneOf(tracker, "stock:level-60").length, 1);
+});
+
+test("a stock achievement the game already awards is not shipped a second time (ADR 0383)", () => {
   const { tracker } = harness();
-  tracker.line(line("You have gained a level! Welcome to level 50!", 1));
-  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:level-50")!.done.length, 1);
+  const ids = tracker.view().achievements.map((a) => a.definition.id);
+  for (const gone of [
+    "stock:grand-tour", "stock:level-50", "stock:tradeskill-mastery", "stock:rat-killer", "stock:spiders",
+    "stock:hill-giants", "stock:achievement-hunter", "stock:king-xorbb", "stock:runnyeye-cleared",
+    "stock:kill-erudite", "stock:kill-iksar", "stock:ally-qeynos", "stock:ally-iksar",
+  ]) {
+    assert.ok(!ids.includes(gone), `${gone} duplicates an in-game achievement and should stay pruned`);
+  }
 });
 
 test("Renaissance Adventurer is 16 plain manual criteria, one per class, each independently tickable", () => {
@@ -349,25 +391,6 @@ test("Renaissance Adventurer is 16 plain manual criteria, one per class, each in
   const progress = tracker.view().achievements.find((a) => a.definition.id === def.id)!;
   assert.deepEqual(progress.done, ["class:Wizard"]);
   assert.equal(progress.done.length < def.criteria.length, true);
-});
-
-test("reaching Ally with all three of Qeynos's factions completes Friend of Qeynos, two of three doesn't", () => {
-  const { tracker } = harness();
-  tracker.line(line("Your faction standing with Merchants of Qeynos could not possibly get any better.", 1));
-  tracker.line(line("Your faction standing with Guards of Qeynos could not possibly get any better.", 2));
-  const partial = tracker.view().achievements.find((a) => a.definition.id === "stock:ally-qeynos")!;
-  assert.equal(partial.done.length, 2); // two of the three factions — not yet complete
-  assert.equal(partial.total, 3);
-  tracker.line(line("Your faction standing with Corrupt Qeynos Guards could not possibly get any better.", 3));
-  const complete = tracker.view().achievements.find((a) => a.definition.id === "stock:ally-qeynos")!;
-  assert.equal(complete.done.length, 3);
-  assert.ok(complete.completedAt);
-});
-
-test("Friend of the Iksar needs only its one required faction", () => {
-  const { tracker } = harness();
-  tracker.line(line("Your faction standing with New Sebilisian Expedition could not possibly get any better.", 1));
-  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:ally-iksar")!.done.length, 1);
 });
 
 test("cast-based silly achievements fire on the player's own cast and stay self-scoped", () => {
@@ -399,41 +422,6 @@ test("reaching level 60 completes The Long Road, and an earlier level doesn't", 
   assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:level-60")!.done.length, 1);
 });
 
-test("Craftmaster's regex fires on any tradeskill mastery announcement, not on an unrelated one", () => {
-  const { tracker } = harness();
-  tracker.line(line("You have completed achievement: Rat Killer", 1));
-  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:tradeskill-mastery")!.done.length, 0);
-  tracker.line(line("You have completed achievement: Smithing (50)", 2));
-  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:tradeskill-mastery")!.done.length, 1);
-});
-
-test("Rat Killer completes only on the exact in-game achievement of the same name", () => {
-  const { tracker } = harness();
-  tracker.line(line("You have completed achievement: The More You Gnoll!", 1));
-  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:rat-killer")!.done.length, 0);
-  tracker.line(line("You have completed achievement: Rat Killer", 2));
-  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:rat-killer")!.done.length, 1);
-});
-
-test("Achievement Hunter tallies any ten in-game achievement completions, whatever they are", () => {
-  const { tracker } = harness();
-  const names = [
-    "5 Alternate Advancement Points", "Ak'Anon Traveler", "Blackburrow Traveler", "Rat Killer",
-    "Guards of Qeynos", "Halas Traveler", "Kerra Isle", "Level 5", "Level 10", "Merchants of Qeynos",
-  ];
-  names.slice(0, 9).forEach((n, i) => tracker.line(line(`You have completed achievement: ${n}`, i + 1)));
-  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:achievement-hunter")!.done.length, 0);
-  tracker.line(line(`You have completed achievement: ${names[9]}`, 10));
-  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:achievement-hunter")!.done.length, 1);
-});
-
-test("spiders tally generously across variant names, same as hill giants", () => {
-  const { tracker } = harness();
-  tracker.line(line("You have slain a rock spider!", 1));
-  tracker.line(line("You have slain a giant heart spider!", 2));
-  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:spiders")!.tally["spiders"], 2);
-});
-
 // ── setQuiet: a replayed startup gap files progress without bannering it ───────────────────────
 
 test("while quiet, a completed criterion and a finished achievement both update silently", () => {
@@ -448,12 +436,12 @@ test("while quiet, a completed criterion and a finished achievement both update 
 });
 
 test("while quiet, a tallying criterion still counts and still completes at threshold, silently", () => {
-  const { tracker, raised } = harness();
+  const { tracker, raised } = harness({ stock: [DWARVES] });
   tracker.setQuiet(true);
 
   for (let i = 1; i <= 50; i++) tracker.kill(kill("Peg Leg", "You", i));
-  const done = tracker.view().achievements.find((a) => a.definition.id === "stock:kill-dwarf")!;
-  assert.equal(done.tally["dwarves"], 50);
+  const done = tracker.view().achievements.find((a) => a.definition.id === DWARVES.id)!;
+  assert.equal(done.tally["kills"], 50);
   assert.equal(done.done.length, 1);
   assert.ok(done.completedAt);
   assert.equal(raised.length, 0);
@@ -475,25 +463,26 @@ test("setQuiet(false) lets banners resume, and doesn't retroactively announce wh
 
 test("a multi-criterion achievement finished entirely within a quiet gap never announces even its later criteria once unmuted", () => {
   const { tracker, raised } = harness();
+  const tour = createTour(tracker);
   tracker.setQuiet(true);
   const zoneName = CURATED_ZONES[0].name;
-  tracker.zone(`${zoneName} 2 (Adaptive)`); // one of Grand Tour's many criteria — progress, not completion
+  tracker.zone(`${zoneName} 2 (Adaptive)`); // one of the tour's two zones — progress, not completion
   assert.equal(raised.length, 0);
 
   tracker.setQuiet(false);
   assert.equal(raised.length, 0);
-  const tour = tracker.view().achievements.find((a) => a.definition.id === "stock:grand-tour")!;
-  assert.equal(tour.done.length, 1); // filed regardless of quiet
+  assert.equal(doneOf(tracker, tour.id).length, 1); // filed regardless of quiet
 });
 
 test("progress and tallies both survive a restart", () => {
   const dir = tempDir();
   const first = harness({ dir });
+  const def = createGiantCount(first.tracker);
   for (let i = 1; i <= 10; i++) first.tracker.line(line("You have slain a hill giant!", i));
   first.tracker.flush();
 
   const second = harness({ dir });
-  const restored = second.tracker.view().achievements.find((a) => a.definition.id === "stock:hill-giants")!;
-  assert.equal(restored.tally["hill-giants"], 10);
+  const restored = second.tracker.view().achievements.find((a) => a.definition.id === def.id)!;
+  assert.equal(restored.tally[def.criteria[0].id], 10);
   assert.equal(restored.done.length, 0);
 });

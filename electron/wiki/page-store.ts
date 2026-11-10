@@ -177,7 +177,8 @@ export function createPageStore(db: Database, legacyDir: string): PageStore {
     INSERT OR REPLACE INTO wiki_pages (title, kind, version, page_json, fetched_at)
     VALUES (@title, @kind, @version, @page_json, @fetched_at)
   `);
-  const eachStmt = db.prepare(`SELECT version, page_json FROM wiki_pages`);
+  /** One chunk of the walk: the pages after `title`, in key order — see `walk` for why it isn't one open iterator. */
+  const chunkStmt = db.prepare(`SELECT title, version, page_json FROM wiki_pages WHERE title > ? ORDER BY title LIMIT ?`);
   const hasStmt = db.prepare(`SELECT 1 FROM wiki_pages WHERE title = ?`);
   /**
    * One transaction per bucket file folded, rather than one per row — the fsync cost of a page-a-
@@ -257,11 +258,11 @@ export function createPageStore(db: Database, legacyDir: string): PageStore {
   /**
    * The walk in progress (or the last one to finish), so the next waits for it.
    *
-   * `walk` yields to the event loop every `EACH_CHUNK` pages — and while it is yielded its row iterator is still
-   * open on `eachStmt`. A second walk starting then (the Items tab mounting while the Spells tab, the share hub or
-   * the shard index asks for the same catalogue — an ordinary launch) opened a second iterator on the same statement
-   * and SQLite refused: "This statement is busy executing a query". The Spells catalogue then failed to load, at
-   * startup, on a real launch. One iterator at a time; the callers' own results are unchanged, only later.
+   * Walks used to hold one row iterator across their yields, and a second walk starting then (the Items tab mounting
+   * while the Spells tab, the share hub or the shard index asks for the same catalogue — an ordinary launch) opened a
+   * second iterator on the same statement and SQLite refused. `walk` no longer holds anything across a yield (see
+   * there), so overlapping walks are safe on their own; they still go one at a time because two interleaved walks
+   * would each parse the whole table, at twice the cost, for the same answer.
    */
   let walking: Promise<void> = Promise.resolve();
 
@@ -272,13 +273,28 @@ export function createPageStore(db: Database, legacyDir: string): PageStore {
     return run;
   }
 
+  /**
+   * Visit every page, `EACH_CHUNK` at a time, yielding between chunks.
+   *
+   * Each chunk is read to the end (`.all()`) and its statement is finished before the walk yields. A row iterator
+   * left open across the yield makes the whole **shared** connection busy (the cache shares `eqlist.db` with the
+   * ledgers, ADR 0232), and SQLite then refuses any transaction another store opens in that gap — "This database
+   * connection is busy executing a query". At startup that was the faction recheck, which threw and skipped its
+   * work for the launch, and a cache write landing in the gap was dropped the same way. Paging by the primary key
+   * keeps the position without keeping a cursor ([ADR 0386](../../specs/decisions/0386-a-walk-of-the-page-cache-holds-nothing-open-across-a-yield.md)).
+   */
   async function walk(visit: (entry: StoredPage) => void): Promise<void> {
     await migration;
-    let n = 0;
-    for (const row of eachStmt.iterate() as IterableIterator<{ version: number; page_json: string }>) {
-      const entry = decodeRow(row);
-      if (entry) visit(entry);
-      if (++n % EACH_CHUNK === 0) await breathe();
+    let after = "";
+    for (;;) {
+      const rows = chunkStmt.all(after, EACH_CHUNK) as { title: string; version: number; page_json: string }[];
+      for (const row of rows) {
+        const entry = decodeRow(row);
+        if (entry) visit(entry);
+      }
+      if (rows.length < EACH_CHUNK) return;
+      after = rows[rows.length - 1].title;
+      await breathe();
     }
   }
 

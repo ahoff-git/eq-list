@@ -8,6 +8,7 @@
  * which is the same shape `EqlApi`'s `onChanged` callbacks expect either way.
  */
 import { UI_SCALE } from "@/shared/constants";
+import { applyOrder, arrangeOnce } from "@/shared/items/list-order";
 import type { Settings, ShoppingList, ShoppingListEntry } from "@/shared/types";
 
 function readLocal<T>(key: string, fallback: T): T {
@@ -125,12 +126,14 @@ export const onSettingsChanged = settingsStore.subscribe;
 
 const EMPTY_LIST: ShoppingList = { entries: [], questRuns: {} };
 const listStore = createStore<ShoppingList>("eql:web:list", EMPTY_LIST);
+/** The list as it counts as ordered: a list saved before its order was the player's is sorted once (ADR 0388). */
+const current = (): ShoppingList => arrangeOnce(listStore.get());
 
 let nextId = 0;
 const freshId = (): string => `web-${Date.now().toString(36)}-${(nextId++).toString(36)}`;
 
 export function getList(): ShoppingList {
-  return listStore.get();
+  return current();
 }
 
 export function addToList(input: {
@@ -141,7 +144,7 @@ export function addToList(input: {
   note?: string;
   origin?: ShoppingListEntry["origin"];
 }): ShoppingList {
-  const list = listStore.get();
+  const list = current();
   const entry: ShoppingListEntry = {
     id: freshId(),
     name: input.name,
@@ -158,9 +161,9 @@ export function addToList(input: {
 
 export function updateListEntry(
   id: string,
-  patch: Partial<Pick<ShoppingListEntry, "needed" | "obtained" | "note" | "notify">>,
+  patch: Partial<Pick<ShoppingListEntry, "needed" | "obtained" | "countedByHand" | "note" | "notify">>,
 ): ShoppingList {
-  const list = listStore.get();
+  const list = current();
   return listStore.set({
     ...list,
     entries: list.entries.map((e) => (e.id === id ? { ...e, ...patch } : e)),
@@ -168,7 +171,7 @@ export function updateListEntry(
 }
 
 export function removeFromList(id: string): ShoppingList {
-  const list = listStore.get();
+  const list = current();
   return listStore.set({ ...list, entries: list.entries.filter((e) => e.id !== id) });
 }
 
@@ -177,8 +180,14 @@ export function clearList(): ShoppingList {
 }
 
 export function setListRuns(originKey: string, runs: number): ShoppingList {
-  const list = listStore.get();
+  const list = current();
   return listStore.set({ ...list, questRuns: { ...list.questRuns, [originKey]: runs } });
+}
+
+/** Put the entries in this order — the player's (ADR 0388). The same `applyOrder` the desktop store uses. */
+export function reorderList(ids: readonly string[]): ShoppingList {
+  const list = current();
+  return listStore.set({ ...list, entries: applyOrder(list.entries, ids), arranged: true });
 }
 
 export const onListChanged = listStore.subscribe;

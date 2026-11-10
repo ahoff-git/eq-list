@@ -693,17 +693,22 @@ if (!app.requestSingleInstanceLock()) {
     const drop = lootRecord(event, currentZone);
     lootLog.add(drop); // the always-on loot feed, so the tab is complete whenever it's opened
     broadcast(CH.lootEvent, drop);
-    for (const entry of store.applyLoot(event)) {
+    // An item you are tracking that the game vendored as it dropped is gone for good, and does not count
+    // toward the list (below) — so say so, loudly, while the auto-sell setting can still be changed (ADR 0385).
+    alerts.autoSold(event, store.soldOnList(event));
+    const credits = store.creditLoot(event);
+    for (const { entry, credit } of credits) {
       broadcast(CH.lootMatched, { event, entry });
       // And out loud, for an entry that asked to be told — the router owns every rule about whether
       // it actually speaks. The count it quotes is the row's own, runs and all, so the banner and the
-      // list can't disagree about how far along you are (ADR 0105).
-      alerts.loot(event, entry, effectiveNeeded(entry, runsFor(store.getList(), entry)));
-      // Unconditional here — whether this ever reaches a peer is entirely the `celebrations` row in
-      // the Peers tab's share toggles, the same consent gate every other `live` kind already has.
-      // `entry.notify` is a different axis (do *you* want your own banner) and doesn't gate this.
-      celebrations.announce(event.item, event.qty, event.at);
+      // list can't disagree about how far along you are (ADR 0105). The stack was split across the rows
+      // wanting it (ADR 0387), so each banner speaks for the part *its* row got.
+      alerts.loot({ ...event, qty: credit }, entry, effectiveNeeded(entry, runsFor(store.getList(), entry)));
     }
+    // Once for the drop, however many rows it filled. Unconditional here — whether this ever reaches a peer
+    // is entirely the `celebrations` row in the Peers tab's share toggles, the same consent gate every other
+    // `live` kind already has. `entry.notify` is a different axis (do *you* want your own banner) and doesn't gate this.
+    if (credits.length) celebrations.announce(event.item, event.qty, event.at);
     // A separate question from the list above: a goal is timeboxed and counts from when it started,
     // where a list entry counts for life — so this reads the same loot line independently rather
     // than borrowing the list's own counters (ADR 0198).

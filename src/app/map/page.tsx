@@ -26,6 +26,7 @@ import MapPanel, { type RenderKill, type RenderPin } from "@/app/components/map/
 import KillList from "@/app/components/kills/KillList";
 import MobKnowledgePanel from "@/app/components/mob/MobKnowledge";
 import { DEFAULT_KILL_FILTERS, filterKills, sharedAsKill, windowMoves, type KillFilters } from "@/shared/kills/kill-filters";
+import { useCountedList } from "@/lib/items/useCountedList";
 import { useMapSource, useVectorMap } from "@/lib/map/useMapSource";
 import { useFloors } from "@/lib/map/useFloors";
 import { useHidden } from "@/lib/map/useHidden";
@@ -481,7 +482,7 @@ export default function MapWindow() {
    * shut — the marks on the canvas are the useful half, and a reader who never opens the panel is
    * exactly who they're for. The panel is handed them (`known`), so the two can't disagree.
    */
-  const { zones: huntZones, needed: huntNeeded } = useHunt();
+  const { zones: huntZones, needed: huntNeeded } = useHunt(useCountedList().list);
   const zoneMobs = useZoneMobs(zoneKey, `${myKills.length}:${peerKills.length}`);
   /**
    * **The wiki, asked only where our own kills are silent.**

@@ -162,6 +162,12 @@ export interface LootedItem {
 }
 
 /**
+ * One ledger row as a held count reads it — what arrived, when, and where it went. A `LootRecord` less
+ * everything a count has no use for (the raw line, the corpse, the zone).
+ */
+export type LootSinceRow = Pick<LootRecord, "at" | "item" | "qty" | "fate" | "detail">;
+
+/**
  * What `loot.search` asks the whole ledger for — every field optional, since an unset one matches
  * everything. Reaches past whatever's already been fetched, the same reason `FactionHitsFilter`
  * does (ADR 0211/0240): `loot-log.ts` keeps every drop forever, so there is no cap left to fetch
@@ -2139,6 +2145,13 @@ export interface ShoppingListEntry {
   needed: number;
   /** How many have dropped/looted since it was added (from the log). */
   obtained: number;
+  /**
+   * The player typed `obtained` (or stepped it), so the inventory dump no longer raises it
+   * ([ADR 0382](../../specs/decisions/0382-the-shopping-list-counts-what-you-hold.md)). **Absent means
+   * the row counts what the inventory says when that is more** — every entry written before the list
+   * could count what you hold, and any whose figure the player hasn't touched since.
+   */
+  countedByHand?: boolean;
   note?: string;
   /** What put this on the list (a quest/recipe), for grouping in the UI. */
   origin?: { kind: WikiPageKind; name: string };
@@ -2158,6 +2171,12 @@ export interface ShoppingList {
   entries: ShoppingListEntry[];
   /** How many times to run each quest/recipe, keyed by origin ("kind:name"). Scales needed counts. */
   questRuns: Record<string, number>;
+  /**
+   * Set once the list's order has become the player's (ADR 0388): `entries` is then drawn in the order it is
+   * stored in. Absent on a list saved before that, which is sorted once (`arrangeOnce`) to the order it was
+   * always drawn in and marked, so nothing looks different until something is moved.
+   */
+  arranged?: boolean;
 }
 
 // ─── Experience progress ────────────────────────────────────────────────────
@@ -3065,6 +3084,18 @@ export interface LootAlert {
   needed: number;
 }
 
+/** A tracked item the game auto-sold the moment it dropped — what the warning says, raw like a `LootAlert`. */
+export interface SoldAlert {
+  /** The item as the loot line named it. */
+  item: string;
+  /** The corpse it came off. */
+  source: string;
+  /** How many the line reported. */
+  qty: number;
+  /** What the vendor paid, in copper, where the log said (a free sale is 0). */
+  soldFor?: number;
+}
+
 /**
  * A peer's own "I got it!" for a tracked item — carried raw for the same reason a `LootAlert` is:
  * the overlay words it from the payload rather than being handed a finished sentence.
@@ -3116,8 +3147,12 @@ export interface CastAlertEvent {
    *
    * A **celebration** (ADR 0287) is a peer's own tracked-item win, not yours — carried raw like
    * `loot`, but never checked against this list, because it isn't about this list.
+   *
+   * A **sold** is the opposite of a `loot`: an item on your list that the game auto-sold as it dropped
+   * ([ADR 0385](../../specs/decisions/0385-an-auto-sold-drop-is-not-counted-toward-the-list.md)). It is
+   * a warning — the one drop alert that is — and wears the alert defaults, not the Loot look.
    */
-  event?: "cast" | "fade" | "line" | "record" | "spawn" | "timer" | "loot" | "buff" | "goal" | "achievement" | "celebration";
+  event?: "cast" | "fade" | "line" | "record" | "spawn" | "timer" | "loot" | "buff" | "goal" | "achievement" | "celebration" | "sold";
   /** For a fade, who it wore off ("your pet", a mob). Absent means it was on you. */
   target?: string;
   /**
@@ -3144,6 +3179,8 @@ export interface CastAlertEvent {
   loot?: LootAlert;
   /** For a `celebration` alert, the peer's win — carried raw for the same reason `loot` is. */
   celebration?: CelebrationAlert;
+  /** For a `sold` alert, the tracked item the game vendored — carried raw for the same reason `loot` is. */
+  sold?: SoldAlert;
   /**
    * For a `buff` alert, the buff that lapsed — carried raw for the same reason a record and a drop
    * are: the overlay can word it itself from shared code (`lapseMessage`), and the *target* is the
@@ -3672,12 +3709,18 @@ export interface EqlApi {
     addFromPage(page: WikiPage): Promise<ShoppingList>;
     update(
       id: string,
-      patch: Partial<Pick<ShoppingListEntry, "needed" | "obtained" | "note" | "notify">>,
+      patch: Partial<Pick<ShoppingListEntry, "needed" | "obtained" | "countedByHand" | "note" | "notify">>,
     ): Promise<ShoppingList>;
     remove(id: string): Promise<ShoppingList>;
     clear(): Promise<ShoppingList>;
     /** Set how many times to run a quest/recipe group (by origin key); scales needs. */
     setRuns(originKey: string, runs: number): Promise<ShoppingList>;
+    /**
+     * Put the list in this order — every entry's id, as the player arranged them (ADR 0388). An id that names
+     * no entry is ignored and an entry left out keeps its place after the named ones, so an order a little
+     * behind the list never drops a row.
+     */
+    reorder(ids: string[]): Promise<ShoppingList>;
     onChanged(cb: (list: ShoppingList) => void): Unsubscribe;
   };
   settings: {
@@ -3836,6 +3879,11 @@ export interface EqlApi {
      * fetch "everything" up to (ADR 0232/0240).
      */
     search(filter: LootSearchFilter): Promise<LootRecord[]>;
+    /**
+     * What the ledger saw of the named items after a log timestamp (exclusive), oldest first — the loot
+     * half of a held count (`items/held-count.ts`, ADR 0382). Names fold grades and case.
+     */
+    since(stamp: string, names: readonly string[]): Promise<LootSinceRow[]>;
     /**
      * One page of the whole ledger, filtered and sorted server-side — what `DropTable` asks for as
      * the player pages, sorts (by anything but `zone`) or filters it, instead of paging client-side

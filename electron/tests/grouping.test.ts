@@ -12,6 +12,7 @@ import {
   itemDemands,
   itemTotals,
   normalizeItemName,
+  splitAcross,
 } from "../../src/shared/items/grouping";
 import type { ShoppingListEntry } from "../../src/shared/types";
 
@@ -110,9 +111,9 @@ test("itemDemands names who wants an item, and sums to the same total", () => {
   assert.deepEqual(
     demands.map((d) => [d.label, d.kind, d.need, d.runs]),
     [
-      // groupByOrigin now sorts groups A-Z ("Rat Catcher" before "Rat Ear Pie"), Other last.
-      ["Rat Catcher", "quest", 4, 1],
+      // In the order the list holds them (the player's, ADR 0388) — the pie was added first — with Other last.
       ["Rat Ear Pie", "recipe", 4, 2], // 2 per pie × 2 runs
+      ["Rat Catcher", "quest", 4, 1],
       ["Other items", null, 1, 1],
     ],
   );
@@ -167,22 +168,31 @@ test("a mob doesn't hold an otherwise unfinished group back either", () => {
   assert.equal(g.needed, 2);
 });
 
-// ── sort order: unfinished leads, A-Z otherwise ─────────────────────────────────
+// ── sort order: unfinished leads, then the list's own order ──────────────────────
 
-test("groups sort unfinished-first, then A-Z; Other always last regardless", () => {
+test("groups sort unfinished-first, then in the order the list holds them; Other always last regardless", () => {
   const groups = groupByOrigin([
     entry({ name: "A", needed: 1, obtained: 1, origin: { kind: "quest", name: "Zeta Quest" } }), // done
-    entry({ name: "B", needed: 1, obtained: 0, origin: { kind: "quest", name: "Alpha Quest" } }), // not done
-    entry({ name: "C", needed: 1, obtained: 0, origin: { kind: "quest", name: "Beta Quest" } }), // not done
+    entry({ name: "B", needed: 1, obtained: 0, origin: { kind: "quest", name: "Beta Quest" } }), // not done
+    entry({ name: "C", needed: 1, obtained: 0, origin: { kind: "quest", name: "Alpha Quest" } }), // not done
     entry({ name: "D" }), // Other
   ]);
   assert.deepEqual(
     groups.map((g) => g.label),
-    ["Alpha Quest", "Beta Quest", "Zeta Quest", "Other items"],
+    // Beta before Alpha, because that is how the list stores them — the player's order, not a sort (ADR 0388).
+    ["Beta Quest", "Alpha Quest", "Zeta Quest", "Other items"],
   );
 });
 
-test("entries within a group sort still-needed-first, then A-Z; a mob always counts as still-needed", () => {
+test("a finished group sinks below unfinished ones, whatever order the player put it in", () => {
+  const groups = groupByOrigin([
+    entry({ name: "A", needed: 1, obtained: 1, origin: { kind: "quest", name: "First" } }), // done, but first in the list
+    entry({ name: "B", needed: 1, obtained: 0, origin: { kind: "quest", name: "Second" } }),
+  ]);
+  assert.deepEqual(groups.map((g) => g.label), ["Second", "First"]);
+});
+
+test("entries within a group sort still-needed-first, then in the order they are held; a mob always counts as still-needed", () => {
   const [g] = groupByOrigin([
     entry({ name: "Zircon", needed: 1, obtained: 0, origin: { kind: "quest", name: "Q" } }),
     entry({ name: "Amber", needed: 1, obtained: 1, origin: { kind: "quest", name: "Q" } }), // done, sinks
@@ -191,6 +201,17 @@ test("entries within a group sort still-needed-first, then A-Z; a mob always cou
   ]);
   assert.deepEqual(
     g.entries.map((e) => e.name),
-    ["Aardvark", "Beryl", "Zircon", "Amber"],
+    ["Zircon", "Beryl", "Aardvark", "Amber"],
   );
+});
+
+test("splitAcross fills rows in order, each up to what it lacks, and the first keeps any surplus", () => {
+  assert.deepEqual(splitAcross([3, 5, 2], 5), [3, 2, 0], "3 + 5 + 2 wanted, 5 given: the first is full, the second part-filled");
+  assert.deepEqual(splitAcross([3, 5, 2], 10), [3, 5, 2]);
+  assert.deepEqual(splitAcross([3, 5, 2], 12), [5, 5, 2], "two over every need go to the first row, so nothing is lost");
+  assert.deepEqual(splitAcross([4], 9), [9], "one row on its own takes the lot, as it always did");
+  assert.deepEqual(splitAcross([0, 0], 3), [3, 0], "rows already full still let the first keep counting");
+  assert.deepEqual(splitAcross([-2, 3], 2), [0, 2], "a row past its need lacks nothing");
+  assert.deepEqual(splitAcross([], 5), [], "no rows, nothing to give it to");
+  assert.deepEqual(splitAcross([3, 5], 0), [0, 0]);
 });

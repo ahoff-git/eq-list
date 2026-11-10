@@ -661,6 +661,21 @@ button {
 .entry-count .ask, .runs-count .ask { color: inherit; font-size: inherit; padding: 0; }
 .entry-count .have { color: var(--accent); }
 .entry-count .have.met { color: var(--good); }
+/* What the inventory dump says about a row (HeldNote). Quiet by default — the count beside it is the
+   headline — and amber once the dump is old enough that the sum behind it deserves a second look. */
+.held-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--text-dim);
+  cursor: help;
+}
+.held-note.inventory { color: var(--accent); }
+.held-note.unknown { opacity: 0.7; }
+.held-note.stale { color: var(--warn); }
+.held-source.stale { color: var(--warn); }
 .entry-origin { font-size: 11px; color: var(--text-dim); }
 
 /* entry "where to get it" expansion (▸): drops by zone + colored other sources */
@@ -3424,6 +3439,19 @@ select optgroup {
 .cast-alert.anim-none { animation: none; }
 .cast-alert .ca-icon { font-size: 1.15em; line-height: 1; }
 .cast-alert .ca-text b { color: #fff; }
+/* A tracked item the game auto-sold (ADR 0385): the one drop banner that is bad news, so it is drawn at nearly
+   twice an ordinary banner's size with a heavy border — it has to be seen mid-fight, not read. The hint is set
+   back down so it stays a footnote to the shouted line. */
+.cast-alert.ca-big {
+  padding: 16px 28px;
+  gap: 16px;
+  border-width: 4px;
+  border-radius: 14px;
+  font-size: 1.9em;
+  font-weight: 700;
+}
+.cast-alert.ca-big .ca-icon { font-size: 1.5em; }
+.cast-alert.ca-big .ca-hint { font-size: 0.45em; max-width: 44ch; }
 /* A line watch shows the game's own sentence, which can run long — a banner has to stay a banner. */
 .cast-alert .ca-text {
   max-width: 46ch;
@@ -4419,3 +4447,22 @@ select optgroup {
 }
 .fight-trends .trend-tip { margin: 0; }
 .fight-trends .trend-resisted, .fight-trends .trend-deaths { color: var(--bad); }
+
+/* The grip that moves a shopping-list group or row (ADR 0388). Quiet until it is wanted: the list is read far more
+   often than it is arranged, and a row has no room to spare in a narrow window. */
+.drag-handle {
+  cursor: grab;
+  color: var(--text-dim);
+  opacity: 0.55;
+  user-select: none;
+  padding: 0 2px;
+  line-height: 1;
+  border-radius: 3px;
+}
+.drag-handle:hover,
+.drag-handle:focus-visible { opacity: 1; color: var(--text); }
+.drag-handle:active { cursor: grabbing; }
+/* While one is being moved: the thing itself dims, and a line shows where it would land. */
+.reorder-dragging { opacity: 0.4; }
+.drop-before { box-shadow: 0 -2px 0 0 var(--accent); }
+.drop-after { box-shadow: 0 2px 0 0 var(--accent); }

@@ -1,15 +1,21 @@
 "use client";
 import { useEffect, useState } from "react";
 import {
+  useCapabilities,
   useClosedZones,
   useGoalFocus,
-  useShoppingList,
   useMatchFlashes,
   useCurrentZone,
   useSettings,
   type GoalFocus,
 } from "@/lib/hooks";
 import { api } from "@/lib/api";
+import { countFromInventory, setHave, useCountedList } from "@/lib/items/useCountedList";
+import { useReorder, type Reorder } from "@/lib/items/useReorder";
+import { usePersistentState } from "@/lib/usePersistentState";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { HeldNote, HeldSourceNote } from "@/app/components/items/HeldNote";
+import type { EntryCount } from "@/shared/items/held-count";
 import QuestPickupAdd from "@/app/components/items/QuestPickupAdd";
 import AskValue from "@/app/components/AskValue";
 import ItemLink, { NameList } from "@/app/components/items/ItemLink";
@@ -33,6 +39,7 @@ import {
   type ItemDemand,
   type ListGroup,
 } from "@/shared/items/grouping";
+import { moveGroup, moveRow } from "@/shared/items/list-order";
 import {
   groupDropsByZone,
   splitDropsByCurrentZone,
@@ -59,7 +66,10 @@ const MAX_COUNT = 100_000;
  * quest/craft sources, color-coded.
  */
 export default function ListPanel() {
-  const list = useShoppingList();
+  // The list as it counts: a row's figure is the larger of its own tally and what your last inventory dump
+  // plus the ledger since says you hold (ADR 0382). `counts` says which it was, for the row to explain.
+  const { list, counts, dump } = useCountedList();
+  const { log: canReadLog } = useCapabilities();
   const flashed = useMatchFlashes();
   const zone = useCurrentZone();
   // Read once here and passed down, not read per row: `useSettings` costs an IPC read and a listener
@@ -68,7 +78,8 @@ export default function ListPanel() {
   // Same reasoning as `askLucy` — `useClosedZones` costs a message per mount, so the live half of the
   // era judgement is read once and passed down rather than once per row.
   const closedZones = useClosedZones();
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  // Which groups are folded shut — kept across restarts (ADR 0388), so a list tidied once stays tidy.
+  const [collapsed, setCollapsed] = usePersistentState<Record<string, boolean>>(STORAGE_KEYS.listCollapsed, {});
   const [styling, setStyling] = useState(false);
   // Which items your running goals want (ADR 0198) — emphasized while focus is on, and the rest
   // hidden as well once the reader also asks for that. Read once here, not per row, for the same
@@ -83,7 +94,39 @@ export default function ListPanel() {
   // Who wants each item and how many: the parenthetical grand total, and the hover that
   // names the quests/recipes behind it.
   const demands = itemDemands(groups);
-  const toggle = (key: string) => setCollapsed((c) => ({ ...c, [key]: !c[key] }));
+  // Only shut groups are stored, and a key for a group that has since gone is dropped on the way past — otherwise
+  // every quest ever folded would stay in the saved state for good.
+  const groupKeys = new Set(groups.map((g) => g.key));
+  const toggle = (key: string) =>
+    setCollapsed((c) => {
+      const kept = Object.fromEntries(Object.entries(c).filter(([k]) => k !== key && groupKeys.has(k)));
+      return c[key] ? kept : { ...kept, [key]: true };
+    });
+  // What a goal-focused list leaves on screen in a group — the rows that can be dragged, and drawn.
+  const visibleRows = (g: ListGroup) => (focus.active && focus.hiding ? g.entries.filter((e) => matchesGoalFocus(e, focus)) : g.entries);
+  // Who may be dropped beside whom. Finished groups and rows sink below unfinished ones whatever their order, so a
+  // drag across that line would only snap back: each bucket is its own run. "Other items" never moves.
+  const groupSiblings = (key: string): string[] => {
+    const g = groups.find((x) => x.key === key);
+    return g && g.kind !== null ? groups.filter((x) => x.kind !== null && x.complete === g.complete).map((x) => x.key) : [];
+  };
+  const rowSiblings = (id: string): string[] => {
+    const g = groups.find((x) => x.entries.some((e) => e.id === id));
+    const row = g?.entries.find((e) => e.id === id);
+    if (!g || !row) return [];
+    const done = (e: ShoppingListEntry) => !isMobEntry(e) && satisfied(e, g.runs);
+    return visibleRows(g).filter((e) => done(e) === done(row)).map((e) => e.id);
+  };
+  // A move is the whole new order, sent as one array (list-order.ts) — the same order that decides which row is
+  // handed held items first (ADR 0387), so arranging the list is how you say which quest the chips are for.
+  const groupMoves = useReorder({
+    siblingsOf: groupSiblings,
+    onMove: (key, target, after) => void api()?.list.reorder(moveGroup(list.entries, key, target, after)),
+  });
+  const rowMoves = useReorder({
+    siblingsOf: rowSiblings,
+    onMove: (id, target, after) => void api()?.list.reorder(moveRow(list.entries, id, target, after)),
+  });
   const setRuns = (g: ListGroup, delta: number) => api()?.list.setRuns(g.key, g.runs + delta);
   const removeGroup = (g: ListGroup) => Promise.all(g.entries.map((e) => api()?.list.remove(e.id)));
 
@@ -102,6 +145,8 @@ export default function ListPanel() {
           <span className="muted small">
             {count(list.entries.length, "item")} watched · {count(groups.length, "group")}
           </span>
+          {/* Only where there is a game to dump from — a browser has no /outputfile to suggest. */}
+          {canReadLog && dump !== undefined && <HeldSourceNote dump={dump} />}
           <span className="spacer" />
           <QuestPickupAdd />
           {armed && (
@@ -137,11 +182,27 @@ export default function ListPanel() {
           // While focused *and* hiding, a group with nothing goal-relevant left in it has nothing to
           // show at all — its header would just be an empty shell over a group the reader asked to
           // stop seeing.
-          const visible = focus.active && focus.hiding ? g.entries.filter((e) => matchesGoalFocus(e, focus)) : g.entries;
+          const visible = visibleRows(g);
           if (focus.active && focus.hiding && visible.length === 0) return null;
+          const drop = groupMoves.target(g.key);
           return (
-            <div className={`group ${g.complete ? "done" : ""}`} key={g.key}>
+            <div className={`group ${g.complete ? "done" : ""} ${drop.mark}`.trim()} key={g.key} {...drop.props}>
               <div className="group-header" onClick={() => toggle(g.key)}>
+                {/* Not for "Other items": it is the catch-all that stays last. A grip is a button for the
+                    keyboard's sake, so its click must not also fold the group. */}
+                {g.kind && (
+                  <span
+                    className="drag-handle"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Move ${g.label}`}
+                    title="Drag to move this group — or focus it and press Alt with ↑ or ↓"
+                    onClick={(ev) => ev.stopPropagation()}
+                    {...groupMoves.handle(g.key)}
+                  >
+                    ⠿
+                  </span>
+                )}
                 <Caret open={!isCollapsed} />
                 {g.kind && <span className={`badge kind-${g.kind}`}>{g.kind}</span>}
                 {/* "Other items" has no page behind it — nothing to open — so it stays plain text;
@@ -216,8 +277,12 @@ export default function ListPanel() {
                     <EntryRow
                       key={e.id}
                       entry={e}
+                      grip={rowMoves.handle(e.id)}
+                      drop={rowMoves.target(e.id)}
                       runs={g.runs}
                       demands={demands.get(normalizeItemName(e.name)) ?? []}
+                      count={counts.get(e.id)}
+                      now={dump?.now ?? 0}
                       flashing={flashed.has(e.id)}
                       currentZone={zone}
                       askLucy={askLucy}
@@ -239,18 +304,30 @@ export default function ListPanel() {
 
 function EntryRow({
   entry,
+  grip,
+  drop,
   runs,
   demands,
+  count: counted,
+  now,
   flashing,
   currentZone,
   askLucy,
   closedZones,
   goalMatch,
 }: {
+  /** The entry as it counts: its `obtained` is the figure used (`useCountedList`). */
   entry: ShoppingListEntry;
+  /** What the row's grip is given to start a move (ADR 0388) — and what the row is given to be dropped on. */
+  grip: ReturnType<Reorder["handle"]>;
+  drop: ReturnType<Reorder["target"]>;
   runs: number;
   /** Every group wanting this item — the source of the "(N)" hint and its hover. */
   demands: ItemDemand[];
+  /** How `entry.obtained` was reached, and what the inventory said — absent for a mob. */
+  count?: EntryCount;
+  /** The clock the dump's age is measured against. */
+  now: number;
   flashing: boolean;
   currentZone: string | null;
   /** Whether to offer the ↗ Lucy link. Passed rather than read here — see `ListPanel`. */
@@ -284,7 +361,8 @@ function EntryRow({
     .join(" ");
   // +/- adjust how many you've ACQUIRED (obtained); needed comes from the quest/recipe
   // qty × the group's runs. Obtained can exceed need (you can over-loot) but not go below 0.
-  const setObtained = (delta: number) => api()?.list.update(entry.id, { obtained: Math.max(0, entry.obtained + delta) });
+  // A figure you set is yours: the inventory stops raising it (`countedByHand`) until you hand it back (↺).
+  const setObtained = (delta: number) => setHave(entry.id, entry.obtained + delta);
   // The figures themselves are typed into as well — 800 Phosphorous Powder is not 800 presses of +.
   // Need is stored per run, so with runs set the box asks for the per-run figure it scales.
   const perRun = runs > 1;
@@ -325,8 +403,18 @@ function EntryRow({
   const bestOther = !bestZone ? (others[0] ?? null) : null;
 
   return (
-    <div className="entry-wrap">
+    <div className={`entry-wrap ${drop.mark}`.trim()} {...drop.props}>
       <div className={cls}>
+        <span
+          className="drag-handle"
+          role="button"
+          tabIndex={0}
+          aria-label={`Move ${entry.name}`}
+          title="Drag to move this item within its group — or focus it and press Alt with ↑ or ↓"
+          {...grip}
+        >
+          ⠿
+        </span>
         <button className="entry-caret" title="Where to get it" onClick={toggle}>
           {caretGlyph(open)}
         </button>
@@ -353,6 +441,9 @@ function EntryRow({
               )}
             </div>
           )}
+          {/* Under the name rather than in the row's own line: a narrow window has no room for a second
+              figure beside the count, and the count wrapped when it was tried there. */}
+          {counted && <HeldNote count={counted} need={need} now={now} onUseInventory={(held) => countFromInventory(entry.id, held)} />}
         </div>
         {/* A mob has no count to show and never will: nothing drops it, so "0 of 1" would be a
             progress bar that can't move. It says what it *is* instead — a thing to go and kill,
@@ -373,7 +464,7 @@ function EntryRow({
               initial={entry.obtained}
               max={MAX_COUNT}
               step={1}
-              onSubmit={(obtained) => api()?.list.update(entry.id, { obtained: Math.round(obtained) })}
+              onSubmit={(obtained) => setHave(entry.id, Math.round(obtained))}
             />{" "}
             of{" "}
             <AskValue

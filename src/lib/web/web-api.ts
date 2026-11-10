@@ -139,6 +139,7 @@ function createWebApi(): EqlApi {
       remove: async (id) => store.removeFromList(id),
       clear: async () => store.clearList(),
       setRuns: async (originKey, runs) => store.setListRuns(originKey, runs),
+      reorder: async (ids) => store.reorderList(ids),
       onChanged: (cb) => store.onListChanged(cb),
     },
 
@@ -203,6 +204,7 @@ function createWebApi(): EqlApi {
       onPricesChanged: () => noop,
       items: async () => [],
       search: async () => [],
+      since: async () => [],
       dropsPage: async () => ({ rows: [], total: 0, tallies: { kept: 0, sold: 0, stored: 0, combined: 0 } }),
       vocabulary: async () => ({ sources: [], zones: [] }),
       onEvent: () => noop,

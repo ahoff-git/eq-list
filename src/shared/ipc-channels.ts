@@ -13,6 +13,7 @@ export const CH = {
   listRemove: "list:remove",
   listClear: "list:clear",
   listSetRuns: "list:setRuns",
+  listReorder: "list:reorder",
   // settings (invoke)
   settingsGet: "settings:get",
   settingsUpdate: "settings:update",
@@ -30,6 +31,8 @@ export const CH = {
   lootPrices: "loot:prices",
   lootItems: "loot:items",
   lootSearch: "loot:search",
+  /** What the ledger saw of some items after a moment — the loot half of a held count (ADR 0382). */
+  lootSince: "loot:since",
   /** One page of the whole ledger, filtered and sorted server-side — what `DropTable` asks for
    *  instead of paging client-side over an already-fetched `loot:search` array (ADR 0254). */
   lootDropsPage: "loot:dropsPage",

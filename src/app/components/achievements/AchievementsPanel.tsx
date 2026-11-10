@@ -16,7 +16,7 @@ const achievementSearchText = (a: RunningAchievement): string =>
   `${a.definition.title} ${a.definition.category ?? ""}`;
 
 /** How many criteria before a row grows its own filter box — a handful read fine as a plain list;
- *  "Grand Tour"'s couple hundred zones don't. */
+ *  a custom tour of every zone doesn't. */
 const FILTER_ABOVE = 15;
 
 /**

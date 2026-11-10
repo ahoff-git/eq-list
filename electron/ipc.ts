@@ -218,6 +218,9 @@ function registerListIpc(context: IpcContext): void {
   ipcMain.handle(CH.listRemove, (_e, id: string) => store.removeEntry(id));
   ipcMain.handle(CH.listClear, () => store.clearList());
   ipcMain.handle(CH.listSetRuns, (_e, originKey: string, runs: number) => store.setQuestRuns(originKey, runs));
+  // Whatever arrives is only ever an order: ids that name nothing are ignored by `applyOrder`, so all that is
+  // checked here is that it is a list of strings and not something else wearing one's name.
+  ipcMain.handle(CH.listReorder, (_e, ids: unknown) => store.reorder(Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : []));
 
 }
 
@@ -796,6 +799,9 @@ function registerStatsIpc(context: IpcContext, mergedFight: PeerIpc["mergedFight
   // Reaches the whole ledger, not just whatever's been fetched — what `LootFilterBar` calls the
   // moment any filter engages, now that there's no cap to fetch "everything" up to (ADR 0232/0240).
   ipcMain.handle(CH.lootSearch, (_e, filter: LootSearchFilter) => lootLog.search(filter));
+  // What the named items did after the last inventory dump — the shopping list's "you already hold this"
+  // adds it to the dump's own count (ADR 0382).
+  ipcMain.handle(CH.lootSince, (_e, stamp: string, names: string[]) => lootLog.since(stamp, names));
   // One page of the whole ledger, filtered and sorted server-side — what `DropTable` asks for
   // instead of paging client-side over an already-fetched `lootSearch` array (ADR 0254).
   ipcMain.handle(CH.lootDropsPage, (_e, query: LootDropsQuery) => lootLog.dropsPage(query));

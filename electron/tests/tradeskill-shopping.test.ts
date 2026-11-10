@@ -111,6 +111,38 @@ test("what a fourth stop would sell isn't dropped — it's named as sold elsewhe
   assert.deepEqual(plan.elsewhere, ["D"]);
 });
 
+test("a merchant the wiki lists twice for one item is named once, and doesn't use up a second place", () => {
+  // "a clockwork tanner" stands at two stalls in Ak'Anon; a plan row names the merchant, so two spots repeat the row.
+  const twice: Record<string, VendorSpot[]> = {
+    "Boot Pattern": [
+      { zone: "Ak'Anon", merchant: "a clockwork tanner", y: 1, x: 1 },
+      { zone: "Ak'Anon", merchant: "a clockwork tanner", y: 2, x: 2 },
+      { zone: "Ak'Anon", merchant: "Rylin Coil", y: 3, x: 3 },
+    ],
+  };
+  const plan = whereToBuy(["Boot Pattern"], twice, "Ak'Anon", new Set());
+  assert.deepEqual(plan.here.map((h) => [h.merchant, h.loc]), [
+    ["a clockwork tanner", { y: 1, x: 1 }],
+    ["Rylin Coil", { y: 3, x: 3 }],
+  ]);
+});
+
+test("the committed table never plans the same merchant twice for one item, wherever you stand", () => {
+  // The Tailoring guide's React warning (two children with the same key: Mask Pattern) came from this. Every zone, every item.
+  const zones = new Set<string>();
+  for (const spots of Object.values(VENDORS)) for (const v of spots) zones.add(v.zone);
+  const clashes: string[] = [];
+  for (const zone of [null, ...zones]) {
+    const seen = new Set<string>();
+    for (const h of whereToBuy(Object.keys(VENDORS), VENDORS, zone, new Set()).here) {
+      const key = `${h.merchant}|${h.item}`;
+      if (seen.has(key)) clashes.push(`${zone}: ${key}`);
+      seen.add(key);
+    }
+  }
+  assert.deepEqual(clashes, []);
+});
+
 test("no zone from the log still gives stops", () => {
   const plan = whereToBuy(["Sheet Metal"], V, null, new Set());
   assert.deepEqual([plan.here.length, plan.stops[0]?.zone], [0, "East Freeport"]);

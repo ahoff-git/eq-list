@@ -5,8 +5,9 @@ import { useSettings } from "@/lib/hooks";
 import { playAlertSound, DEFAULT_ALERT_SOUND } from "@/lib/alerts/alertSounds";
 import { categoryOf, formatScore } from "@/shared/combat/high-scores";
 import { alertPlacement } from "@/shared/alerts/alert-styles";
+import { formatCoins } from "@/shared/money";
 import { alternativesLabel, ON_PET, ON_UNKNOWN, ON_YOU } from "@/shared/buffs/buff-tracking";
-import type { AchievementAlertPayload, AlertPositionValue, AlertStyle, BuffInstance, CastAlertEvent, CelebrationAlert, GoalAlertPayload, HighScore, LootAlert } from "@/shared/types";
+import type { AchievementAlertPayload, AlertPositionValue, AlertStyle, BuffInstance, CastAlertEvent, CelebrationAlert, GoalAlertPayload, HighScore, LootAlert, SoldAlert } from "@/shared/types";
 
 const DEFAULT_DURATION_MS = 6000;
 const MIN_DURATION_MS = 1000;
@@ -116,7 +117,7 @@ export default function CastAlerts({ canBeep = true, showVisual = true }: { canB
             return (
               <button
                 key={a.id}
-                className={`cast-alert anim-${a.resolved.animation}`}
+                className={`cast-alert anim-${a.resolved.animation}${a.event === "sold" ? " ca-big" : ""}`}
                 style={accent(a.resolved.color)}
                 title="Dismiss"
                 onClick={() => setAlerts((prev) => prev.filter((x) => x.id !== a.id))}
@@ -160,6 +161,10 @@ function banner(a: CastAlertEvent): { icon: string; body: ReactNode; hint?: stri
           // a glance as "someone else's good news" rather than your own drop.
           : a.event === "celebration"
             ? "🎊"
+          // A tracked item the game sold out from under you (ADR 0385) — the siren, not the coin pouch:
+          // the same drop a 💰 would celebrate, and the opposite news.
+          : a.event === "sold"
+            ? "🚨"
           : a.event === "line"
             ? "💬"
             : a.event === "fade"
@@ -194,6 +199,8 @@ function banner(a: CastAlertEvent): { icon: string; body: ReactNode; hint?: stri
   // A peer's own win, the same case again: nothing wrote it a sentence, and it is never checked
   // against anything on *your* list (ADR 0287).
   if (a.event === "celebration" && a.celebration) return celebrationBanner(a.celebration);
+  // And a tracked item the game auto-sold, the same again: the facts are all in the payload (`soldAlert`).
+  if (a.event === "sold" && a.sold) return soldBanner(a.sold);
   // And a lapsed buff, for the same reason again: nothing wrote it a sentence, and the facts it words
   // itself from — which spell, on whom, and whether we could narrow it — are all in the payload.
   if (a.event === "buff" && a.buff) return buffBanner(a.buff);
@@ -392,6 +399,24 @@ function lootBanner(loot: LootAlert): { icon: string; body: ReactNode; hint?: st
     // News rather than a warning, so it says where it came from instead of what to press — which is
     // also the one thing the loot line knows that the list doesn't.
     hint: loot.source ? `from ${loot.source}` : "on your list",
+  };
+}
+
+/**
+ * A tracked item the game auto-sold (ADR 0385). The **item leads**, as in a drop's banner, and the verdict
+ * is shouted: this is the one drop banner that is bad news, and it is drawn larger than the rest (`ca-big`).
+ * What the vendor paid is in the hint — it is the one thing the player can weigh against what they lost.
+ */
+function soldBanner(sold: SoldAlert): { icon: string; body: ReactNode; hint?: string } {
+  return {
+    icon: "🚨",
+    body: (
+      <>
+        <b>{sold.item}</b>
+        {sold.qty > 1 ? ` ×${sold.qty}` : ""} was <b>AUTO-SOLD</b>
+      </>
+    ),
+    hint: sold.soldFor !== undefined ? `on your list · sold for ${formatCoins(sold.soldFor)}` : "on your list",
   };
 }
 

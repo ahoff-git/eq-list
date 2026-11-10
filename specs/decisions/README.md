@@ -422,9 +422,23 @@ finished, so a number is claimed before a second author can reach for it.
 - [0379: Quitting writes every pending save, and a session end counts as quitting — `before-quit` flushed a hand-written list that never held the achievements or the panel settings, and a Windows shutdown/restart/log-off never emits it at all; savers now register while they have a write waiting, and `session-end` saves as quitting does](./0379-quitting-writes-every-pending-save.md)
 - [0380: Alarms the clock passed while the machine slept are history, not news — a sweep more than 30 s after the last is a gap, not a tick; a 3-hour sleep fired an 8 PM alarm but not the 3 AM one the clock passed just the same](./0380-alarms-the-clock-passed-while-asleep-are-history.md)
 - [0381: A sale for free is a price of zero — "sold it for free" read as no price and the item was left off the Sells-for table (441 sales, 84 items in a real log); parseSalePrice carries the zero](./0381-a-sale-for-free-is-a-price-of-zero.md)
+- [0382: The shopping list counts what you hold — a row counts the larger of its own tally and (inventory dump + drops since, each section from its own date; an auto-sell is never held; a combine or a currency-tab drop makes it unknown), unless the player typed it (`countedByHand`); the sum is one hover away and an old dump turns amber](./0382-the-shopping-list-counts-what-you-hold.md)
+- [0383: An achievement the game already awards is not ours to repeat — 24 of 37 stock achievements restated one of the game's (and Craftmaster, a skeleton counted as an Iksar, and a guildmate's chat all fired falsely); a stock line criterion is read from the start of the line, and a counted criterion banners only when it finishes, never as progress (200 banners over a real log, 5 after)](./0383-an-achievement-the-game-awards-is-not-ours-to-repeat.md)
+- [0384: The running app is smoke-tested by a committed suite, not by hand — `npm run smoke` launches an isolated instance (scratch userData, no network from either process, peer room off) and runs a tab sweep with the checklist's table assertions, a quit probe, a `WM_ENDSESSION` probe and an IPC fuzz; each check is shown able to fail by `--inject-fault` and, for the quit probes, by running against the build from before ADR 0379](./0384-the-running-app-is-smoke-tested-by-a-suite-not-by-hand.md)
+- [0385: An auto-sold drop is not counted toward the shopping list — it is warned about — the game vendors it as it is looted, so it never reached you: `applyLoot` credits nothing for a `sold` line, and a tracked item that is sold raises one oversized banner in the alert-defaults look (ignoring the row's bell, but not the master switch), while a goal still counts it](./0385-an-auto-sold-drop-is-not-counted-toward-the-list.md)
+- [0386: A walk of the page cache holds nothing open across a yield — an open row iterator made the shared connection busy and refused the faction recheck's transaction at startup; a walk now reads key-ordered chunks with `.all()` and carries its position as a value](./0386-a-walk-of-the-page-cache-holds-nothing-open-across-a-yield.md)
+- [0387: Rows that want the same item share what you hold — 3 + 5 + 2 Bone Chips wanted and 5 held is 5 of the 10, not 5 for each: rows keep their own tallies, the rest of the pile fills them in list order (`shareHeld`), and a looted stack is split the same way (`creditLoot`/`splitAcross`); each row's 🎒 note says its part](./0387-rows-wanting-the-same-item-share-what-you-hold.md)
+- [0388: The order of the shopping list is the player's, and so is which groups are folded — the stored order of `entries` is the order (drawn, and handed items first), an old list is sorted A–Z once and marked `arranged`, groups and rows move by a **⠿** grip (drag, or Alt+↑/↓) as one `list.reorder` array, finished runs and "Other items" stay put, and shut groups are kept across restarts](./0388-the-order-of-the-list-is-the-players.md)
 
 ## Open Questions
 
+- **Should the `raceKill` criterion and `mob-races` be removed?** [ADR 0383](./0383-an-achievement-the-game-awards-is-not-ours-to-repeat.md)
+  pruned every stock achievement that used them (the game's Slayer achievements count races itself), so
+  `raceKill`, `matchesRaceKill`, `AchievementTracker.kill`, `mob-races.ts`, its 7,790-entry generated table
+  and `scripts/build-mob-races.mjs` have no shipped user, and `isRace` matches by substring (a generic
+  `skeleton` is "Iksar Skeleton"). Open: delete them as dead weight, or keep them as the one criterion
+  that reads a parsed `KillEvent` rather than text — with `isRace` made exact — for a future achievement
+  the game doesn't award.
 - **What multiplier is each difficulty tier, really?** [ADR 0348](./0348-a-mob-card-is-scaled-by-difficulty.md)
   scales a mob card on the wiki's relative tiers with an unsourced 100/130/170/220/300% ladder. The
   app could measure it: the damage dealt to kill a mob at a known difficulty (the zone name carries
@@ -773,3 +787,7 @@ and degrading to blank facts when the file isn't there.*
   showed and the gear worn, and re-derive the offsets under whatever basis the plan has now. [ADR 0370](./0370-a-stats-read-says-who-you-are-and-a-bad-one-says-what-went-wrong.md) made the classes and level
   come from the window itself, which leaves the race — not on that page — as the one input a read can still be
   taken before.
+- **Should a ledger row say which character it is?** `loot_records` has no character, so
+  [ADR 0382](./0382-the-shopping-list-counts-what-you-hold.md)'s held count adds a second character's loot since the
+  main's dump to the main's count. Open: stamp each row with the followed log's `<Character>_<server>` at record
+  time (a migration, with older rows left unstamped and counted for whoever is followed), or leave it to the override.

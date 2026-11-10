@@ -841,7 +841,9 @@ unit-tested.
   Kael's cached page, where 168 of 508 were item cards): real mobs are kept, including unknown levels; a mob whose name only
   *sounds* like a card is still a mob; and a page already cached is read back clean, with only a zone page's roster touched
   ([ADR 0377](../decisions/0377-a-cached-page-is-read-back-tidy.md)). `page-store-walk.test.ts` holds two overlapping walks of
-  the cache to both finishing; `wiki-spell-cache.test.ts` folds an aliased spell page to one row.
+  the cache to both finishing, **and another store's transaction landing while a walk is yielded** (it threw "This database connection is busy
+  executing a query" while a walk held an iterator open — the faction recheck at startup; [ADR 0386](../decisions/0386-a-walk-of-the-page-cache-holds-nothing-open-across-a-yield.md)),
+  and a page re-put mid-walk not being visited twice; `wiki-spell-cache.test.ts` folds an aliased spell page to one row.
 - `src/shared/search-query.ts` → `electron/tests/search-query.test.ts` (a typed search is capped): only a string is a query, and only its
   first 120 characters count; and over a cache whose title index is already fresh (nothing fetched), a 20,000-character query is
   answered at once (it took ~15 s), a `null`/number/object term is the empty search rather than a rejection, and an ordinary
@@ -860,6 +862,41 @@ unit-tested.
 - `electron/tests/money.test.ts`, `log-parser.test.ts`, `loot-log.test.ts` (a free sale): `free` is a price of zero (and only the whole word); the
   loot line carries `soldFor: 0`; an item that only ever sold for free is on the price table at 0c; and rows already stored with a NULL price and
   `free` in their detail are priced too, with no migration ([ADR 0381](../decisions/0381-a-sale-for-free-is-a-price-of-zero.md)).
+- `src/shared/items/held-count.ts` → `electron/tests/held-count.test.ts` (what the shopping list holds, [ADR 0382](../decisions/0382-the-shopping-list-counts-what-you-hold.md)).
+  **Dump rows and ledger rows are the real character's** (`Kainos_qeynos-Inventory.txt`, `loot_records`). Pinned: a stack counts as its
+  count, across every area; a drop counts only **strictly after** the dump's second (a row at the dump's own second is in it); a carried
+  depot is counted from **its** date, not the dump's, while a kept drop still counts from the dump's; an **auto-sell adds and takes nothing**
+  and is told apart; what left (`gone`) is subtracted but floors at 0 and flags the dump as out of date; a combine, or a drop stored in the
+  currency tab, makes the item **unknown** rather than guessed; grades, case and spacing meet across list, dump and ledger. And against the
+  list: with no dump a row is exactly as stored; the row counts the **larger** of its tally and the inventory's, so it can raise a count and
+  never lower one; a typed figure always wins; a list saved before `countedByHand` existed reads unchanged. `list-count-store.test.ts`
+  holds the stored shape (an old file loads as it was, the flag persists and clears, a typed row still gains from loot) and `loot-log.test.ts`
+  `since` (after the stamp only, named items only, grades folded). It also pins `applyLoot`'s fates: an **auto-sold drop matches nothing** (no
+  count, so no loot banner or celebration either) while kept, stored and combined drops count their quantity; and that `soldOnList` finds the rows
+  a sale was for **without crediting them**, by the same match, never for another fate, an untracked item or a mob row. `alert-router.test.ts`
+  pins the warning itself: it carries the item, quantity and what it fetched (0 for a free sale), wears the alert defaults and not the Loot
+  look, ignores the row's bell, is one banner for several rows and none for no row, and stays silent when the overlay is off or the sale is
+  a replayed old one ([ADR 0385](../decisions/0385-an-auto-sold-drop-is-not-counted-toward-the-list.md)).
+  **One pile, however many rows want the item** ([ADR 0387](../decisions/0387-rows-wanting-the-same-item-share-what-you-hold.md)), pinned on the
+  case that motivated it (3 + 5 + 2 Bone Chips wanted): 5 held is 3, 2 and 0 — never all three ticked; 10 fills every row and 12 puts the extra on
+  the first; a row's own tally comes out of the pile before the rest is shared and is never lowered; a typed figure takes from the pile and is
+  never topped up; a group's runs scale what it wants; a grade and a case still meet; different items and a mob never share; one row is exactly as
+  before; an unknown count shares nothing. `grouping.test.ts` pins `splitAcross` and `list-count-store.test.ts` the same split for a looted stack
+  (5, then 4, then 3 chips down the same three rows), by the group's runs, with `applyLoot` returning only the rows reached.
+- `src/shared/items/list-order.ts` → `electron/tests/list-order.test.ts` (the list's order is the player's, [ADR 0388](../decisions/0388-the-order-of-the-list-is-the-players.md)):
+  the one sort an old list gets (groups A–Z, "Other items" last, rows A–Z) is **exactly how it was always drawn**, is marked, and never
+  repeats over a player's arrangement; a row moves before or after another of its own group and nowhere else (not across groups, not against
+  itself or a missing id), even when its group's rows aren't side by side in storage; a group moves as a block and "Other items" neither moves nor
+  is moved against; `applyOrder` takes an order that is a little behind the list without dropping a row, ignores ids that name nothing and
+  repeats, and returns the same entry objects. `list-order-store.test.ts` pins the store: an old list loads sorted and marked, a row added later
+  joins the end and stays there after a restart, a reorder survives a restart, and the order a list is arranged in is the order a looted stack is
+  handed out (ADR 0387). `grouping.test.ts` pins that `groupByOrigin` keeps the order it is given within each bucket, floats finished groups
+  below unfinished ones, and keeps "Other items" last. **Drag-and-drop, the keyboard moves and the folded state surviving a restart** are
+  proved on the real app (a scripted drag with real `DragEvent`s, Alt+arrows, then a quit and relaunch on the same userData), not unit-tested.
+- `src/shared/tradeskills/where-to-buy.ts` → `electron/tests/tradeskill-shopping.test.ts`: a merchant the wiki lists twice for one item (Merchant
+  Gaeadin under Greater Faydark and Kelethin; "a clockwork tanner" at two Ak'Anon stalls) is planned once and doesn't use up a second place, and
+  **over the committed vendor table, from every zone, no (merchant, item) pair is planned twice** — 24 were, and each repeated a row in Craft's
+  Where to buy and gave React a duplicate key.
 - `electron/tests/spec-links.test.ts`: every relative link in the specs resolves, and every decision record a source comment
   cites exists — the October reorganisation left 23 links across 17 records pointing at moved files.
 - **Guides' labels** (`guides.test.ts`): every `**bold**` UI label in a guide must be spelled somewhere in the app's own source
@@ -936,6 +973,71 @@ parsers to see what they couldn't read — is the unread-line tally
 activity rather than an assertion. If a real line ever needs pinning as a fixture, sanitise it
 first: no chat or tells, character names replaced.
 
+## The smoke suite
+
+`npm run smoke` launches the **real desktop app** beside the player's own and checks it
+([ADR 0384](../decisions/0384-the-running-app-is-smoke-tested-by-a-suite-not-by-hand.md)). The unit tests above are
+per-module black boxes; this is for the things that only happen when the parts run together — a console error on
+one tab, a store that never reached disk because the app was quit a moment after a change, a shutdown, a hostile
+argument into the IPC. Code is in `scripts/smoke/` (plain Node ESM); `smoke.mjs --help` is the usage.
+
+```bash
+npm run smoke                                   # everything, about five minutes
+npm run smoke -- --only sweep,ipc-fuzz          # sweep | persistence | session-end | ipc-fuzz
+npm run smoke -- --no-live --verbose            # a fixture profile only; show what each pass looked at
+npm run smoke -- --inject-fault no-pager        # break one thing on purpose; the owning check must go red
+npm run smoke -- --app-rev 42b8860              # the main process as it was at a git revision
+EQL_SMOKE_DIR=<folder> EQL_DEBUG=1 npm run smoke   # where scratch goes; the repo's debug switch
+```
+
+**It is isolated.** The app runs on a scratch `--user-data-dir` (so it never collides with the running "EQ List" and
+never touches `%APPDATA%\eq-list`), with the renderer unable to reach any host but this machine and a `--require`
+guard refusing every outside `fetch` from the main process (the report says how many it refused). The peer room,
+location sharing and the Lucy lookup are off in the seeded settings. If the player has a database, a **read-only copy**
+of it seeds the run (so real data is what gets swept); either way the sample evening (kills, loot, coin, sales) and, where
+the ledger lacks them, a batch of faction hits are appended to the character's log — once the app is demonstrably
+following it, because lines written in the first seconds after a launch are never read, so a lone faction hit is
+appended until one is filed before the batch goes in. A dev server is reused if one is already serving this
+renderer, otherwise started and stopped. Processes are ended by PID; the last row of the report checks that none of the
+run's is left. An unpackaged launch also **re-registers the `eqlist://` link handler** to bare `electron.exe` (the app
+does it at startup), which would break the player's links until they next ran the installed app, so the run puts that
+registry key back and says so in the same row. Nothing here needs the game, but it **does need a desktop session** (windows appear while it runs),
+Windows for the process work, and the Electron build of `better-sqlite3` — `presmoke` runs `rebuild:electron`, so
+`npm test` (which swaps it back) and `npm run smoke` cannot run together. Never run `npm run build:next` while its dev
+server is up.
+
+**What each check asserts** (a row per kind of finding; `skip` is shown and is not a failure):
+
+| Check | Asserts |
+|---|---|
+| `sweep: every section` / `page errors` / `broken values` | every section of every area in `AREAS` (the app's own table, read from the build) and every view in it opens within a bound; no error-level console output, uncaught exception, or `ERROR` in the main process's log that is not in `lib/allowlist.mjs` (each entry carries its reason); no crash boundary showing; no `NaN`, `undefined` or `[object Object]` on screen. The map window is opened and listened to as well. |
+| `grid: present` / `column menu` / `manage columns` / `pager footer` / `sort then page` | on Items, Spells, Loot Drops and Sells for, Faction Hits and Standings, and Session's per-mob and per-zone tables (`checks/grid-expectations.mjs`; the per-zone one only has rows on a copy of real history, so a fixture run skips it): the table shows; two text and two number columns' menus sort both ways and open a Filter on "contains" / a comparison (Loot Drops, paged on the server, must offer **no** Filter); **Manage columns** lists the extras the checklist names, unticked; a pager with a range and at least three page sizes (and, where the grid fills its tab, on screen); sorting then ▶ keeps the sort, advances the page, and a re-sort from page 2 returns to page 1. |
+| `faction hits: ▶ ◀ rows per page` | the regression `manual-qa.md` describes: ▶ moves to a different first row, ◀ returns to the first, a new page size changes the range shown. |
+| `persistence: quit` | an achievement, a panel setting and a game-clock alarm changed through the real API survive a `Browser.close` within the shortest debounce and a relaunch on the same userData ([ADR 0379](../decisions/0379-quitting-writes-every-pending-save.md)). |
+| `persistence: session end` | the same three survive the real `WM_ENDSESSION` (`SendMessageTimeout(hwnd, 0x16, 1, 0x80000000)`) followed by the process being ended — Windows' shutdown path, which never emits `before-quit`. |
+| `ipc-fuzz` | every side-effect-free function on `window.eql` called with ten hostile argument shapes (none, `null`, `{}`, a string, `-1`, `[]`, `NaN`, two `null`s, a nested object, a 2 MB string) leaves the main process answering `/json/version` after each call ([ADR 0378](../decisions/0378-a-typed-search-is-capped-before-it-searches.md)). Skipped functions are listed with a reason in `checks/fuzz-plan.mjs`. |
+| `cleanup` | no process started with this run's scratch folder is left, and a dev server this run started is stopped. |
+
+**Each check was shown able to fail**, because a suite that cannot go red is worth nothing. `--inject-fault`
+(`lib/faults.mjs`) breaks one thing from inside the suite — `console-error`, `exception`, `broken-text`,
+`crash-shown`, `no-pager`, `arrow-stuck` (swallows the ▶ click, as the unstable `sortModel` did), `skip-flush` (ends
+the app with no chance to save) and `hang-main` (freezes the main process mid-fuzz) — and the owning row must fail. `--app-rev <rev>` is the
+stronger proof for the lifecycle probes: it builds the revision with `git archive` into scratch (the working tree is
+never touched) and runs the suite against it. Against `42b8860`, the revision before [ADR 0379](../decisions/0379-quitting-writes-every-pending-save.md),
+the quit probe loses the achievement and the setting and keeps the clock alarm, and the session-end probe loses all
+three, which is what was measured by hand when the bug was found.
+
+**Unit tests.** What decides is pure and lives beside the code as `scripts/smoke/**/*.test.mjs` — finding classification
+and the allowlist, the report, profile building (including that the live folder is left byte-for-byte untouched), the
+grid judges (each tested against the facts a *broken* grid would show), the fuzz plan, the sweep's plan and verdicts.
+`npm test` runs them with one more glob, because the compiled-test glob only reaches `electron/tests`; they load no
+SQLite and no app. The page scripts and drivers are proven by running, not unit-tested.
+
+**Not scripted** (stay on [manual-qa.md](./manual-qa.md)): how anything *looks* (colours, the light-mode flash, the
+grid reading as part of the app, a window filling when maximised or zoomed); Peers' scoreboard (it needs the room, which an
+isolated instance never joins); anything in the game or across two clients; native dialogs, the overlays over the game,
+and the global hotkeys.
+
 ## Guidance
 - **A view that names an item or a zone links it**, and `names-are-links.test.ts` fails one that
   doesn't. When a name really should stay text, add it to that test's `PLAIN` table with the reason —
@@ -959,9 +1061,10 @@ first: no chat or tells, character names replaced.
   re-verify them when unrelated code changes.
 
 ## Non-responsibilities
-- No end-to-end Electron/GUI tests — window behavior is verified by running the app
+- No end-to-end Electron/GUI tests in `npm test` — they need a desktop session, so the running-app checks are a
+  command of their own (`npm run smoke`, above). How a window *looks* is verified by running the app
   (`npm run dev`), and the loot pipeline by `npm run sim`. The dev sandbox is headless.
 - Network calls (the wiki API) are not hit in tests; parsers are tested on fixtures.
 
 ## See also
-[manual QA checklist](./manual-qa.md) · [log-watching](../log-watching/README.md) · [wiki-data](../wiki-data/README.md)
+[manual QA checklist](./manual-qa.md) · [log-watching](../log-watching/README.md) · [wiki-data](../wiki-data/README.md) · [ADR 0384](../decisions/0384-the-running-app-is-smoke-tested-by-a-suite-not-by-hand.md)

@@ -298,6 +298,24 @@ test("search treats a literal % or _ in the item text as text, not a LIKE wildca
   assert.deepEqual(l.search({ item: "100%" }).map((d) => d.item), ["100% Silk"]);
 });
 
+test("since returns only what came after the stamp, for the named items, grades and case folded", () => {
+  const l = freshLog();
+  l.add(drop("Bone Chips", 1));
+  l.add(drop("Bone Chips", 5)); // exactly at the stamp: the dump has it, so it is not "since"
+  l.add(drop("Bone Chips +2", 6));
+  l.add(drop("Rusty Dagger", 7));
+  l.add({ ...drop("Phosphorous Powder", 8), qty: 2, fate: "stored", detail: "tradeskill depot" });
+  const rows = l.since("2026-07-29T00:00:05", ["bone chips", "Phosphorous Powder"]);
+  assert.deepEqual(
+    rows.map((r) => [r.at, r.item, r.qty, r.fate, r.detail]),
+    [
+      ["2026-07-29T00:00:06", "Bone Chips +2", 1, "kept", undefined],
+      ["2026-07-29T00:00:08", "Phosphorous Powder", 2, "stored", "tradeskill depot"],
+    ],
+  );
+  assert.deepEqual(l.since("2026-07-29T00:00:05", []), [], "no names, no rows");
+});
+
 test("search narrows by the exact corpse", () => {
   const l = freshLog();
   l.add({ ...drop("Bone Chips", 1), source: "a kobold" });

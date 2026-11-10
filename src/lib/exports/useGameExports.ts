@@ -69,15 +69,26 @@ export function useExportDump(fileType: string, writtenAt: number | undefined): 
   return dump;
 }
 
-/** The followed character's newest inventory dump, parsed — or null when there's none. */
-export function useInventory(): { items: InventoryItem[] | null; at?: number } {
-  const { times } = useExportTimes();
+/**
+ * The followed character's newest inventory dump, parsed — or null when there's none. `carried` names the
+ * sections it left out and filled from an older dump, with that dump's date; `now` is the clock the read
+ * was made against, so an age shown beside it can't disagree with how old the dump was when it was read.
+ */
+export function useInventory(): {
+  items: InventoryItem[] | null;
+  at?: number;
+  carried?: GameExportDump["carried"];
+  now: number;
+  /** False until the first read has answered — so "no dump" isn't claimed of one that hasn't been read yet. */
+  read: boolean;
+} {
+  const { times, now } = useExportTimes();
   const cmd = exportCommandFor("inventory");
   const at = cmd ? lastExportedAt(cmd, times) : undefined;
   const dump = useExportDump("inventory", at);
   // With any section the dump left out carried from an older one, marked `asOf` (`readInventory`).
   const items = useMemo(() => (dump ? [...parseInventoryDump(dump.text), ...(dump.carriedItems ?? [])] : null), [dump]);
-  return { items, at: dump?.writtenAt };
+  return { items, at: dump?.writtenAt, carried: dump?.carried, now, read: dump !== undefined };
 }
 
 /** The best grade the followed character holds of each item, keyed by `normalizeItemName` — empty with no dump. */

@@ -78,6 +78,16 @@ export interface AlertRouter {
    */
   loot(event: LootEvent, entry: ShoppingListEntry, needed: number): void;
   /**
+   * The game auto-sold an item that is on the shopping list (`entries` is what it matched) — a loud warning,
+   * because the item is gone for good and the player can still change what the game sells (ADR 0385).
+   *
+   * Unlike `loot` it ignores each row's `notify`: that bell asks for *good news* about a row, and this is
+   * the one drop that is bad news about a row the player is relying on. The master switch and the replayed
+   * gap still apply, the same two `loot` obeys. One banner however many rows match (two quests wanting the
+   * same item are one sale).
+   */
+  autoSold(event: LootEvent, entries: readonly ShoppingListEntry[]): void;
+  /**
    * A peer's own tracked-item win just arrived — say so, if the player wants to see theirs
    * (ADR 0287). Skips steps 2 and 4 like `record`/`loot`: the hub already decided this was a new
    * celebration worth mentioning, and one held back until later wouldn't be.
@@ -168,6 +178,14 @@ export function createAlertRouter({ getSettings, getScoreSettings, getZone, rais
       // exactly what `showObtained` is for) would nag for ever about a thing you already have.
       if (entry.obtained - event.qty >= needed) return;
       raise(lootAlert(settings, event, entry, needed));
+    },
+
+    autoSold(event, entries) {
+      if (!entries.length) return;
+      const settings = getSettings();
+      if (!settings.enabled) return;
+      if (stale(event.at, Date.now())) return; // last night's replayed sale isn't news
+      raise(soldAlert(settings, event));
     },
 
     celebration(row, from) {
@@ -273,6 +291,26 @@ export function lootAlert(
       needed,
     },
     style: alertStyle(settings, { styleId: LOOT_STYLE_ID }),
+  };
+}
+
+/**
+ * The banner for a tracked item the game just sold out from under you.
+ *
+ * It wears the **alert defaults** — the shared look a dispel prompt has, red and flashing by default — and
+ * not the Loot look: the Loot style exists so a drop doesn't arrive "in the same red as 'dispel now'", and
+ * this is the drop that should (ADR 0385). It is still the player's look to change: they are the Alerts
+ * tab's defaults. The overlay draws it larger than an ordinary banner (`ca-big`); nothing here sizes it.
+ * Raw like `lootAlert`, and `spell` carries the item for the same reason.
+ */
+export function soldAlert(settings: CastAlertSettings, event: LootEvent): CastAlertEvent {
+  return {
+    caster: "",
+    spell: event.item,
+    at: event.at,
+    event: "sold",
+    sold: { item: event.item, source: event.source, qty: event.qty, soldFor: event.soldFor },
+    style: alertStyle(settings),
   };
 }
 

@@ -32,6 +32,11 @@ export const STORAGE_KEYS = {
   mobDifficulty: "eqlist.main.mobDifficulty",
   /** Main window: whether the Hunt tab groups by zone or by item. */
   huntGrouping: "eqlist.main.huntGrouping",
+  /**
+   * Main window: which of the shopping list's groups are folded shut, by group key (`originKey`) — only the
+   * shut ones are stored, so a group nobody folded needs no entry and a new one opens. ADR 0388.
+   */
+  listCollapsed: "eqlist.main.listCollapsed",
   /** Main window: whether the "this is the web view, get the desktop app" banner was dismissed. */
   webDownloadDismissed: "eqlist.main.webDownloadDismissed",
   /**

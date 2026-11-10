@@ -1,103 +1,58 @@
 /**
- * achievement-library.ts — the achievements the app ships with (ADR 0212, extended by ADR 0214
- * and ADR 0215).
+ * achievement-library.ts — the achievements the app ships with (ADR 0212, extended by ADR 0214,
+ * trimmed by ADR 0383).
  *
  * Definitions only, never progress: a stock achievement lives here, in code, and is never written
- * into `achievements.json` — only what the player has *done* toward one is saved. One entry,
- * **Grand Tour**, is *generated* rather than authored: one `"zone"` criterion per name in
- * `CURATED_ZONES` (`zones/gazetteer.ts`), the same canonical, difficulty-folded zone list the map
- * and travel graph already treat as one-name-per-real-place (ADR 0059).
+ * into `achievements.json` — only what the player has *done* toward one is saved.
  *
- * Every other criterion here is built from a real, checked source rather than assumed wording — this
- * game diverges from classic EverQuest more than it first looks (RunnyEye Citadel is a goblin
- * warren here, not the gnoll dungeon an older game ships under the same name), so guessing from
- * general EQ knowledge would have shipped at least two of these wrong:
- *  - Death and fall-damage wording: a real captured log (`log-watching`'s own documented grammar).
+ * **Nothing here duplicates what the game already awards.** EverQuest Legends ships its own
+ * achievement system (`"You have completed achievement: <name>!"`, and the Achievements window /
+ * `/outputfile achievements` dump this app reads): zone Travelers and Explorers, Race / Class / Deity
+ * unlocks, level milestones, tradeskill tiers, Slayer kill counts by race and creature family, and
+ * per-zone Hunters. The app once shipped 24 achievements the game also awards (a zone tour, "kill 50
+ * erudites", "Ally with the Qeynos factions", Rat Killer) and the player saw every one twice — once
+ * from the game, once from us — on a different count. What is left is what the game has no equivalent for: the
+ * scoreboard (a 500-damage hit, a five-minute fight), things you can only do by being silly (die, feign
+ * death, mesmerize, rez), burning a faction to the floor, and the honor-system boxes. Before adding one,
+ * look it up in the game's own list (`Kainos_<server>-Achievements.txt`) first.
+ *
+ * Every criterion here is built from a real, checked source rather than assumed wording — this
+ * game diverges from classic EverQuest more than it first looks, so guessing from general EQ
+ * knowledge would have shipped wrong ones:
+ *  - Death wording and the level-up line: a real captured log (`log-watching`'s own documented grammar).
  *  - The Resurrection and Mesmerization spell families, and Feign Death: the player's own installed
  *    `spells_us.txt` (ADR 0080) plus real `You begin casting …` lines confirmed from a live log.
- *  - RunnyEye Citadel's named-mob roster and King Xorbb's exact name and zone: the cached wiki
- *    pages already shipped in this repo (`public/data/wiki-cache`).
- *  - "hill giant" and "spider" as real, currently-killed mob names: a live install's own
- *    `mob-knowledge.json`.
- *  - **The game ships its own achievement system** (`"You have completed achievement: <name>!"`,
- *    confirmed from a real log — dozens of them, from zone "Traveler" awards to tradeskill mastery
- *    at `"<Skill> (50)"`) — a gift for a meta-achievement, and a source for "Rat Killer" and "Eight
- *    Legs Are Better Than One", both borrowed by name from the game's own achievement list as a
- *    nod, the same way `gnollguard.com`'s community achievement tracker documents them.
- *  - The player's own faction-standing lines (`"…could not possibly get any worse/better."`) — also
- *    confirmed from a real log, and (bonus) the exact line `specs/todo.md`'s faction-tracking item
- *    has been waiting on.
- *  - Which factions each race unlock needs Ally standing with, and every playable race's own mob
- *    density: `eqlforge.com`'s race-unlock guide, cross-checked against the same real log's faction
- *    list before trusting any of it (its High Elf/Wood Elf row turned out to be a likely copy-paste
- *    of each other, confirmed by neither appearing in the real faction list — both are left out
- *    rather than shipped on a guess) — and `mob-races.generated.ts` (ADR 0215) for "kill 50 of a
- *    race", built from the wiki's own mob stat cards rather than guessed from common names the way
- *    "hill giant"/"spider" could be — most humanoid trash doesn't spell its race out in the name.
+ *  - The player's own faction-standing lines (`"…could not possibly get any worse."`) — also
+ *    confirmed from a real log.
  *  - The full 16-class roster (confirmed from mob-page `Class:` trainers across the wiki cache,
  *    "Level 50 with all classes" — no reliable log signal exists for *which* class a character is
- *    playing across a session, so every criterion here is `"manual"` by design, not a shortcut.
+ *    playing across a session, so every criterion there is `"manual"` by design, not a shortcut.
+ *
+ * **A line criterion is read from the start of the line** (`systemLine`), never as a substring of
+ * it. The log also writes every other player's chat, and a guildmate typing "Welcome to level 50!"
+ * (verbatim from a real log: `Ramada tells General1:2, 'You have gained a level! Welcome to level
+ * 50! woohoo!'`) completed a level achievement that was never theirs to complete.
  */
 import { CLASS_NAMES } from "../class-names";
-import { CURATED_ZONES } from "../zones/gazetteer";
-import type { AchievementCriterion, AchievementDefinition } from "../types";
+import type { AchievementDefinition, AchievementWatch, WatchCondition } from "../types";
 
-function zoneCriteria(): AchievementCriterion[] {
-  return CURATED_ZONES.map((z) => ({ id: `zone:${z.name}`, label: z.name, kind: "zone", zone: z.name }));
-}
-
-/** "Kill 50 of race X" — matched by `mob-races.ts` against the log's own parsed kill, not by text
- *  (ADR 0215): most humanoid trash never spells its race out the way "hill giant" does. */
-function raceKillCriterion(id: string, race: string, atLeast = 50): AchievementCriterion {
-  return { id, label: `Kill ${atLeast} ${race}`, kind: "raceKill", race, count: { atLeast } };
-}
-
-/** "Your faction standing with <faction> could not possibly get any better." — the Ally ceiling,
- *  confirmed from a real log, mirroring the floor line ADR 0212's "Persona Non Grata" already uses. */
-function allyCriterion(id: string, faction: string): AchievementCriterion {
-  return {
-    id,
-    label: faction,
-    kind: "watch",
-    watch: { spell: `Your faction standing with ${faction} could not possibly get any better.`, onLine: true },
-  };
-}
-
-/** One race-unlock achievement: Ally standing with every faction that unlock requires. */
-function raceUnlockAchievement(id: string, title: string, race: string, factions: string[]): AchievementDefinition {
-  return {
-    id,
-    title,
-    description: `Reach Ally standing with every faction the ${race} unlock requires.`,
-    category: "Faction",
-    isOfficial: true,
-    criteria: factions.map((f) => allyCriterion(`ally:${f}`, f)),
-  };
-}
-
-/** `"You have slain <name>!"` — the player's own kill credit, never `"<name> has been slain by
- *  <killer>!"`, which the log uses for a kill it's telling a bystander about (ADR 0214: an
- *  achievement is about what *you* did, not what happened nearby).
+/**
+ * A raw-line watch that holds only when the line **begins** with `starts` — and, when `ends` is
+ * given, finishes with it. The game's own sentences ("You have slain a rat!") start with the thing
+ * they say; chat that merely quotes one starts with a speaker ("Bob tells the guild, '…'"), so
+ * anchoring is what tells them apart.
  *
- *  `logName` is what the kill line actually spells, when it differs from the clean `label` shown in
- *  the achievement's checklist — a common-named mob keeps its indefinite article in the log
- *  (`named-mobs.generated.ts`'s own "A Goblin Warlord") even though "Goblin Warlord" reads better
- *  as a checklist entry, and the substring match below has no article-stripping of its own
- *  (unlike `named-mobs.ts`'s `stripArticle`), so a criterion built from the bare name alone would
- *  never see that line and could never complete. */
-function killCriterion(id: string, label: string, logName = label): AchievementCriterion {
-  return { id, label, kind: "watch", watch: { spell: `You have slain ${logName}`, onLine: true } };
+ * Uses the `starts`/`ends` operators rather than a regex: they are the same case-insensitive
+ * comparisons every watch already has, and need no ReDoS check (ADR 0203). The trigger text is left
+ * blank on purpose — a watch with conditions and no trigger is a first-class shape (`conditionsHold`).
+ */
+function systemLine(starts: string, ends?: string): AchievementWatch {
+  const conditions: WatchCondition[] = [{ field: "line", op: "starts", text: starts }];
+  if (ends) conditions.push({ field: "line", op: "ends", text: ends });
+  return { spell: "", onLine: true, conditions };
 }
 
 export const STOCK_ACHIEVEMENTS: AchievementDefinition[] = [
-  {
-    id: "stock:grand-tour",
-    title: "Grand Tour",
-    description: "Set foot in every zone the app knows about.",
-    category: "Exploration",
-    isOfficial: true,
-    criteria: zoneCriteria(),
-  },
   {
     id: "stock:first-blood",
     title: "First Blood",
@@ -105,7 +60,9 @@ export const STOCK_ACHIEVEMENTS: AchievementDefinition[] = [
     category: "Combat",
     isOfficial: true,
     criteria: [
-      { id: "kill", label: "Slay something", kind: "watch", watch: { spell: "You have slain", onLine: true } },
+      // `"You have slain <name>!"` is the player's own kill credit; `"<name> has been slain by
+      // <killer>!"` is a bystander's, and neither starts like the other (ADR 0214).
+      { id: "kill", label: "Slay something", kind: "watch", watch: systemLine("You have slain ") },
     ],
   },
   {
@@ -154,9 +111,7 @@ export const STOCK_ACHIEVEMENTS: AchievementDefinition[] = [
     description: "Die. It happens to everyone eventually.",
     category: "Misadventure",
     isOfficial: true,
-    criteria: [
-      { id: "die", label: "Get yourself killed", kind: "watch", watch: { spell: "You have been slain by", onLine: true } },
-    ],
+    criteria: [{ id: "die", label: "Get yourself killed", kind: "watch", watch: systemLine("You have been slain by ") }],
   },
   {
     id: "stock:drown",
@@ -191,64 +146,6 @@ export const STOCK_ACHIEVEMENTS: AchievementDefinition[] = [
       },
     ],
   },
-
-  // ── real ───────────────────────────────────────────────────────────────────
-  {
-    id: "stock:runnyeye-cleared",
-    title: "Citadel Cleared",
-    description: "Kill every named mob in RunnyEye Citadel.",
-    category: "Zone Clear",
-    isOfficial: true,
-    criteria: [
-      killCriterion("borxx", "Borxx"),
-      killCriterion("sludge-dankmire", "Sludge Dankmire"),
-      killCriterion("goblin-king", "The Goblin King"),
-      killCriterion("goblin-elite-guard", "Goblin Elite Guard"),
-      killCriterion("goblin-warlord", "Goblin Warlord", "a Goblin Warlord"),
-    ],
-  },
-  {
-    id: "stock:king-xorbb",
-    title: "Royal Execution",
-    description: "Kill King Xorbb, in the Gorge of King Xorbb.",
-    category: "Named",
-    isOfficial: true,
-    criteria: [killCriterion("xorbb", "King Xorbb")],
-  },
-  {
-    id: "stock:hill-giants",
-    title: "Beanstalk Problem",
-    description: "Kill 25 hill giants.",
-    category: "Kill Count",
-    isOfficial: true,
-    criteria: [
-      {
-        id: "hill-giants",
-        label: "Kill 25 hill giants",
-        kind: "count",
-        watch: { spell: "hill giant", conditions: [{ field: "line", op: "contains", text: "You have slain" }], onLine: true },
-        count: { atLeast: 25 },
-      },
-    ],
-  },
-  {
-    id: "stock:spiders",
-    title: "Eight Legs Are Better Than One",
-    description: "Kill 20 spiders. (A nod to the game's own Slayer achievement of the same name.)",
-    category: "Kill Count",
-    isOfficial: true,
-    criteria: [
-      {
-        id: "spiders",
-        label: "Kill 20 spiders",
-        kind: "count",
-        watch: { spell: "spider", conditions: [{ field: "line", op: "contains", text: "You have slain" }], onLine: true },
-        count: { atLeast: 20 },
-      },
-    ],
-  },
-
-  // ── more silly ───────────────────────────────────────────────────────────────
   {
     id: "stock:feign",
     title: "Playing Possum",
@@ -281,82 +178,28 @@ export const STOCK_ACHIEVEMENTS: AchievementDefinition[] = [
         id: "hated",
         label: "Make a faction hate you as much as it possibly can",
         kind: "watch",
-        watch: { spell: "could not possibly get any worse", onLine: true },
-      },
-    ],
-  },
-
-  // ── more real ──────────────────────────────────────────────────────────────
-  {
-    id: "stock:level-60",
-    title: "The Long Road",
-    description: "Reach level 60.",
-    category: "Progression",
-    isOfficial: true,
-    criteria: [
-      { id: "level-60", label: "Reach level 60", kind: "watch", watch: { spell: "Welcome to level 60!", onLine: true } },
-    ],
-  },
-  {
-    id: "stock:tradeskill-mastery",
-    title: "Craftmaster",
-    description: "Max out any one tradeskill.",
-    category: "Tradeskill",
-    isOfficial: true,
-    criteria: [
-      {
-        id: "mastery",
-        label: "Max out a tradeskill",
-        kind: "watch",
-        watch: {
-          spell: "",
-          onLine: true,
-          conditions: [{ field: "line", op: "regex", text: "You have completed achievement: [A-Za-z' ]+\\(50\\)" }],
-        },
-      },
-    ],
-  },
-  {
-    id: "stock:achievement-hunter",
-    title: "Achievement Hunter",
-    description: "Complete 10 of the game's own achievements.",
-    category: "Meta",
-    isOfficial: true,
-    criteria: [
-      {
-        id: "hunter",
-        label: "Complete 10 in-game achievements",
-        kind: "count",
-        watch: { spell: "You have completed achievement:", onLine: true },
-        count: { atLeast: 10 },
-      },
-    ],
-  },
-  {
-    id: "stock:rat-killer",
-    title: "Rat Killer",
-    description: "Complete the game's own \"Rat Killer\" achievement — the classic EverQuest joke, alive and well here too.",
-    category: "Meta",
-    isOfficial: true,
-    criteria: [
-      {
-        id: "rat-killer",
-        label: "Complete \"Rat Killer\"",
-        kind: "watch",
-        watch: { spell: "You have completed achievement: Rat Killer", onLine: true },
+        // The floor line is the game's own sentence about *your* standing, so it starts "Your
+        // faction standing with" — chat that quotes it doesn't.
+        watch: systemLine("Your faction standing with ", "could not possibly get any worse."),
       },
     ],
   },
 
   // ── progression ────────────────────────────────────────────────────────────
   {
-    id: "stock:level-50",
-    title: "Half Century",
-    description: "Reach level 50.",
+    id: "stock:level-60",
+    title: "The Long Road",
+    description: "Reach level 60.",
     category: "Progression",
     isOfficial: true,
+    // The game's own list stops at "Level 50", so there is no in-game twin to defer to here.
     criteria: [
-      { id: "level-50", label: "Reach level 50", kind: "watch", watch: { spell: "Welcome to level 50!", onLine: true } },
+      {
+        id: "level-60",
+        label: "Reach level 60",
+        kind: "watch",
+        watch: systemLine("You have gained a level! Welcome to level 60!"),
+      },
     ],
   },
   {
@@ -370,103 +213,4 @@ export const STOCK_ACHIEVEMENTS: AchievementDefinition[] = [
     isOfficial: true,
     criteria: CLASS_NAMES.map((cls) => ({ id: `class:${cls}`, label: `${cls} to level 50`, kind: "manual" })),
   },
-
-  // ── race-kill counts (ADR 0215) ──────────────────────────────────────────────
-  {
-    id: "stock:kill-human",
-    title: "Nothing Personal",
-    description: "Kill 50 humans.",
-    category: "Kill Count",
-    isOfficial: true,
-    criteria: [raceKillCriterion("humans", "Human")],
-  },
-  {
-    id: "stock:kill-dark-elf",
-    title: "No Love Lost",
-    description: "Kill 50 dark elves.",
-    category: "Kill Count",
-    isOfficial: true,
-    criteria: [raceKillCriterion("dark-elves", "Dark Elf")],
-  },
-  {
-    id: "stock:kill-erudite",
-    title: "Anti-Intellectualism",
-    description: "Kill 50 erudites.",
-    category: "Kill Count",
-    isOfficial: true,
-    criteria: [raceKillCriterion("erudites", "Erudite")],
-  },
-  {
-    id: "stock:kill-dwarf",
-    title: "Short Fuse",
-    description: "Kill 50 dwarves.",
-    category: "Kill Count",
-    isOfficial: true,
-    criteria: [raceKillCriterion("dwarves", "Dwarf")],
-  },
-  {
-    id: "stock:kill-gnome",
-    title: "Big Trouble",
-    description: "Kill 50 gnomes.",
-    category: "Kill Count",
-    isOfficial: true,
-    criteria: [raceKillCriterion("gnomes", "Gnome")],
-  },
-  {
-    id: "stock:kill-troll",
-    title: "Troll Toll",
-    description: "Kill 50 trolls.",
-    category: "Kill Count",
-    isOfficial: true,
-    criteria: [raceKillCriterion("trolls", "Troll")],
-  },
-  {
-    id: "stock:kill-ogre",
-    title: "Ogre Achiever",
-    description: "Kill 50 ogres.",
-    category: "Kill Count",
-    isOfficial: true,
-    criteria: [raceKillCriterion("ogres", "Ogre")],
-  },
-  {
-    id: "stock:kill-iksar",
-    title: "Scaled Back",
-    description: "Kill 50 Iksar.",
-    category: "Kill Count",
-    isOfficial: true,
-    criteria: [raceKillCriterion("iksar", "Iksar")],
-  },
-
-  // ── race-unlock factions (ADR 0212's Ally-standing line, cross-checked per race) ─────────────
-  raceUnlockAchievement("stock:ally-barbarian", "Friend of the Barbarians", "Barbarian", [
-    "Rogues of the White Rose",
-    "Wolves of the North",
-    "Merchants of Halas",
-  ]),
-  raceUnlockAchievement("stock:ally-dwarf", "Friend of the Dwarves", "Dwarf", [
-    "Storm Guard",
-    "Merchants of Kaladim",
-    "Kazon Stormhammer",
-  ]),
-  raceUnlockAchievement("stock:ally-erudite", "Friend of the Erudites", "Erudite", [
-    "Deepwater Knights",
-    "High Council of Erudin",
-    "Heretics",
-  ]),
-  raceUnlockAchievement("stock:ally-gnome", "Friend of the Gnomes", "Gnome", [
-    "King Ak'Anon",
-    "Gem Choppers",
-    "Eldritch Collective",
-  ]),
-  raceUnlockAchievement("stock:ally-halfling", "Friend of the Halflings", "Halfling", [
-    "Guardians of the Vale",
-    "Merchants of Rivervale",
-    "Priests of Mischief",
-  ]),
-  raceUnlockAchievement("stock:ally-qeynos", "Friend of Qeynos", "Human (Qeynos)", [
-    "Merchants of Qeynos",
-    "Guards of Qeynos",
-    "Corrupt Qeynos Guards",
-  ]),
-  raceUnlockAchievement("stock:ally-iksar", "Friend of the Iksar", "Iksar", ["New Sebilisian Expedition"]),
 ];

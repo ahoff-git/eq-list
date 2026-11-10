@@ -5,18 +5,26 @@ game, on a Windows install, or across two clients. The dev sandbox can't run the
 a real run. This is a *verification* list, not open work — open work lives in [../todo.md](../todo.md),
 features for later in [../ideas.md](../ideas.md).
 
+Where an item says **`npm run smoke` covers** something, that part is asserted by
+[the smoke suite](./README.md#the-smoke-suite), which runs the real app; what the item still lists after
+"Still by hand" is what only a person (or a game, or a second client) can judge.
+
 ## In-game — one client
 
 - **Every table's column menu — sort and filter, for real, in the running app.**
   ([ADR 0230](../decisions/0230-every-table-gets-a-column-menu.md).) No game needs to be running for
-  this one — typecheck, `next build`, and this session's own smoke-test attempt all passed, but the
-  in-app pass itself hasn't (this sandbox can't reliably launch the packaged app to look: it runs
-  with `ELECTRON_RUN_AS_NODE` set, and the single-instance lock makes a second launch fail silent).
-  Open each of Items, Spells, Loot's **Drops** and
-  **Sells for**, Faction's **Hits** and **Standings**, Session's per-mob and per-zone tables, and
-  Peers' scoreboard, and for a handful of columns on each: hover the header for the column menu and
-  confirm it offers **Sort** and a type-appropriate **Filter** (text "contains" for a name column,
-  numeric operators for a number one), and that clicking the header's body itself still opens
+  this one. **`npm run smoke` now covers the scriptable half** ([the suite](./README.md#the-smoke-suite)):
+  on Items, Spells, Loot's **Drops** and **Sells for**, Faction's **Hits** and **Standings**, and
+  Session's per-mob and per-zone tables it opens up to two text and two number columns' menus and
+  asserts each sorts both ways (the direction a column is already sorted in reads *Unsort*) and that a
+  Filter opens on "contains" for a name and on a comparison for a number. It also records what this list
+  had wrong: Loot **Drops** offers *no* Filter on purpose (paged on the server, so a grid filter would
+  narrow only the page on screen — [ADR 0250](../decisions/0250-loot-drops-reaches-the-whole-ledger-unconditionally.md),
+  [ADR 0251](../decisions/0251-a-grids-unshown-columns-are-still-reachable.md)), and the smoke asserts that
+  stays so. The per-zone table has rows only on a profile with history, so it is checked when the run
+  copies the player's own database and skipped on a fixture. **Still by hand:** Peers' scoreboard (it
+  needs the peer room, which an isolated instance never joins), and
+  for a handful of columns on each table: that clicking the header's body itself still opens
   ascending or descending exactly the way it always did per column (a name starts A→Z, a number
   starts biggest-first) and flips on a second click — the grid's own default three-state cycle
   (asc → desc → unsorted) was deliberately overridden to keep this, so a column landing on
@@ -28,15 +36,17 @@ features for later in [../ideas.md](../ideas.md).
   Also confirm the grid reads as part of this app rather than a foreign widget — dark background,
   the app's own border/hover colors, no light-mode flash on open.
 - **A grid's "Manage columns" panel offers columns the default view doesn't show.**
-  ([ADR 0251](../decisions/0251-a-grids-unshown-columns-are-still-reachable.md).) Open the column
-  menu on any column of Items, Spells, Loot's **Drops** and **Sells for**, Faction's **Hits** and
-  **Standings**, and Session's per-mob and per-zone tables, and confirm **Manage columns** lists a
-  handful of unchecked entries beyond what's already on screen (Items: the stats you haven't picked in
-  the weight editor, plus Classes/Races/Flags/Effects/Quests/Origin/Req. level/Skill/Size; Faction
-  Hits: Raw line; Faction Standings: Floor hits/Ceiling hits/First hit/Corrected total/Corrected at;
-  Loot Drops: Sold for/Raw line; Loot Sells for: Sales; Session's per-mob and per-zone tables: the raw
-  Coin off corpses/Coin from sold drops split, and per-zone also XP/Damage dealt/Unsettled). Tick a
-  few on and confirm real data fills in rather than a blank column, that the default view is unchanged
+  ([ADR 0251](../decisions/0251-a-grids-unshown-columns-are-still-reachable.md).) **`npm run smoke`
+  covers the listing:** on Items, Spells, Loot's **Drops** and **Sells for**, Faction's **Hits** and
+  **Standings**, and Session's per-mob and per-zone tables it opens **Manage columns** and asserts these
+  are present and unchecked — Items: Classes/Races/Flags/Effects/Quests/Origin/Req. level/Skill/Size (plus
+  the stats not picked in the weight editor); Faction Hits: Raw line; Faction Standings: Floor hits/Ceiling
+  hits/First hit/Ledger-observed/Corrected at (the column this list used to call "Corrected total");
+  Loot Drops: Sold for/Raw line; Loot Sells for: Sales; Session's per-mob table: Coin off corpses/Coin
+  from sold drops, and its per-zone table XP/Damage dealt/Unsettled (that one on a copy of real history
+  only, as above); a table with none named must still offer at least one. **Still by hand:** ticking a few
+  on to confirm real data fills in rather than a blank column. Also confirm
+  that the default view is unchanged
   for a fresh session (nothing here was ever meant to be on by default), and that the choice is
   otherwise an ordinary grid preference — it isn't expected to survive a storage wipe, and it isn't
   supposed to reach a peer. On Items specifically, tick a stat on, then change which stats the weight
@@ -54,7 +64,12 @@ features for later in [../ideas.md](../ideas.md).
   on a second click, and only one row's breakdown is open at a time.
 - **Faction Hits pages through the whole ledger, server-side, and the ▶ arrow actually moves.**
   ([ADR 0232](../decisions/0232-a-ledger-that-outlives-its-cap-is-a-database.md),
-  [ADR 0234](../decisions/0234-a-paged-grid-gets-a-fixed-height-and-a-real-filter.md).) The Hits feed
+  [ADR 0234](../decisions/0234-a-paged-grid-gets-a-fixed-height-and-a-real-filter.md).) **`npm run smoke`
+  covers the arrow** (`faction hits: ▶ ◀ rows per page` and `grid: sort then page`): with more than a page of
+  hits, ▶ lands on a different first row, ◀ returns to the first, a new rows-per-page changes the range
+  shown, and sorting from page 2 returns to page 1. It is shown able to catch the symptom by swallowing the ▶
+  click (`--inject-fault arrow-stuck`). **Still by hand:** that a *filter* also resets to page 1 (the smoke
+  does not filter). The Hits feed
   has no cap of its own, so with more than 50 hits recorded confirm a real page count shows at the
   bottom (not one long scroll), the ▶/◀ arrows move to a genuinely different set of rows each time —
   **this regressed once already**: an unmemoized `sortModel` array recreated on every render made the
@@ -64,7 +79,9 @@ features for later in [../ideas.md](../ideas.md).
   changes the count shown per page. Sorting or filtering a column resets back to page 1 (a re-sort or
   a new filter changes what belongs on every page, including the one you're on).
 - **Faction Hits grid fills the window instead of stopping at a fixed height.**
-  ([ADR 0248](../decisions/0248-a-paged-grid-fills-the-window-instead-of-a-fixed-height.md).) Open
+  ([ADR 0248](../decisions/0248-a-paged-grid-fills-the-window-instead-of-a-fixed-height.md).) **Partly
+  covered by `npm run smoke`:** at the app's default size the footer of each tab-filling grid is asserted
+  to be on screen rather than pushed past the bottom. **Still by hand:** the rest of this. Open
   Faction → **Hits** on a tall/maximized window and confirm the grid (and its footer) extend down to
   fill the panel rather than stopping partway down with blank space below — then shrink the window and
   confirm the grid shrinks with it, falling back to its own internal scrollbar rather than pushing the
@@ -72,7 +89,13 @@ features for later in [../ideas.md](../ideas.md).
   scale, since a percentage/flex height (unlike the old fixed pixel figure) moves with the zoomed
   window rather than against it.
 - **Every grid now shows a real "rows per page" footer, not just Faction Hits.**
-  ([ADR 0249](../decisions/0249-every-grid-gets-a-real-pager.md).) Open Items, Spells, Loot's **Drops**
+  ([ADR 0249](../decisions/0249-every-grid-gets-a-real-pager.md).) **`npm run smoke` covers the footer
+  and the sort-then-page regression on every table it reaches** (Items, Spells, Loot's Drops and Sells for,
+  Faction's Hits and Standings, Session's per-mob table, and its per-zone table when there is history to
+  show): a footer with a range and at least three page sizes, and — where the table has more than one page
+  of rows — sorting then ▶ keeps the sort and advances the page. **Still by hand:** Peers' scoreboard (it
+  needs the room), the fight breakdown's Spells view, and the fixed-height box with its own scrollbar. Open
+  Items, Spells, Loot's **Drops**
   and **Sells for**, Faction's **Standings**, Session's per-mob and per-zone tables, and Peers'
   scoreboard, and confirm each one now has a footer with page arrows and a rows-per-page choice
   (10/25/50/100 on most; Loot Drops keeps 25/50/100, the same larger set Faction Hits uses) — these
@@ -1068,13 +1091,17 @@ features for later in [../ideas.md](../ideas.md).
   ([ADR 0212](../decisions/0212-an-achievement-criterion-can-watch-the-log-or-wait-to-be-told.md).)
   The matching and the tracker's state machine are unit-tested black boxes, and one live launch
   against a real install already confirmed the wiring end to end: on startup the log's current zone
-  (`Ak'Anon`) checked off that exact criterion under **Grand Tour** and was recorded as announced in
+  (`Ak'Anon`) checked off that exact criterion under **Grand Tour** (since removed, ADR 0383) and was recorded as announced in
   `achievements.json`, with no exceptions anywhere in the main-process log. What that pass couldn't
   see is the **screen** — nobody watched a checkbox move or a banner appear. To confirm:
-  1. Open the **Achievements** tab and expand **Grand Tour** — the zone you're standing in right now
-     should already show ticked (it was, in the file, even though nobody clicked it).
-  2. **Zone out** to anywhere new and confirm a 🏅 banner names that zone by title, with "N of \<total\>"
-     in the hint — over the game, on the same overlay a cast alert uses.
+  1. Open the **Achievements** tab and confirm it lists only what the game doesn't award itself — no
+     zone Travelers, race unlocks, Level 50, tradeskill tiers or Slayer kill counts, which are in the
+     game's own Achievements window ([ADR 0383](../decisions/0383-an-achievement-the-game-awards-is-not-ours-to-repeat.md)).
+     Thirteen: First Blood, Now We're Talking, Marathon, Say Hello, Oops, Glub Glub, Gravity Wins,
+     Good as New, Playing Possum, Say Goodnight, Persona Non Grata, The Long Road, Renaissance Adventurer.
+  2. **＋ New achievement** with two **Enter a zone** steps (two zones), then **zone** into the first and
+     confirm a 🏅 banner names that zone by title, with "1 of 2" in the hint — over the game, on the
+     same overlay a cast alert uses.
   3. Tick **Say Hello**'s manual checkbox by hand and confirm a 🎉 "complete!" banner fires
      immediately — the "little party" — with a different look from the ordinary 🏅 one (pink, wiggling,
      per `built-in:achievement` in `alert-styles.ts`). Untick it and confirm the banner does **not**
@@ -1098,18 +1125,19 @@ features for later in [../ideas.md](../ideas.md).
      shows no suggestion field at all, only a plain label. Confirm the **×** count field: leaving
      it blank or typing 1 makes an ordinary checkbox criterion; typing a higher number makes a
      `"count"` one.
-  8. **Beanstalk Problem** (kill 25 hill giants): kill one and confirm a 🏅 banner reads "14 of 25"
-     -style progress rather than the achievement's own "0 of 1" — then get to 25 and confirm the
-     🎉 completion banner instead, with no tally in it.
+  8. **A counted step** (in the wizard, a **Kill a mob** step with **×** 25 on something you can
+     farm): confirm **no** banner appears on any kill from the 1st to the 24th — the count only shows
+     in the Achievements tab ([ADR 0383](../decisions/0383-an-achievement-the-game-awards-is-not-ours-to-repeat.md))
+     — then get to 25 and confirm the 🎉 completion banner, once.
   9. **Good as New** (cast a resurrection spell): confirm casting it **yourself** completes it, and
      — the one that needs a second character or a grouped mob nearby — confirm **someone else's**
      resurrection cast (or a mob happening to cast something with "resurrect" in the name, if one
      ever does) does **not**.
-  10. **Citadel Cleared** and **Royal Execution**: the exact kill-line wording for the five RunnyEye
-      Citadel named mobs was inferred from the wiki's own no-article naming convention rather than a
-      captured log line (see ADR 0214) — the one thing only real kills can confirm is whether each
-      one actually reads `"You have slain <name>!"` with **no** leading article. If a row never
-      ticks after an actual kill, that's the wording to fix, not a code bug.
+  10. **Chat doesn't complete a line achievement.** Type `/ooc You have gained a level! Welcome to
+      level 60!` (or have a guildmate say it) and confirm **The Long Road** stays open — a stock line
+      criterion is read from the start of the line, so chat that quotes the game can't complete it
+      (ADR 0383). Then reach level 60 for real, if you can, and confirm it does complete. (Citadel
+      Cleared and Royal Execution used to be here; the game's own Hunter achievements cover them.)
   11. **Oops**, **Glub Glub**, **Gravity Wins**: confirm **Oops** fires on an ordinary death; the
       other two are deliberately `"manual"` (no confirmed line exists for drowning, and falling
       damage's confirmed line doesn't prove the death) — tick them by hand and confirm they behave
@@ -1118,25 +1146,15 @@ features for later in [../ideas.md](../ideas.md).
   **A second batch (ADR 0215) added `"raceKill"` criteria, race-unlock faction achievements, and two
   level-progression ones — all unit-tested against real mob names and real faction lines, but never
   watched tick on screen:**
-  12. **Half Century** and **Renaissance Adventurer**: level to 50 and confirm the first completes;
-      open the second and confirm it lists all **16** classes as plain checkboxes (there's no log
-      signal for which class a character is, so every box here is manual on purpose) — tick one and
-      confirm the achievement stays open until all 16 are checked.
-  13. **Nothing Personal**, **No Love Lost**, **Anti-Intellectualism**, **Short Fuse**, **Big
-      Trouble**, **Troll Toll**, **Ogre Achiever**, **Scaled Back** (kill 50 of a race): kill a
-      **named** NPC of one of these races and confirm it ticks the right one — the match is a wiki
-      stat-card lookup (`mob-races.ts`, ADR 0215), not text in the kill line, so this is the one
-      thing only a real kill against the live table can prove. If a kill of an obviously-that-race
-      mob never ticks, check whether `mob-races.generated.ts` actually has that mob's page (the
-      wiki cache may simply not have fetched it yet) before assuming the lookup is wrong.
-  14. **Friend of the Barbarians / Dwarves / Erudites / Gnomes / Halflings**, **Friend of Qeynos**,
-      **Friend of the Iksar**: reach Ally standing with one real faction and confirm the matching
-      criterion ticks with a 🏅 banner naming it; reach Ally with **all** of one achievement's
-      factions and confirm the 🎉 completion banner fires. The faction *names* per race came from a
-      third-party guide cross-checked against a real log where possible — Barbarian, Dwarf, Erudite
-      and Qeynos's three were each directly confirmed this way, but Gnome and Halfling each have one
-      faction (`King Ak'Anon`, `Merchants of Rivervale`) that wasn't independently seen in the log
-      used for this research. If either never ticks at Ally, that's the name to correct.
+  12. **Renaissance Adventurer**: open it and confirm it lists all **16** classes as plain checkboxes
+      (there's no log signal for which class a character is, so every box here is manual on purpose) —
+      tick one and confirm the achievement stays open until all 16 are checked. (Half Century used to
+      be here; the game's own `Level 50` covers it.)
+  13. *Removed (ADR 0383):* the eight kill-50-of-a-race achievements. The game's Slayer: Skill
+      achievements count races themselves, and the wiki-card lookup behind these counted a generic
+      `skeleton` as an Iksar. The `"raceKill"` machinery (`mob-races.ts`) is still in the code, unused.
+  14. *Removed (ADR 0383):* the "Friend of …" race-unlock achievements. The game's `Race Unlock - X`
+      achievements have the same faction objectives.
 
   **A third batch (ADR 0216, ADR 0217) found and fixed two real bugs during an adversarial pass over
   the tracker and the wizard, both unit-tested but neither watched live:**

@@ -385,6 +385,58 @@ test("a loot banner never waits, and nothing cancels it", () => {
   assert.equal(LOOT_STYLE_ID, "built-in:loot");
 });
 
+// ── a tracked item the game auto-sold (ADR 0385) ───────────────────────────
+
+const SOLD = "You looted 2 Spiderling Eye from a coyote's corpse and sold it for 1 silver and 4 copper.";
+
+test("a tracked item the game auto-sold raises a warning that carries what was sold and what it fetched", () => {
+  const h = harness([]);
+  h.router.autoSold(looted(SOLD), [listed({ name: "Spiderling Eye" })]);
+  assert.equal(h.raised.length, 1);
+  const alert = h.raised[0];
+  assert.equal(alert.event, "sold");
+  assert.deepEqual(alert.sold, { item: "Spiderling Eye", source: "coyote", qty: 2, soldFor: 14 });
+  assert.equal(alert.loot, undefined, "it is not a drop banner — nothing about it is progress");
+});
+
+test("the warning wears the alert defaults — the dispel look — and not the gold Loot look", () => {
+  const h = harness([], { styles: [...BUILT_IN_STYLES], color: "#e5534b", flash: true });
+  h.router.autoSold(looted(SOLD), [listed({ name: "Spiderling Eye" })]);
+  assert.equal(h.raised[0].style?.color, "#e5534b");
+  assert.equal(h.raised[0].style?.flash, true);
+  assert.notEqual(h.raised[0].style?.color, "#d4a03c");
+});
+
+test("it does not ask the row's bell: a row that never asked to hear about drops still hears this", () => {
+  const h = harness([]);
+  h.router.autoSold(looted(SOLD), [listed({ name: "Spiderling Eye", notify: false })]);
+  assert.equal(h.raised.length, 1);
+});
+
+test("two rows wanting the same item are one sale, so one warning; no row at all is none", () => {
+  const h = harness([]);
+  h.router.autoSold(looted(SOLD), [listed({ id: "a", name: "Spiderling Eye" }), listed({ id: "b", name: "Spiderling Eye" })]);
+  assert.equal(h.raised.length, 1);
+  h.router.autoSold(looted(SOLD), []);
+  assert.equal(h.raised.length, 1, "an item nobody is tracking is not a warning");
+});
+
+test("a silenced overlay and last night's replayed sale stay silent", () => {
+  const silenced = harness([], { enabled: false });
+  silenced.router.autoSold(looted(SOLD), [listed({ name: "Spiderling Eye" })]);
+  assert.equal(silenced.raised.length, 0, "the master switch covers this path too");
+
+  const replayed = harness([]);
+  replayed.router.autoSold(looted(SOLD, 6 * 60 * 60 * 1000), [listed({ name: "Spiderling Eye" })]);
+  assert.equal(replayed.raised.length, 0);
+});
+
+test("a sale that was free still warns, and says it fetched nothing rather than leaving the price off", () => {
+  const h = harness([]);
+  h.router.autoSold(looted("You looted a Micro Servo from a clockwork's corpse and sold it for free."), [listed({ name: "Micro Servo" })]);
+  assert.equal(h.raised[0].sold?.soldFor, 0);
+});
+
 // ── a peer's own celebration (ADR 0287) ────────────────────────────────────
 
 const CELEBRATION = { id: "c1", item: "Flowing Black Robe", qty: 1, at: new Date().toISOString() };

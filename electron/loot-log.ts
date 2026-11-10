@@ -44,8 +44,10 @@ import type {
   LootFate,
   LootRecord,
   LootSearchFilter,
+  LootSinceRow,
   LootVocabulary,
 } from "../src/shared/types";
+import { normalizeItemName } from "../src/shared/items/grouping";
 import { createSaver, readJson, writeJson } from "./json-store";
 import { DEFAULT_LIMIT, likeEscape, type Migration } from "./sqlite-store";
 import { createSqlAdminStore, type AdminStore } from "./admin";
@@ -197,6 +199,13 @@ export interface LootLog {
    */
   search(filter: LootSearchFilter): LootRecord[];
   /**
+   * What the ledger saw of the named items **after** `stamp` (a log timestamp, exclusive), oldest first —
+   * the loot half of "what do I hold", the other half being an inventory dump (`held-count.ts`, ADR 0382).
+   * Names are matched the way the shopping list matches them (`normalizeItemName`: grades and case fold),
+   * so a graded drop answers for the base item. Only the columns a count reads cross the bridge.
+   */
+  since(stamp: string, names: readonly string[]): LootSinceRow[];
+  /**
    * One page of the whole ledger, filtered and sorted server-side — what `DropTable` asks for as
    * the player pages, sorts (by anything but `zone`) or filters it, instead of paging client-side
    * over an already-fetched `search()` array
@@ -298,6 +307,7 @@ export function createLootLog(db: Database, userDataDir: string): LootLog {
   const updateZone = db.prepare(`UPDATE loot_records SET zone = ? WHERE key = ?`);
   const selectRecent = db.prepare(`SELECT * FROM loot_records ORDER BY at DESC, rowid DESC LIMIT ?`);
   const selectAll = db.prepare(`SELECT * FROM loot_records ORDER BY at DESC, rowid DESC`);
+  const selectSince = db.prepare(`SELECT at, item, qty, fate, detail FROM loot_records WHERE at > ? ORDER BY at, rowid`);
   const countAll = db.prepare(`SELECT COUNT(*) as n FROM loot_records`);
   const countEdited = db.prepare(`SELECT COUNT(*) as n FROM loot_records WHERE adminAudit IS NOT NULL`);
   const upsertFrozenPrice = db.prepare(`
@@ -451,6 +461,15 @@ export function createLootLog(db: Database, userDataDir: string): LootLog {
       return (
         db.prepare(`SELECT * FROM loot_records ${where} ORDER BY at DESC, rowid DESC`).all(...params) as LootRow[]
       ).map(rowToRecord);
+    },
+
+    since(stamp, names) {
+      const wanted = new Set(names.map(normalizeItemName));
+      // `at` is indexed, so this reads only the rows after the dump; the names are folded in JS because a
+      // grade (`Gnoll Fang +2`) isn't something SQL can strip.
+      return (selectSince.all(stamp) as LootSinceRow[])
+        .filter((r) => wanted.has(normalizeItemName(r.item)))
+        .map(({ at, item, qty, fate, detail }) => ({ at, item, qty, fate, ...(detail ? { detail } : {}) }));
     },
 
     dropsPage({ offset, limit, sortField, sortDesc, filter = {} }) {

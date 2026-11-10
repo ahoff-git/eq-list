@@ -57,6 +57,7 @@ const PLAIN: Record<string, string> = {
   // Gone in seconds, or chrome rather than a view.
   "components/alerts/CastAlerts.tsx|loot.item": "an alert banner — on screen for seconds, never hovered",
   "components/alerts/CastAlerts.tsx|celebration.item": "an alert banner — on screen for seconds, never hovered",
+  "components/alerts/CastAlerts.tsx|sold.item": "an alert banner — on screen for seconds, never hovered",
   // The alert window: banners and HUD lists over the game, click-through by default and gone in
   // seconds — and an ItemLink card would be clipped to that small window anyway.
   "components/alerts/CastAlerts.tsx|a.spell": "an alert banner — on screen for seconds, never hovered",

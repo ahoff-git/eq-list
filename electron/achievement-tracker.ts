@@ -81,6 +81,9 @@ export interface AchievementTrackerDeps {
   raise: (alert: CastAlertEvent) => void;
   /** Injectable, so a test doesn't depend on the wall clock. */
   now?: () => number;
+  /** The shipped achievements — injectable so a test of the machinery (a tally, a race kill) isn't
+   *  hostage to which achievements the app happens to ship this month. Defaults to the real library. */
+  stock?: readonly AchievementDefinition[];
 }
 
 export interface AchievementTracker {
@@ -125,6 +128,7 @@ export function createAchievementTracker({
   getZone,
   raise,
   now = Date.now,
+  stock = STOCK_ACHIEVEMENTS,
 }: AchievementTrackerDeps): AchievementTracker {
   const file = path.join(userDataDir, "achievements.json");
   const state = load(file);
@@ -137,7 +141,7 @@ export function createAchievementTracker({
 
   const changed = notifier.changed;
 
-  const definitions = (): AchievementDefinition[] => [...STOCK_ACHIEVEMENTS, ...state.custom];
+  const definitions = (): AchievementDefinition[] => [...stock, ...state.custom];
   const progressOf = (id: string): AchievementProgress | undefined => state.progress.find((p) => p.id === id);
 
   function ensureProgress(id: string): AchievementProgress {
@@ -194,29 +198,6 @@ export function createAchievementTracker({
   const tallies = (criterion: AchievementCriterion) => criterion.kind === "count" || criterion.kind === "raceKill";
 
   /**
-   * A tallying criterion's count moved but hasn't reached its goal yet — still worth a quiet
-   * banner naming the running total, since a kill count is rare enough per achievement that every
-   * step is news (unlike a farming goal's fixed 25/50/75% milestones). `done`/`total` ride along too
-   * (see `AchievementAlertPayload`), but the overlay renders `tally`/`tallyGoal` instead when set.
-   */
-  function announceCount(definition: AchievementDefinition, criterion: AchievementCriterion, tally: number, goal: number, at: number): void {
-    const progress = progressOf(definition.id);
-    announce(
-      {
-        kind: "criterion",
-        id: definition.id,
-        title: definition.title,
-        criterionLabel: criterion.label,
-        done: progress?.done.length ?? 0,
-        total: definition.criteria.length,
-        tally,
-        tallyGoal: goal,
-      },
-      at,
-    );
-  }
-
-  /**
    * Run one matcher across every outstanding criterion of every achievement not yet complete,
    * marking and announcing whatever it satisfies. Shared by every hook below — they differ only in
    * what "matches" means, the same way `alert-router.ts`'s `combat`/`line` differ only in which of
@@ -243,7 +224,8 @@ export function createAchievementTracker({
           const tally = tallyOf(progress, criterion.id) + 1;
           progress.tally = { ...progress.tally, [criterion.id]: tally };
           if (tally < goal) {
-            announceCount(definition, criterion, tally, goal, at);
+            // Every step is saved but none is *said* (ADR 0383): a camp can land a kill every few
+            // seconds, and the panel already shows the running count. Finishing is the news.
             any = true;
             continue; // not done yet — no criterion/completion banner from announceProgress below
           }

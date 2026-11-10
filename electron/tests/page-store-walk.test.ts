@@ -56,6 +56,54 @@ test("two walks started together both finish, each seeing every page", async () 
   });
 });
 
+test("another store can run a transaction while a walk is yielded", async () => {
+  // The cache shares one connection with the ledgers (ADR 0232). The faction recheck opens a transaction at startup,
+  // at the very moment the catalogue warm is walking — and a walk that holds its row iterator open across its
+  // yield made SQLite refuse: "This database connection is busy executing a query". The recheck was then skipped
+  // for that launch, and a fresh-launch error went to the log.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-pagewalk-"));
+  const { db, store } = seededStore(dir);
+  try {
+    let seen = 0;
+    let ran = 0;
+    let other: Promise<void> = Promise.resolve();
+    await store.each(() => {
+      // Scheduled early in the first chunk, so it is queued ahead of the walk's own yield and runs inside it.
+      if (++seen === 10) {
+        other = new Promise<void>((resolve, reject) =>
+          setImmediate(() => {
+            try {
+              db.transaction(() => void ran++)();
+              resolve();
+            } catch (err) {
+              reject(err);
+            }
+          }),
+        );
+      }
+    });
+    await other;
+    assert.equal(ran, 1, "the other store's transaction ran");
+    assert.equal(seen, PAGES, "and the walk still saw every page");
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a page added behind a walk's position is not visited twice, and none is skipped", async () => {
+  await withStore(async (store) => {
+    const titles: string[] = [];
+    await store.each((entry) => {
+      titles.push(entry.page.title);
+      // A re-put of a page already visited replaces its row; it must not make the walk revisit anything.
+      if (titles.length === 50) store.put(titles[0], 99, entry.page);
+    });
+    assert.equal(titles.length, PAGES);
+    assert.equal(new Set(titles).size, PAGES, "no page twice");
+  });
+});
+
 test("a walk that throws doesn't wedge the ones behind it", async () => {
   await withStore(async (store) => {
     const failing = store.each(() => {

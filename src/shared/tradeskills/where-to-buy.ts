@@ -49,6 +49,15 @@ const PER_ITEM_HERE = 2;
 const locOf = (v: VendorSpot) => (v.y !== undefined && v.x !== undefined ? { loc: { y: v.y, x: v.x } } : {});
 const areaOf = (v: VendorSpot) => (v.area ? { area: v.area } : {});
 
+/**
+ * One spot per merchant name, the first listed. The wiki lists some merchants twice for one item — Merchant Gaeadin
+ * under both Greater Faydark and Kelethin, "a clockwork tanner" at two stalls in Ak'Anon — and the plan names a merchant
+ * by name, so a second spot would only repeat the first's row ("Merchant Gaeadin: Mask Pattern, Mask Pattern") and
+ * collide as a React key. 24 items in the committed table did it. Deduped *before* the `PER_ITEM_HERE` cut, so a second
+ * entry for the same merchant can't use up the place a different merchant should have had.
+ */
+const onePerMerchant = (spots: readonly VendorSpot[]): VendorSpot[] => spots.filter((v, i) => spots.findIndex((o) => o.merchant === v.merchant) === i);
+
 export function whereToBuy(
   items: readonly string[],
   vendors: Readonly<Record<string, readonly VendorSpot[]>>,
@@ -66,7 +75,7 @@ export function whereToBuy(
     }
     const local = currentZone ? open.filter((v) => samePlace(v.zone, currentZone) || samePlace(v.zonePage, currentZone)) : [];
     if (local.length) {
-      for (const v of local.slice(0, PER_ITEM_HERE)) here.push({ item, merchant: v.merchant, zone: v.zone, ...areaOf(v), ...locOf(v) });
+      for (const v of onePerMerchant(local).slice(0, PER_ITEM_HERE)) here.push({ item, merchant: v.merchant, zone: v.zone, ...areaOf(v), ...locOf(v) });
     } else left.set(item, open);
   }
 

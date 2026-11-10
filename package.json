@@ -1,6 +1,6 @@
 {
   "name": "eq-list",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "description": "EQ Legends loot shopping-list overlay — watches your EverQuest log and lights up when items on your list drop. Data sourced from eqlwiki.com.",
   "author": "Ka1n0s",
@@ -49,7 +49,9 @@
     "web:snapshot:publish": "npm run build:electron && npm run rebuild:electron && node scripts/run-under-electron.mjs scripts/build-web-snapshot.mjs --no-maps",
     "pretest": "npm run rebuild:node",
     "test:render": "tsc -p tsconfig.render.json && node scripts/render-check.mjs",
-    "test": "npm run build:electron && node --test --test-reporter=./scripts/test-reporter.mjs --test-reporter-destination=stdout \"dist-electron/electron/tests/**/*.test.js\"",
+    "test": "npm run build:electron && node --test --test-reporter=./scripts/test-reporter.mjs --test-reporter-destination=stdout \"dist-electron/electron/tests/**/*.test.js\" \"scripts/smoke/**/*.test.mjs\"",
+    "presmoke": "npm run rebuild:electron",
+    "smoke": "node scripts/smoke/smoke.mjs",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit"
   },
   "dependencies": {

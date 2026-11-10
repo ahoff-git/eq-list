@@ -41,10 +41,14 @@ _No open bugs._
   tips into advice: fire resist against a fire-heavy mob, AC against crushing melee, another spell
   against a resist wall.
 - **One achievements view.** Show the game's achievements dump beside the app's tracked ones
-  ([ADR 0212](./decisions/0212-an-achievement-criterion-can-watch-the-log-or-wait-to-be-told.md)), and
-  tick an app achievement when the export says it's done.
-- **The shopping list counts what you hold.** Use the inventory dump plus loot and sells since it, as
-  EQBuddy's `SinceDump` does (`src/EQBuddy.Core/InventoryFile.cs`).
+  ([ADR 0212](./decisions/0212-an-achievement-criterion-can-watch-the-log-or-wait-to-be-told.md)). Nothing
+  gets ticked from the export: the app no longer ships an achievement the game awards
+  ([ADR 0383](./decisions/0383-an-achievement-the-game-awards-is-not-ours-to-repeat.md)).
+- **A destroyed item leaves the held count.** The log writes `You successfully destroyed N X.` (63 for
+  one item in a real log) and nothing records it, so [ADR 0382](./decisions/0382-the-shopping-list-counts-what-you-hold.md)'s
+  count is too high after one. Parse it into the loot ledger's neighbour and feed `held-count.ts`'s `gone` rows.
+- **The quest plan, pickup page and drop banner count what you hold too.** They still read a row's stored
+  `obtained`; move them onto `useCountedList` ([ADR 0382](./decisions/0382-the-shopping-list-counts-what-you-hold.md)).
 - **An alert can be spoken.** A per-watch `speechSynthesis` toggle, independent of the beep, speaking
   the watch's `message`, with duplicate suppression (EQBuddy).
 - **Gate a shared emote on your own cast.** Arm a zone-visible land emote only after your own `You

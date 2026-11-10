@@ -12,7 +12,8 @@ import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { createLogger } from "../src/shared/logging";
 import { stripArticle } from "../src/shared/log-parser";
-import { isMobEntry, normalizeItemName, originKey } from "../src/shared/items/grouping";
+import { effectiveNeeded, isMobEntry, normalizeItemName, originKey, runsFor, splitAcross } from "../src/shared/items/grouping";
+import { applyOrder, arrangeOnce } from "../src/shared/items/list-order";
 import { MAP_UI_SCALE, clampScale, clampUiScale } from "../src/shared/constants";
 import { BUILT_IN_STYLES, RECORD_STYLE_ID } from "../src/shared/alerts/alert-styles";
 import { factionRaiseNote } from "../src/shared/items/wiki-add";
@@ -127,6 +128,13 @@ function deepMerge<T>(base: T, patch: DeepPartial<T>): T {
   return out as T;
 }
 
+/** One entry's share of a looted stack. */
+export interface LootCredit {
+  entry: ShoppingListEntry;
+  /** How many of the stack went to this entry. */
+  credit: number;
+}
+
 export interface Store {
   getList(): ShoppingList;
   getSettings(): Settings;
@@ -142,14 +150,31 @@ export interface Store {
   addFromPage(page: WikiPage): ShoppingList;
   updateEntry(
     id: string,
-    patch: Partial<Pick<ShoppingListEntry, "needed" | "obtained" | "note" | "notify">>,
+    patch: Partial<Pick<ShoppingListEntry, "needed" | "obtained" | "countedByHand" | "note" | "notify">>,
   ): ShoppingList;
   removeEntry(id: string): ShoppingList;
   clearList(): ShoppingList;
   setQuestRuns(originKey: string, runs: number): ShoppingList;
+  /** Put the entries in this order (the player's, ADR 0388) — see `applyOrder` for what an incomplete order means. */
+  reorder(ids: readonly string[]): ShoppingList;
   updateSettings(patch: DeepPartial<Settings>): Settings;
-  /** Apply a loot event; returns the entries it satisfied (for match alerts). */
+  /**
+   * Apply a loot event; returns the entries it credited (for match alerts). An auto-sold drop credits
+   * nothing — it never reached you (ADR 0385); `soldOnList` is how it is noticed instead.
+   */
   applyLoot(event: LootEvent): ShoppingListEntry[];
+  /**
+   * `applyLoot`, with how much each entry was credited. A looted stack is **split** across the rows that
+   * want the item — in list order, each up to what it still lacks — rather than given whole to each, so
+   * 5 Bone Chips against rows wanting 3, 5 and 2 fill the first and part of the second, not all three
+   * (ADR 0387). A row that gets nothing isn't returned.
+   */
+  creditLoot(event: LootEvent): LootCredit[];
+  /**
+   * The entries an **auto-sold** drop was for — empty for any other fate — without crediting any of them.
+   * A tracked item the game vendored is gone, and the player has to be told (ADR 0385).
+   */
+  soldOnList(event: LootEvent): ShoppingListEntry[];
   onList(cb: (list: ShoppingList) => void): void;
   onSettings(cb: (settings: Settings) => void): void;
 }
@@ -161,6 +186,9 @@ export function createStore(userDataDir: string): Store {
 
   const list: ShoppingList = readJson(listPath, { entries: [], questRuns: {} });
   if (!list.questRuns) list.questRuns = {}; // migrate lists saved before quest runs existed
+  // A list saved before its order was the player's is sorted once, to the order it was always drawn in, and
+  // marked — so it looks exactly as it did until something is moved (ADR 0388). Saved with the next change.
+  Object.assign(list, arrangeOnce(list));
   let settings: Settings = deepMerge(DEFAULT_SETTINGS, readJson<DeepPartial<Settings>>(settingsPath, {}));
   // Both scales are clamped on load, against *their own* range: the overlay's stops at 100%
   // (ADR 0026 — an overlay wants to take less room than the game), while the map's may go above it,
@@ -191,9 +219,47 @@ export function createStore(userDataDir: string): Store {
     return list;
   }
 
+  /**
+   * The list entries a looted item is on, by the player's match mode. One rule for crediting a drop and for
+   * noticing that the game sold one, so the two can't disagree about what is "on your list".
+   */
+  function entriesFor(itemName: string): ShoppingListEntry[] {
+    const item = normalize(itemName);
+    return list.entries.filter((e) => {
+      // A mob is never looted — it's what you loot *from* — so it can't be satisfied by a loot
+      // line, and letting it try would credit "Ghoul Lord" with the Ghoul Lord's Cape it dropped.
+      if (isMobEntry(e)) return false;
+      const target = normalize(e.name);
+      return settings.matchMode === "exact" ? item === target : item.includes(target) || target.includes(item);
+    });
+  }
+
   // Entries are keyed by (name + origin), so the SAME item can live under more than one
   // quest/recipe heading (e.g. rat ears needed by both a recipe and a quest), each
   // tracking its own count. Re-adding the same item to the same origin just bumps needed.
+  function creditLoot(event: LootEvent): LootCredit[] {
+    // An auto-sold drop never reached you: the game vendored it as it was looted. Counting it ticked a row for
+    // an item you hold none of — and, worse, the alert for it then told you the list was done. The Loot tab
+    // still has the row, with what it fetched. A kept, stored or combined drop is yours (ADR 0385).
+    if (event.fate === "sold") return [];
+    const rows = entriesFor(event.item);
+    // Count what the line actually reported — a looted stack of 2 moves the list 2 closer to done, not 1 —
+    // but only once: the same item under three quests is one stack of chips, not three (ADR 0387).
+    const shares = splitAcross(
+      rows.map((e) => effectiveNeeded(e, runsFor(list, e)) - e.obtained),
+      event.qty,
+    );
+    const credits: LootCredit[] = [];
+    rows.forEach((entry, i) => {
+      if (shares[i] <= 0) return;
+      entry.obtained += shares[i];
+      entry.lastSeenAt = event.at;
+      credits.push({ entry, credit: shares[i] });
+    });
+    if (credits.length) emitList();
+    return credits;
+  }
+
   function upsert(name: string, extra: Partial<ShoppingListEntry>): void {
     const key = originKey(extra.origin);
     const existing = list.entries.find(
@@ -286,6 +352,12 @@ export function createStore(userDataDir: string): Store {
       return emitList();
     },
 
+    reorder(ids) {
+      list.entries = applyOrder(list.entries, ids);
+      list.arranged = true;
+      return emitList();
+    },
+
     setQuestRuns(originKey, runs) {
       const n = Math.max(1, Math.round(runs));
       if (n <= 1) delete list.questRuns[originKey];
@@ -300,26 +372,10 @@ export function createStore(userDataDir: string): Store {
       return settings;
     },
 
-    applyLoot(event) {
-      const item = normalize(event.item);
-      const matched: ShoppingListEntry[] = [];
-      for (const e of list.entries) {
-        // A mob is never looted — it's what you loot *from* — so it can't be satisfied by a loot
-        // line, and letting it try would credit "Ghoul Lord" with the Ghoul Lord's Cape it dropped.
-        if (isMobEntry(e)) continue;
-        const target = normalize(e.name);
-        const hit = settings.matchMode === "exact" ? item === target : item.includes(target) || target.includes(item);
-        if (hit) {
-          // Count what the line actually reported: a looted stack of 2 moves the
-          // shopping list 2 closer to done, not 1.
-          e.obtained += event.qty;
-          e.lastSeenAt = event.at;
-          matched.push(e);
-        }
-      }
-      if (matched.length) emitList();
-      return matched;
-    },
+    creditLoot,
+    applyLoot: (event) => creditLoot(event).map((c) => c.entry),
+
+    soldOnList: (event) => (event.fate === "sold" ? entriesFor(event.item) : []),
 
     onList: (cb) => void bus.on("list", cb),
     onSettings: (cb) => void bus.on("settings", cb),

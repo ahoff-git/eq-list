@@ -11,9 +11,10 @@
  * single source of truth for "how many you actually need".
  *
  * `groupByOrigin` also decides the order everything renders in: unfinished groups before finished
- * ones (A-Z within each), "Other items" always last since it isn't a real quest/recipe to finish;
- * and within a group, still-needed entries before satisfied ones (A-Z within each). One sort, so
- * the control window and the overlay can't land on two different orders for the same list.
+ * ones, "Other items" always last since it isn't a real quest/recipe to finish; and within a group,
+ * still-needed entries before satisfied ones. Inside each of those buckets the order is the one the
+ * entries are stored in, which is the player's (`list-order.ts`, ADR 0388). One sort, so the control
+ * window and the overlay can't land on two different orders for the same list.
  */
 import type { ShoppingList, ShoppingListEntry, WikiPageKind } from "../types";
 import { itemBaseName } from "../names";
@@ -76,6 +77,25 @@ export function runsFor(list: Pick<ShoppingList, "questRuns">, entry: ShoppingLi
 /** Per-entry count needed, scaled by how many runs its group is set to. */
 export function effectiveNeeded(entry: ShoppingListEntry, runs: number): number {
   return entry.needed * Math.max(1, runs);
+}
+
+/**
+ * Split `qty` copies of an item across the rows that want it, in order, each taking at most what it still
+ * lacks — so three rows wanting 3, 5 and 2 of the same thing, handed 5, hold 3, 2 and 0, not 5 each.
+ *
+ * Whatever is left once every row is full goes to the **first** row, so nothing is lost and a row left on the
+ * list after it is finished keeps counting up (6 of 5), exactly as one row on its own always has: with a single
+ * row this is `[qty]`. Returns one figure per row, in the order given. (ADR 0387.)
+ */
+export function splitAcross(lacks: readonly number[], qty: number): number[] {
+  let left = Math.max(0, qty);
+  const parts = lacks.map((lack) => {
+    const part = Math.min(Math.max(0, lack), left);
+    left -= part;
+    return part;
+  });
+  if (parts.length) parts[0] += left;
+  return parts;
 }
 
 /**
@@ -179,24 +199,24 @@ export function groupByOrigin(
     // Clamp per entry so overflow drops don't inflate group progress.
     g.obtained = countable.reduce((n, e) => n + Math.min(e.obtained, effectiveNeeded(e, g.runs)), 0);
     g.complete = countable.length > 0 && countable.every((e) => satisfied(e, g.runs));
-    // Still-needed rows first (a mob always counts as still-needed — see `isMobEntry`), then A-Z,
-    // so what's left to do leads the group and finished/hunted rows don't have to be hunted for
-    // among them.
+    // Still-needed rows first (a mob always counts as still-needed — see `isMobEntry`), so what's left
+    // to do leads the group and finished/hunted rows don't have to be hunted for among them. Within
+    // each bucket the rows keep the order they were given in — the player's own (ADR 0388): a sort is
+    // stable, so not comparing names is what leaves it alone.
     g.entries.sort((a, b) => {
       const doneA = !isMobEntry(a) && satisfied(a, g.runs);
       const doneB = !isMobEntry(b) && satisfied(b, g.runs);
-      if (doneA !== doneB) return doneA ? 1 : -1;
-      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+      return Number(doneA) - Number(doneB);
     });
   }
-  // Unfinished groups first, then A-Z within each bucket; "Other" — the catch-all rather than a
-  // real quest/recipe — always sinks to the very end regardless of its own completion.
+  // Unfinished groups first, each bucket in the order its groups first appear in `entries` (a Map keeps
+  // insertion order, and a sort is stable) — the player's order again; "Other" — the catch-all rather than
+  // a real quest/recipe — always sinks to the very end regardless of its own completion.
   groups.sort((a, b) => {
     if (a.key === OTHER_KEY || b.key === OTHER_KEY) {
       return (a.key === OTHER_KEY ? 1 : 0) - (b.key === OTHER_KEY ? 1 : 0);
     }
-    if (a.complete !== b.complete) return a.complete ? 1 : -1;
-    return a.label.localeCompare(b.label, undefined, { sensitivity: "base" });
+    return Number(a.complete) - Number(b.complete);
   });
   return groups;
 }

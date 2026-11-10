@@ -27,6 +27,7 @@ const api: EqlApi = {
     remove: (id) => ipcRenderer.invoke(CH.listRemove, id),
     clear: () => ipcRenderer.invoke(CH.listClear),
     setRuns: (originKey, runs) => ipcRenderer.invoke(CH.listSetRuns, originKey, runs),
+    reorder: (ids) => ipcRenderer.invoke(CH.listReorder, ids),
     onChanged: (cb) => on(CH.listChanged, cb),
   },
   settings: {
@@ -74,6 +75,7 @@ const api: EqlApi = {
     onPricesChanged: (cb) => on(CH.lootPricesChanged, cb),
     items: () => ipcRenderer.invoke(CH.lootItems),
     search: (filter) => ipcRenderer.invoke(CH.lootSearch, filter),
+    since: (stamp, names) => ipcRenderer.invoke(CH.lootSince, stamp, names),
     dropsPage: (query) => ipcRenderer.invoke(CH.lootDropsPage, query),
     vocabulary: () => ipcRenderer.invoke(CH.lootVocabulary),
     onEvent: (cb) => on(CH.lootEvent, cb),

@@ -24,6 +24,21 @@ export const BEFORE_NOTES = "0.1.0";
 
 export const CHANGELOG: readonly ReleaseNote[] = [
   {
+    line: "0.6",
+    date: "2026-11-09",
+    title: "The shopping list counts what you hold, and quieter achievements",
+    changes: [
+      { kind: "new", text: "The shopping list counts what you already hold — it reads your inventory dump (type /outputfile inventory in the game), adds what you have looted since, and ticks an item when you have enough, and the Hunt tab stops sending you after it. Hover the 🎒 note on a row to see the sum, or type a figure yourself to overrule it.", guide: "build-your-list" },
+      { kind: "better", text: "The Achievements tab no longer repeats what the game already awards — zone Travelers, race unlocks, level 50, tradeskills and the Slayer kill counts are in the game's own Achievements window, and are gone from ours. What's left is what the game doesn't track: big hits, long fights, dying, and the like." },
+      { kind: "better", text: "A kill-count achievement no longer pops up a progress banner on every kill — it says nothing until you finish it, and the count is on the Achievements tab." },
+      { kind: "fixed", text: "An achievement is no longer completed by another player's chat that happens to quote the game — a guildmate typing \"Welcome to level 60!\" used to count as your level-up." },
+      { kind: "new", text: "If an item on your shopping list is auto-sold the moment it drops, a big warning banner tells you so — and the sale no longer ticks the list as if you had kept it." },
+      { kind: "new", text: "You can arrange your shopping list: drag a quest, recipe or item by its ⠿ grip to move it (or focus the grip and press Alt with ↑ or ↓), and the list remembers which groups you folded shut. The quest you put first is the one a shared pile of items is counted toward first.", guide: "build-your-list" },
+      { kind: "fixed", text: "The same item under several quests or recipes is counted once: holding or looting 5 Bone Chips against rows wanting 3, 5 and 2 fills the first row and part of the second, instead of ticking all three." },
+      { kind: "fixed", text: "Craft's Where to buy no longer lists the same merchant twice for one item — Merchant Gaeadin's Mask Pattern, or a clockwork tanner's patterns in Ak'Anon." },
+    ],
+  },
+  {
     line: "0.5",
     date: "2026-11-09",
     title: "Fixes found by stress-testing the app",

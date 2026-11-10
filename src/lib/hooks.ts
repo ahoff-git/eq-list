@@ -517,7 +517,7 @@ export function useHuntTargets(entries: ShoppingListEntry[]): HuntTarget[] {
  * to say which items have no source at all, `sources` and `targets` to offer the zone picker only
  * zones this hunt actually touches.
  */
-export function useHunt(): {
+export function useHunt(counted?: ShoppingList): {
   needed: ShoppingListEntry[];
   sources: Record<string, ItemSource[]>;
   targets: HuntTarget[];
@@ -525,7 +525,11 @@ export function useHunt(): {
   zones: HuntZone[];
   loading: boolean;
 } {
-  const list = useShoppingList();
+  // The list as it counts what you hold (`useCountedList`, ADR 0382) when the caller has it — a row your
+  // inventory already covers isn't something to go and hunt. Passed in rather than read here because that
+  // hook is built on this file's.
+  const stored = useShoppingList();
+  const list = counted ?? stored;
   const needed = useMemo(() => neededEntries(list.entries, list.questRuns), [list]);
   const { sources, loading } = useEntrySources(needed);
   const targets = useHuntTargets(list.entries);

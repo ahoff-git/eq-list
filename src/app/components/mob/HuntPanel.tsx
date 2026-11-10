@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useCurrentZone, useGoalFocus, useHunt, useSettings, useMobLoot, useMobKnowledge } from "@/lib/hooks";
+import { setHave, useCountedList } from "@/lib/items/useCountedList";
 import { goalWantsItem, goalWantsMob } from "@/shared/goals/goal-progress";
 import GoalFocusBanner from "@/app/components/goals/GoalFocusBanner";
 import { bestRate, reconcileDrops, type DropTruth, type ShownRate } from "@/shared/mob/drop-truth";
@@ -124,7 +125,7 @@ export default function HuntPanel({
    * `zones` is the **full** hunt, every zone of it: the zone options and the "no drop source" list
    * are both about the whole list, so they stay accurate whatever the filter is set to.
    */
-  const { needed, sources, targets, zones: allZones, loading } = useHunt();
+  const { needed, sources, targets, zones: allZones, loading } = useHunt(useCountedList().list);
   const covered = new Set(allZones.flatMap((z) => z.mobs.flatMap((m) => m.items.map((i) => i.item))));
   // A quest pickup lies on the ground rather than dropping (ADR 0291): its own section, not "no source".
   const noSource = needed.filter((e) => !covered.has(e.name) && !pickupFor(e.name));
@@ -161,10 +162,9 @@ export default function HuntPanel({
 
   // +/- adjusts the same `obtained` the List tab's stepper does — see `HuntItemRef.id` for why it
   // can be missing (a test-built ref with no entry behind it), in which case there is nothing to
-  // adjust and `ObtainedStepper` renders no buttons.
-  const setObtained = useCallback((id: string, obtained: number, delta: number) => {
-    void api()?.list.update(id, { obtained: Math.max(0, obtained + delta) });
-  }, []);
+  // adjust and `ObtainedStepper` renders no buttons. The figure shown may be the inventory's, so a
+  // step from it is the player's own count (`countedByHand`), exactly as on the List tab.
+  const setObtained = useCallback((id: string, obtained: number, delta: number) => setHave(id, obtained + delta), []);
 
   /** Ask the map to ring this mob's kills (null takes the ask back). */
   /** Ring a mob's kills on an already-open map — the shared gesture (`showOnMap.ts`). */
